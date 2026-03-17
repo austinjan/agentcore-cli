@@ -223,13 +223,8 @@ function extractSSEEventText(event: Record<string, unknown>): string | null {
   }
 
   if (kind === 'status-update') {
-    const status = target.status as
-      | { state?: string; message?: { parts?: { kind?: string; text?: string }[] } }
-      | undefined;
-    // Extract text from status message if present
-    if (status?.message?.parts) {
-      return extractPartsText(status.message.parts);
-    }
+    // Don't extract text from status-update — it duplicates artifact content.
+    // Status updates are lifecycle signals (working, completed, etc.)
     return null;
   }
 
