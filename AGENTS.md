@@ -129,7 +129,8 @@ The TUI harness provides MCP tools for programmatically driving the AgentCore CL
 
 ### Getting Started
 
-1. Run `npm run build` to compile the project before using the harness tools.
+1. Run `npm run build:harness` to compile both the CLI and the MCP harness binary. The harness is dev-only tooling and
+   is not included in the standard `npm run build`.
 2. Call `tui_launch` to start a TUI session. It returns a `sessionId` that all subsequent tool calls require.
    - `tui_launch({})` with no arguments defaults to `command="node"`, `args=["dist/cli/index.mjs"]` (the AgentCore CLI).
    - The `cwd` parameter determines what the TUI sees: if `cwd` is a directory with an `agentcore.config.json`, the TUI
@@ -357,6 +358,6 @@ When `tui_send_keys` doesn't change the screen:
 
 When `tui_launch` returns an error:
 
-1. Ensure `npm run build` was run recently -- the CLI binary at `dist/cli/index.mjs` must be up to date.
+1. Ensure `npm run build:harness` was run recently -- both the CLI binary and the MCP harness must be up to date.
 2. Check that `cwd` points to a valid directory.
 3. The error response includes the screen content at time of failure -- use it to diagnose.

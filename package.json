@@ -30,8 +30,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "agentcore": "dist/cli/index.mjs",
-    "agent-tui-harness": "dist/mcp-harness/index.mjs"
+    "agentcore": "dist/cli/index.mjs"
   },
   "exports": {
     ".": {
@@ -41,7 +40,8 @@
   },
   "files": [
     "dist",
-    "scripts"
+    "scripts",
+    "!dist/mcp-harness"
   ],
   "scripts": {
     "preinstall": "node scripts/check-old-cli.mjs",
@@ -49,6 +49,7 @@
     "build:lib": "tsc -p tsconfig.build.json",
     "build:cli": "node esbuild.config.mjs",
     "build:assets": "node scripts/copy-assets.mjs",
+    "build:harness": "BUILD_HARNESS=1 node esbuild.config.mjs",
     "cli": "npx tsx src/cli/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
@@ -66,7 +67,7 @@
     "test:unit": "vitest run --project unit --coverage",
     "test:e2e": "vitest run --project e2e",
     "test:update-snapshots": "vitest run --project unit --update",
-    "test:tui": "npm run build && vitest run --project tui"
+    "test:tui": "npm run build:harness && vitest run --project tui"
   },
   "dependencies": {
     "@aws-cdk/toolkit-lib": "^1.16.0",
@@ -128,9 +129,6 @@
     "typescript": "^5",
     "typescript-eslint": "^8.50.1",
     "vitest": "^4.0.18"
-  },
-  "optionalDependencies": {
-    "node-pty": "^1.1.0"
   },
   "overridesComments": {
     "minimatch": "GHSA-7r86-cg39-jmmj, GHSA-23c5-xmqv-rm74: minimatch 10.0.0-10.2.2 has ReDoS vulnerabilities. Multiple transitive deps (eslint, typescript-eslint, eslint-plugin-import, eslint-plugin-react, prettier-plugin-sort-imports, aws-cdk-lib) pin older versions. Remove this override once upstream packages update their minimatch dependency to >=10.2.3.",

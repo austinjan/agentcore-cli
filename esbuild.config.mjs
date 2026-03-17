@@ -61,11 +61,17 @@ fs.chmodSync('./dist/cli/index.mjs', '755');
 
 console.log('CLI build complete: dist/cli/index.mjs');
 
-// MCP harness build — only run if the entry point source exists.
-// The source file is created separately; skip gracefully until then.
+// ---------------------------------------------------------------------------
+// MCP harness build — opt-in via BUILD_HARNESS=1
+//
+// The TUI harness is dev-only tooling for AI agents and integration tests.
+// It is NOT shipped to end users. Build it separately with:
+//   BUILD_HARNESS=1 node esbuild.config.mjs
+//   npm run build:harness
+// ---------------------------------------------------------------------------
 const mcpEntryPoint = './src/tui-harness/mcp/index.ts';
 
-if (fs.existsSync(mcpEntryPoint)) {
+if (process.env.BUILD_HARNESS === '1' && fs.existsSync(mcpEntryPoint)) {
   await esbuild.build({
     entryPoints: [mcpEntryPoint],
     outfile: './dist/mcp-harness/index.mjs',
@@ -91,6 +97,6 @@ if (fs.existsSync(mcpEntryPoint)) {
   fs.chmodSync('./dist/mcp-harness/index.mjs', '755');
 
   console.log('MCP harness build complete: dist/mcp-harness/index.mjs');
-} else {
+} else if (process.env.BUILD_HARNESS === '1') {
   console.log(`MCP harness build skipped: entry point ${mcpEntryPoint} does not exist yet`);
 }
