@@ -1,16 +1,20 @@
 import { findConfigRoot, readEnvFile } from '../../../lib';
-import type { AgentCoreProjectSpec } from '../../../schema';
+import type { AgentCoreProjectSpec, ProtocolMode } from '../../../schema';
 import { DevLogger } from '../../logging/dev-logger';
 import {
   ConnectionError,
   type DevConfig,
   DevServer,
   type LogLevel,
+  type McpTool,
   ServerError,
+  callMcpTool,
   createDevServer,
   findAvailablePort,
   getDevConfig,
+  invokeA2AStreaming,
   invokeAgentStreaming,
+  listMcpTools,
   loadProjectConfig,
   waitForPort,
 } from '../../operations/dev';
@@ -47,6 +51,10 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
   const [actualPort, setActualPort] = useState(targetPort);
   const actualPortRef = useRef(targetPort);
   const [restartTrigger, setRestartTrigger] = useState(0);
+
+  // MCP session state
+  const mcpSessionIdRef = useRef<string | undefined>(undefined);
+  const [mcpTools, setMcpTools] = useState<McpTool[]>([]);
 
   const serverRef = useRef<DevServer | null>(null);
   const loggerRef = useRef<DevLogger | null>(null);
@@ -97,6 +105,8 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
     return getDevConfig(options.workingDir, project, configRoot, options.agentName);
   }, [options.workingDir, project, configRoot, options.agentName]);
 
+  const protocol: ProtocolMode = config?.protocol ?? 'HTTP';
+
   // Start server when config is loaded
   useEffect(() => {
     if (!configLoaded || !config) return;
@@ -143,7 +153,9 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
             serverReady = true;
             setStatus('running');
             onReadyRef.current?.();
-            addLog('system', `Server ready at http://localhost:${port}/invocations`);
+
+            const endpointUrl = getEndpointUrlForProtocol(port, config.protocol);
+            addLog('system', `Server ready at ${endpointUrl}`);
           } else {
             addLog(level, message);
           }
@@ -191,8 +203,83 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
     envVars,
   ]);
 
+  // MCP: auto-list tools when server becomes ready
+  const fetchMcpTools = async () => {
+    try {
+      const tools = await listMcpTools(actualPort, loggerRef.current ?? undefined);
+      setMcpTools(tools);
+      mcpSessionIdRef.current = undefined; // Session created during listMcpTools
+
+      // Format tool list as a conversation message
+      if (tools.length === 0) {
+        setConversation([{ role: 'assistant', content: 'No tools available.' }]);
+      } else {
+        const toolLines = tools.map(t => {
+          const desc = t.description ? ` \u2014 ${t.description}` : '';
+          const params = t.inputSchema?.properties
+            ? Object.entries(t.inputSchema.properties as Record<string, { type?: string }>)
+                .map(([name, schema]) => `${name}: ${schema.type ?? 'any'}`)
+                .join(', ')
+            : '';
+          return `  ${t.name}(${params})${desc}`;
+        });
+        const msg =
+          'Available tools:\n' +
+          toolLines.join('\n') +
+          '\n\nType: tool_name {"arg": "value"} to call a tool. Type "list" to refresh.';
+        setConversation([{ role: 'assistant', content: msg }]);
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addLog('error', `Failed to list MCP tools: ${errMsg}`);
+      setConversation([{ role: 'assistant', content: `Failed to list tools: ${errMsg}`, isError: true }]);
+    }
+  };
+
   const invoke = async (message: string) => {
-    // Add user message to conversation
+    // MCP: parse tool calls from chat input
+    if (protocol === 'MCP') {
+      if (message.trim().toLowerCase() === 'list') {
+        await fetchMcpTools();
+        return;
+      }
+
+      // Parse "tool_name {json_args}" or just "tool_name"
+      const match = /^(\S+)\s*(.*)/.exec(message);
+      if (!match) return;
+      const toolName = match[1]!;
+      const argsStr = match[2]?.trim() ?? '';
+
+      setConversation(prev => [...prev, { role: 'user', content: message }]);
+      setIsStreaming(true);
+
+      try {
+        let args: Record<string, unknown> = {};
+        if (argsStr) {
+          args = JSON.parse(argsStr) as Record<string, unknown>;
+        }
+        const result = await callMcpTool(
+          actualPort,
+          toolName,
+          args,
+          mcpSessionIdRef.current,
+          loggerRef.current ?? undefined
+        );
+        setConversation(prev => [...prev, { role: 'assistant', content: `Result: ${result}` }]);
+
+        loggerRef.current?.log('system', `MCP call: ${toolName}(${argsStr})`);
+        loggerRef.current?.log('response', result);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        addLog('error', `MCP call failed: ${errMsg}`);
+        setConversation(prev => [...prev, { role: 'assistant', content: errMsg, isError: true }]);
+      } finally {
+        setIsStreaming(false);
+      }
+      return;
+    }
+
+    // HTTP and A2A: chat-style invoke
     setConversation(prev => [...prev, { role: 'user', content: message }]);
     setStreamingResponse(null);
     setIsStreaming(true);
@@ -200,14 +287,13 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
     let responseContent = '';
 
     try {
-      // Pass logger to capture raw SSE events for debugging
-      const stream = invokeAgentStreaming({
-        port: actualPort,
-        message,
-        logger: loggerRef.current ?? undefined,
-      });
+      // Select streaming function based on protocol
+      const streamFn =
+        protocol === 'A2A'
+          ? invokeA2AStreaming({ port: actualPort, message, logger: loggerRef.current ?? undefined })
+          : invokeAgentStreaming({ port: actualPort, message, logger: loggerRef.current ?? undefined });
 
-      for await (const chunk of stream) {
+      for await (const chunk of streamFn) {
         responseContent += chunk;
         setStreamingResponse(responseContent);
       }
@@ -217,7 +303,7 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
       setStreamingResponse(null);
 
       // Log final response to file
-      loggerRef.current?.log('system', `→ ${message}`);
+      loggerRef.current?.log('system', `\u2192 ${message}`);
       loggerRef.current?.log('response', responseContent);
     } catch (err) {
       const rawMsg = err instanceof Error ? err.message : 'Unknown error';
@@ -294,5 +380,19 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
     hasMemory: (project?.memories?.length ?? 0) > 0,
     hasVpc: project?.agents.find(a => a.name === config?.agentName)?.networkMode === 'VPC',
     modelProvider: project?.agents.find(a => a.name === config?.agentName)?.modelProvider,
+    protocol,
+    mcpTools,
+    fetchMcpTools,
   };
+}
+
+function getEndpointUrlForProtocol(port: number, protocol: ProtocolMode): string {
+  switch (protocol) {
+    case 'MCP':
+      return `http://localhost:${port}/mcp`;
+    case 'A2A':
+      return `http://localhost:${port}/`;
+    default:
+      return `http://localhost:${port}/invocations`;
+  }
 }

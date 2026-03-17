@@ -1,4 +1,5 @@
 import { getVenvExecutable } from '../../../lib/utils/platform';
+import type { ProtocolMode } from '../../../schema';
 import { DevServer, type LogLevel, type SpawnConfig } from './dev-server';
 import { convertEntrypointToModule } from './utils';
 import { spawnSync } from 'child_process';
@@ -8,14 +9,21 @@ import { join } from 'path';
 /**
  * Ensures a Python virtual environment exists and has dependencies installed.
  * Creates the venv and runs uv sync if .venv doesn't exist.
+ * For non-HTTP protocols, checks for python instead of uvicorn.
  * Returns true if successful, false otherwise.
  */
-function ensurePythonVenv(cwd: string, onLog: (level: LogLevel, message: string) => void): boolean {
+function ensurePythonVenv(
+  cwd: string,
+  onLog: (level: LogLevel, message: string) => void,
+  protocol: ProtocolMode = 'HTTP'
+): boolean {
   const venvPath = join(cwd, '.venv');
-  const uvicornPath = getVenvExecutable(venvPath, 'uvicorn');
 
-  // Check if venv and uvicorn already exist
-  if (existsSync(uvicornPath)) {
+  // For HTTP, check uvicorn binary; for MCP/A2A, check python binary
+  const checkBinary = protocol === 'HTTP' ? 'uvicorn' : 'python';
+  const binaryPath = getVenvExecutable(venvPath, checkBinary);
+
+  if (existsSync(binaryPath)) {
     return true;
   }
 
@@ -35,11 +43,16 @@ function ensurePythonVenv(cwd: string, onLog: (level: LogLevel, message: string)
   onLog('info', 'Installing dependencies...');
   const syncResult = spawnSync('uv', ['sync'], { cwd, stdio: 'pipe' });
   if (syncResult.status !== 0) {
-    // Fallback: try installing uvicorn directly if uv sync fails
-    onLog('warn', 'uv sync failed, trying direct uvicorn install...');
-    const pipResult = spawnSync('uv', ['pip', 'install', 'uvicorn'], { cwd, stdio: 'pipe' });
-    if (pipResult.status !== 0) {
-      onLog('error', `Failed to install dependencies: ${pipResult.stderr?.toString() || 'unknown error'}`);
+    if (protocol === 'HTTP') {
+      // Fallback: try installing uvicorn directly if uv sync fails
+      onLog('warn', 'uv sync failed, trying direct uvicorn install...');
+      const pipResult = spawnSync('uv', ['pip', 'install', 'uvicorn'], { cwd, stdio: 'pipe' });
+      if (pipResult.status !== 0) {
+        onLog('error', `Failed to install dependencies: ${pipResult.stderr?.toString() || 'unknown error'}`);
+        return false;
+      }
+    } else {
+      onLog('error', `Failed to install dependencies: ${syncResult.stderr?.toString() || 'unknown error'}`);
       return false;
     }
   }
@@ -52,24 +65,43 @@ function ensurePythonVenv(cwd: string, onLog: (level: LogLevel, message: string)
 export class CodeZipDevServer extends DevServer {
   protected prepare(): Promise<boolean> {
     return Promise.resolve(
-      this.config.isPython ? ensurePythonVenv(this.config.directory, this.options.callbacks.onLog) : true
+      this.config.isPython
+        ? ensurePythonVenv(this.config.directory, this.options.callbacks.onLog, this.config.protocol)
+        : true
     );
   }
 
   protected getSpawnConfig(): SpawnConfig {
-    const { module, directory, isPython } = this.config;
+    const { module, directory, isPython, protocol } = this.config;
     const { port, envVars = {} } = this.options;
+    const env = { ...process.env, ...envVars, PORT: String(port), LOCAL_DEV: '1' };
 
-    const cmd = isPython ? getVenvExecutable(join(directory, '.venv'), 'uvicorn') : 'npx';
-    const args = isPython
-      ? [convertEntrypointToModule(module), '--reload', '--host', '127.0.0.1', '--port', String(port)]
-      : ['tsx', 'watch', (module.split(':')[0] ?? module).replace(/\./g, '/') + '.ts'];
+    if (!isPython) {
+      // Node.js path (unchanged)
+      return {
+        cmd: 'npx',
+        args: ['tsx', 'watch', (module.split(':')[0] ?? module).replace(/\./g, '/') + '.ts'],
+        cwd: directory,
+        env,
+      };
+    }
 
+    const venvDir = join(directory, '.venv');
+
+    if (protocol !== 'HTTP') {
+      // MCP/A2A: run python main.py directly (no module-level ASGI app)
+      const python = getVenvExecutable(venvDir, 'python');
+      const entryFile = module.split(':')[0] ?? module;
+      return { cmd: python, args: [entryFile], cwd: directory, env };
+    }
+
+    // HTTP: uvicorn with hot-reload (existing behavior)
+    const uvicorn = getVenvExecutable(venvDir, 'uvicorn');
     return {
-      cmd,
-      args,
+      cmd: uvicorn,
+      args: [convertEntrypointToModule(module), '--reload', '--host', '127.0.0.1', '--port', String(port)],
       cwd: directory,
-      env: { ...process.env, ...envVars, PORT: String(port), LOCAL_DEV: '1' },
+      env,
     };
   }
 }

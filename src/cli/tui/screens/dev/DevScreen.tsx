@@ -110,6 +110,18 @@ function wrapColoredLines(lines: ColoredLine[], maxWidth: number): ColoredLine[]
   return wrapped;
 }
 
+/** Protocol-specific endpoint URL for display */
+function getEndpointUrl(port: number, protocol: string): string {
+  switch (protocol) {
+    case 'MCP':
+      return `http://localhost:${port}/mcp`;
+    case 'A2A':
+      return `http://localhost:${port}/`;
+    default:
+      return `http://localhost:${port}/invocations`;
+  }
+}
+
 export function DevScreen(props: DevScreenProps) {
   const [mode, setMode] = useState<Mode>('select-agent');
   const [isExiting, setIsExiting] = useState(false);
@@ -179,12 +191,26 @@ export function DevScreen(props: DevScreenProps) {
     hasMemory,
     hasVpc,
     modelProvider,
+    protocol,
+    fetchMcpTools,
   } = useDevServer({
     workingDir,
     port: props.port ?? 8080,
     agentName: selectedAgentName,
     onReady: onServerReady,
   });
+
+  // MCP: auto-list tools when server becomes ready
+  const mcpToolsFetchedRef = useRef(false);
+  useEffect(() => {
+    if (protocol === 'MCP' && status === 'running' && !mcpToolsFetchedRef.current) {
+      mcpToolsFetchedRef.current = true;
+      void fetchMcpTools();
+    }
+    if (status === 'starting') {
+      mcpToolsFetchedRef.current = false;
+    }
+  }, [protocol, status, fetchMcpTools]);
 
   // Handle exit with brief "stopping" message
   const handleExit = useCallback(() => {
@@ -399,13 +425,21 @@ export function DevScreen(props: DevScreenProps) {
     );
   }
 
+  const endpointUrl = getEndpointUrl(actualPort, protocol);
+
   const headerContent = (
     <Box flexDirection="column">
       <Box>
         <Text>Agent: </Text>
         <Text color="green">{config?.agentName}</Text>
       </Box>
-      {modelProvider && (
+      {protocol !== 'HTTP' && (
+        <Box>
+          <Text>Protocol: </Text>
+          <Text color="green">{protocol}</Text>
+        </Box>
+      )}
+      {protocol !== 'MCP' && modelProvider && (
         <Box>
           <Text>Provider: </Text>
           <Text color="green">{modelProvider}</Text>
@@ -413,7 +447,7 @@ export function DevScreen(props: DevScreenProps) {
       )}
       <Box>
         <Text>Server: </Text>
-        <Text color="cyan">http://localhost:{actualPort}/invocations</Text>
+        <Text color="cyan">{endpointUrl}</Text>
       </Box>
       {!isExiting && (
         <Box>
@@ -442,7 +476,7 @@ export function DevScreen(props: DevScreenProps) {
         </Box>
       )}
       {logFilePath && <LogLink filePath={logFilePath} />}
-      {hasMemory && (
+      {protocol !== 'MCP' && hasMemory && (
         <Text color="yellow">
           AgentCore memory is not available when running locally. To test memory, deploy and use invoke.
         </Text>

@@ -1,3 +1,5 @@
+import { invokeA2AStreaming } from './invoke-a2a';
+
 /** Error thrown when the dev server returns a non-OK HTTP response. */
 export class ServerError extends Error {
   constructor(
@@ -238,6 +240,26 @@ export interface InvokeOptions {
   message: string;
   /** Optional logger for error logging */
   logger?: SSELogger;
+}
+
+/**
+ * Protocol-aware invoke dispatcher.
+ * Routes to the appropriate invoke implementation based on protocol.
+ * MCP uses a separate tool-based interface (listMcpTools/callMcpTool).
+ */
+export async function* invokeForProtocol(
+  protocol: string,
+  options: InvokeStreamingOptions
+): AsyncGenerator<string, void, unknown> {
+  switch (protocol) {
+    case 'MCP':
+      throw new Error('Use listMcpTools/callMcpTool for MCP agents');
+    case 'A2A':
+      yield* invokeA2AStreaming(options);
+      break;
+    default:
+      yield* invokeAgentStreaming(options);
+  }
 }
 
 /**

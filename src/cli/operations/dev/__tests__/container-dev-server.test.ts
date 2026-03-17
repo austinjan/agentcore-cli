@@ -82,6 +82,7 @@ const defaultConfig: DevConfig = {
   hasConfig: true,
   isPython: true,
   buildType: 'Container' as any,
+  protocol: 'HTTP',
 };
 
 const mockCallbacks: DevServerCallbacks = { onLog: vi.fn(), onExit: vi.fn() };
