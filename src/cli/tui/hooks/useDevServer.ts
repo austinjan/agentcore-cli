@@ -238,16 +238,31 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
   };
 
   // MCP: auto-list tools when server becomes ready
+  const mcpToolsRef = useRef<McpTool[]>([]);
   const fetchMcpTools = async () => {
     try {
       const result = await listMcpTools(actualPort, loggerRef.current ?? undefined);
       setMcpTools(result.tools);
+      mcpToolsRef.current = result.tools;
       mcpSessionIdRef.current = result.sessionId;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       addLog('error', `Failed to list MCP tools: ${errMsg}`);
       setMcpTools([]);
+      mcpToolsRef.current = [];
     }
+  };
+
+  const formatToolList = (tools: McpTool[]) => {
+    const toolLines = tools.map(t => {
+      const params = t.inputSchema?.properties
+        ? Object.entries(t.inputSchema.properties as Record<string, { type?: string }>)
+            .map(([name, schema]) => `${name}: ${schema.type ?? 'any'}`)
+            .join(', ')
+        : '';
+      return `  ${t.name}(${params})${t.description ? ` - ${t.description}` : ''}`;
+    });
+    return `Available tools (${tools.length}):\n${toolLines.join('\n')}\n\nType: tool_name {"arg": "value"} to call a tool. Type "list" to refresh.`;
   };
 
   const invoke = async (message: string) => {
@@ -256,23 +271,9 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
       if (message.trim().toLowerCase() === 'list') {
         setConversation(prev => [...prev, { role: 'user', content: message }]);
         await fetchMcpTools();
-        // Show full tool list in conversation
-        const toolLines = mcpTools.map(t => {
-          const params = t.inputSchema?.properties
-            ? Object.entries(t.inputSchema.properties as Record<string, { type?: string }>)
-                .map(([name, schema]) => `${name}: ${schema.type ?? 'any'}`)
-                .join(', ')
-            : '';
-          return `  ${t.name}(${params})${t.description ? ` — ${t.description}` : ''}`;
-        });
-        setConversation(prev => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: `Available tools (${mcpTools.length}):\n${toolLines.join('\n')}`,
-            isHint: true,
-          },
-        ]);
+        // Use ref for fresh value after async fetch
+        const tools = mcpToolsRef.current;
+        setConversation(prev => [...prev, { role: 'assistant', content: formatToolList(tools), isHint: true }]);
         return;
       }
 
@@ -403,6 +404,13 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
     setStreamingResponse(null);
   };
 
+  const showMcpHint = () => {
+    const tools = mcpToolsRef.current;
+    if (tools.length > 0) {
+      setConversation(prev => [...prev, { role: 'assistant', content: formatToolList(tools), isHint: true }]);
+    }
+  };
+
   return {
     logs,
     status,
@@ -424,6 +432,7 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
     protocol,
     mcpTools,
     fetchMcpTools,
+    showMcpHint,
     a2aAgentCard,
     a2aStatus,
     fetchAgentCard,

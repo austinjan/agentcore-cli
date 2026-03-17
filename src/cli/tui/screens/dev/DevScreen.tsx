@@ -197,6 +197,7 @@ export function DevScreen(props: DevScreenProps) {
     protocol,
     mcpTools,
     fetchMcpTools,
+    showMcpHint,
     a2aAgentCard,
     a2aStatus,
     fetchAgentCard,
@@ -207,18 +208,21 @@ export function DevScreen(props: DevScreenProps) {
     onReady: onServerReady,
   });
 
-  // MCP: auto-list tools when server becomes ready
+  // MCP: auto-list tools when server becomes ready, show hint in conversation
   const mcpFetchTriggeredRef = useRef(false);
   const [mcpToolsFetched, setMcpToolsFetched] = useState(false);
   useEffect(() => {
     if (protocol === 'MCP' && status === 'running' && !mcpFetchTriggeredRef.current) {
       mcpFetchTriggeredRef.current = true;
-      void fetchMcpTools().then(() => setMcpToolsFetched(true));
+      void fetchMcpTools().then(() => {
+        setMcpToolsFetched(true);
+        showMcpHint();
+      });
     }
     if (status === 'starting') {
       mcpFetchTriggeredRef.current = false;
     }
-  }, [protocol, status, fetchMcpTools]);
+  }, [protocol, status, fetchMcpTools, showMcpHint]);
 
   // A2A: auto-fetch agent card when server becomes ready
   const a2aFetchTriggeredRef = useRef(false);
