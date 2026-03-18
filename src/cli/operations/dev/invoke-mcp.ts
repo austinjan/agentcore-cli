@@ -1,10 +1,7 @@
 import { ConnectionError, type SSELogger, ServerError } from './invoke-types';
+import { isConnectionError, parseJsonRpcResponse, sleep } from './utils';
 
 let requestId = 1;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 export interface McpTool {
   name: string;
@@ -117,9 +114,8 @@ export async function listMcpTools(port: number, logger?: SSELogger): Promise<Mc
       }
 
       lastError = err instanceof Error ? err : new Error(String(err));
-      const isConnectionError = lastError.message.includes('fetch') || lastError.message.includes('ECONNREFUSED');
 
-      if (isConnectionError) {
+      if (isConnectionError(lastError)) {
         const delay = baseDelay * Math.pow(2, attempt);
         logger?.log?.(
           'warn',
@@ -198,31 +194,4 @@ export async function callMcpTool(
   }
 
   return JSON.stringify(parsed.result, null, 2);
-}
-
-/** Parse a JSON-RPC response, handling both plain JSON and SSE-wrapped formats */
-function parseJsonRpcResponse(text: string): Record<string, unknown> {
-  const trimmed = text.trim();
-
-  // Try plain JSON first
-  try {
-    return JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    // Might be SSE format: extract last data: line
-  }
-
-  // Parse SSE format: look for data: lines with JSON-RPC content
-  const lines = trimmed.split('\n');
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!;
-    if (line.startsWith('data: ')) {
-      try {
-        return JSON.parse(line.slice(6)) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-    }
-  }
-
-  return {};
 }

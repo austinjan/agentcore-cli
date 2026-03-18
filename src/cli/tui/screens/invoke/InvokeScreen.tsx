@@ -141,7 +141,7 @@ export function InvokeScreen({
     }
   }, [initialPrompt, phase, messages.length, onExit]);
 
-  // MCP: auto-list tools when agent is selected and ready
+  // MCP: auto-list tools when agent is selected and ready, show hint after fetch
   useEffect(() => {
     const agent = config?.agents[selectedAgent];
     if (agent?.protocol === 'MCP' && phase === 'ready' && mode !== 'select-agent' && !mcpFetchTriggeredRef.current) {

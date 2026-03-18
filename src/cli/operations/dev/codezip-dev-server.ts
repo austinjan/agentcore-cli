@@ -26,14 +26,10 @@ function ensurePythonVenv(
       return true;
     }
   } else {
-    // For MCP/A2A, always run uv sync to ensure deps match pyproject.toml.
-    // uv sync is fast (~100ms) when everything is already installed.
-    if (existsSync(venvPath)) {
-      const syncResult = spawnSync('uv', ['sync'], { cwd, stdio: 'pipe' });
-      if (syncResult.status === 0) {
-        return true;
-      }
-      onLog('warn', `uv sync failed: ${syncResult.stderr?.toString() || 'unknown error'}`);
+    // For MCP/A2A, check python binary as a proxy for "venv + deps installed"
+    const pythonPath = getVenvExecutable(venvPath, 'python');
+    if (existsSync(pythonPath)) {
+      return true;
     }
   }
 

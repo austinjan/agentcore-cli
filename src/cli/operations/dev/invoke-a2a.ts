@@ -1,4 +1,5 @@
 import { ConnectionError, type InvokeStreamingOptions, type SSELogger, ServerError } from './invoke-types';
+import { isConnectionError, sleep } from './utils';
 import { randomUUID } from 'crypto';
 
 let requestId = 1;
@@ -39,9 +40,7 @@ export async function fetchA2AAgentCard(port: number, logger?: SSELogger): Promi
       return card;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      const isConnectionError = error.message.includes('fetch') || error.message.includes('ECONNREFUSED');
-
-      if (isConnectionError && attempt < maxRetries - 1) {
+      if (isConnectionError(error) && attempt < maxRetries - 1) {
         const delay = baseDelay * Math.pow(2, attempt);
         await sleep(delay);
         continue;
@@ -53,10 +52,6 @@ export async function fetchA2AAgentCard(port: number, logger?: SSELogger): Promi
   }
 
   return null;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -142,9 +137,8 @@ export async function* invokeA2AStreaming(options: InvokeStreamingOptions): Asyn
       }
 
       lastError = err instanceof Error ? err : new Error(String(err));
-      const isConnectionError = lastError.message.includes('fetch') || lastError.message.includes('ECONNREFUSED');
 
-      if (isConnectionError) {
+      if (isConnectionError(lastError)) {
         const delay = baseDelay * Math.pow(2, attempt);
         logger?.log?.(
           'warn',

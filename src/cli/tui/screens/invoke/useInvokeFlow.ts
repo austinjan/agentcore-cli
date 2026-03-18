@@ -17,6 +17,7 @@ import {
 } from '../../../aws';
 import { getErrorMessage } from '../../../errors';
 import { InvokeLogger } from '../../../logging';
+import { formatMcpToolList } from '../../../operations/dev/utils';
 import { generateSessionId } from '../../../operations/session';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -140,18 +141,6 @@ export function useInvokeFlow(options: InvokeFlowOptions = {}): InvokeFlowState 
     void load();
   }, [initialSessionId]);
 
-  const formatToolList = (tools: McpToolDef[]) => {
-    const toolLines = tools.map(t => {
-      const params = t.inputSchema?.properties
-        ? Object.entries(t.inputSchema.properties as Record<string, { type?: string }>)
-            .map(([name, schema]) => `${name}: ${schema.type ?? 'any'}`)
-            .join(', ')
-        : '';
-      return `  ${t.name}(${params})${t.description ? ` - ${t.description}` : ''}`;
-    });
-    return `Available tools (${tools.length}):\n${toolLines.join('\n')}\n\nType: tool_name {"arg": "value"} to call a tool. Type "list" to refresh.`;
-  };
-
   const getMcpInvokeOptions = useCallback(() => {
     if (!config) return null;
     const agent = config.agents[selectedAgent];
@@ -174,9 +163,8 @@ export function useInvokeFlow(options: InvokeFlowOptions = {}): InvokeFlowState 
       mcpToolsRef.current = result.tools;
       mcpSessionIdRef.current = result.mcpSessionId;
       setMcpToolsFetched(true);
-      // Show tool list as initial hint
       if (result.tools.length > 0) {
-        setMessages(prev => [...prev, { role: 'assistant', content: formatToolList(result.tools), isHint: true }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: formatMcpToolList(result.tools), isHint: true }]);
       }
     } catch (err) {
       const errMsg = getErrorMessage(err);
@@ -219,8 +207,6 @@ export function useInvokeFlow(options: InvokeFlowOptions = {}): InvokeFlowState 
           setMessages(prev => [...prev, { role: 'user', content: prompt }]);
           setPhase('invoking');
           await fetchMcpTools();
-          const tools = mcpToolsRef.current;
-          setMessages(prev => [...prev, { role: 'assistant', content: formatToolList(tools), isHint: true }]);
           setPhase('ready');
           return;
         }

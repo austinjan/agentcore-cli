@@ -59,6 +59,73 @@ export async function waitForServerReady(port: number, timeoutMs = 60000): Promi
   return false;
 }
 
+/** Sleep helper for retry delays. */
+export function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** Protocol-specific endpoint URL for display. */
+export function getEndpointUrl(port: number, protocol: string): string {
+  switch (protocol) {
+    case 'MCP':
+      return `http://localhost:${port}/mcp`;
+    case 'A2A':
+      return `http://localhost:${port}/`;
+    default:
+      return `http://localhost:${port}/invocations`;
+  }
+}
+
+/** Parse a JSON-RPC response, handling both plain JSON and SSE-wrapped formats. */
+export function parseJsonRpcResponse(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    // Might be SSE format
+  }
+
+  const lines = trimmed.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!;
+    if (line.startsWith('data: ')) {
+      try {
+        return JSON.parse(line.slice(6)) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return {};
+}
+
+/**
+ * Format MCP tools into a displayable list string.
+ */
+export function formatMcpToolList(
+  tools: { name: string; description?: string; inputSchema?: Record<string, unknown> }[]
+): string {
+  const toolLines = tools.map(t => {
+    const params = t.inputSchema?.properties
+      ? Object.entries(t.inputSchema.properties as Record<string, { type?: string }>)
+          .map(([name, schema]) => `${name}: ${schema.type ?? 'any'}`)
+          .join(', ')
+      : '';
+    return `  ${t.name}(${params})${t.description ? ` - ${t.description}` : ''}`;
+  });
+  return `Available tools (${tools.length}):\n${toolLines.join('\n')}\n\nType: tool_name {"arg": "value"} to call a tool. Type "list" to refresh.`;
+}
+
+/**
+ * Check if an error is a connection error (ECONNREFUSED or fetch failure).
+ * Only matches actual network-level failures, not application errors.
+ */
+export function isConnectionError(error: Error): boolean {
+  return error.message.includes('ECONNREFUSED') || error.message === 'fetch failed';
+}
+
 export function convertEntrypointToModule(entrypoint: string): string {
   if (entrypoint.includes(':')) return entrypoint;
   const path = entrypoint.replace(/\.py$/, '').replace(/\//g, '.');

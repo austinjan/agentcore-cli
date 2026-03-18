@@ -1,5 +1,4 @@
 import { findConfigRoot, getWorkingDirectory, readEnvFile } from '../../../lib';
-import type { ProtocolMode } from '../../../schema';
 import { getErrorMessage } from '../../errors';
 import { ExecLogger } from '../../logging';
 import {
@@ -9,6 +8,7 @@ import {
   getAgentPort,
   getDevConfig,
   getDevSupportedAgents,
+  getEndpointUrl,
   invokeAgent,
   invokeAgentStreaming,
   invokeForProtocol,
@@ -23,18 +23,6 @@ import { requireProject } from '../../tui/guards';
 import type { Command } from '@commander-js/extra-typings';
 import { Text, render } from 'ink';
 import React from 'react';
-
-/** Protocol-specific endpoint URL for display */
-function getEndpointUrl(port: number, protocol: ProtocolMode): string {
-  switch (protocol) {
-    case 'MCP':
-      return `http://localhost:${port}/mcp`;
-    case 'A2A':
-      return `http://localhost:${port}/`;
-    default:
-      return `http://localhost:${port}/invocations`;
-  }
-}
 
 // Alternate screen buffer - same as main TUI
 const ENTER_ALT_SCREEN = '\x1B[?1049h\x1B[H';

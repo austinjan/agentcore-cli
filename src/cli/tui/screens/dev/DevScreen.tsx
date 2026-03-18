@@ -1,5 +1,5 @@
 import type { AgentEnvSpec } from '../../../../schema';
-import { getDevSupportedAgents, loadProjectConfig } from '../../../operations/dev';
+import { getDevSupportedAgents, getEndpointUrl, loadProjectConfig } from '../../../operations/dev';
 import { GradientText, LogLink, Panel, Screen, SelectList, TextInput } from '../../components';
 import { type ConversationMessage, useDevServer } from '../../hooks/useDevServer';
 import { Box, Text, useInput, useStdout } from 'ink';
@@ -112,18 +112,6 @@ function wrapColoredLines(lines: ColoredLine[], maxWidth: number): ColoredLine[]
 
 /** Max tools to show in header before truncating */
 const MAX_VISIBLE_TOOLS = 5;
-
-/** Protocol-specific endpoint URL for display */
-function getEndpointUrl(port: number, protocol: string): string {
-  switch (protocol) {
-    case 'MCP':
-      return `http://localhost:${port}/mcp`;
-    case 'A2A':
-      return `http://localhost:${port}/`;
-    default:
-      return `http://localhost:${port}/invocations`;
-  }
-}
 
 export function DevScreen(props: DevScreenProps) {
   const [mode, setMode] = useState<Mode>('select-agent');

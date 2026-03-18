@@ -20,6 +20,7 @@ export {
   invokeA2ARuntime,
   invokeAgentRuntime,
   invokeAgentRuntimeStreaming,
+  mcpInitSession,
   mcpListTools,
   mcpCallTool,
   stopRuntimeSession,

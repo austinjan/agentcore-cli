@@ -5,9 +5,11 @@ import {
   invokeAgentRuntime,
   invokeAgentRuntimeStreaming,
   mcpCallTool,
+  mcpInitSession,
   mcpListTools,
 } from '../../aws';
 import { InvokeLogger } from '../../logging';
+import { formatMcpToolList } from '../../operations/dev/utils';
 import type { InvokeOptions, InvokeResult } from './types';
 
 export interface InvokeContext {
@@ -98,15 +100,7 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
     // list-tools: list available MCP tools
     if (options.prompt === 'list-tools') {
       const result = await mcpListTools(mcpOpts);
-      const toolLines = result.tools.map(t => {
-        const params = t.inputSchema?.properties
-          ? Object.entries(t.inputSchema.properties as Record<string, { type?: string }>)
-              .map(([name, schema]) => `${name}: ${schema.type ?? 'any'}`)
-              .join(', ')
-          : '';
-        return `  ${t.name}(${params})${t.description ? ` - ${t.description}` : ''}`;
-      });
-      const response = `Available tools (${result.tools.length}):\n${toolLines.join('\n')}`;
+      const response = formatMcpToolList(result.tools);
       return {
         success: true,
         agentName: agentSpec.name,
@@ -131,9 +125,9 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
           return { success: false, error: `Invalid JSON for --input: ${options.input}` };
         }
       }
-      // Initialize session first to get mcpSessionId
-      const initResult = await mcpListTools(mcpOpts);
-      const response = await mcpCallTool({ ...mcpOpts, mcpSessionId: initResult.mcpSessionId }, options.tool, args);
+      // Lightweight init to get session ID (no tools/list round-trip)
+      const mcpSessionId = await mcpInitSession(mcpOpts);
+      const response = await mcpCallTool({ ...mcpOpts, mcpSessionId }, options.tool, args);
       return {
         success: true,
         agentName: agentSpec.name,

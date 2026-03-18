@@ -1,3 +1,4 @@
+import { parseJsonRpcResponse } from '../operations/dev/utils';
 import { getCredentialProvider } from './account';
 import {
   BedrockAgentCoreClient,
@@ -295,7 +296,7 @@ async function mcpRpcCall(options: McpInvokeOptions, body: Record<string, unknow
 
   options.logger?.logSSEEvent(`MCP response: ${text}`);
 
-  const parsed = parseMcpJsonRpcResponse(text);
+  const parsed = parseJsonRpcResponse(text);
 
   return {
     result: (parsed.result as Record<string, unknown>) ?? {},
@@ -404,6 +405,33 @@ async function mcpListToolsOnce(options: McpInvokeOptions): Promise<McpListTools
 }
 
 /**
+ * Initialize an MCP session (without listing tools).
+ * Returns just the session ID needed for subsequent tool calls.
+ */
+export async function mcpInitSession(options: McpInvokeOptions): Promise<string | undefined> {
+  const initResult = await mcpRpcCall(options, {
+    jsonrpc: '2.0',
+    id: mcpRequestId++,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: { name: 'agentcore-cli', version: '1.0.0' },
+    },
+  });
+
+  const sessionId = initResult.mcpSessionId;
+  const optionsWithSession = { ...options, mcpSessionId: sessionId };
+
+  await mcpRpcNotify(optionsWithSession, {
+    jsonrpc: '2.0',
+    method: 'notifications/initialized',
+  });
+
+  return sessionId;
+}
+
+/**
  * Call an MCP tool via InvokeAgentRuntime.
  * Retries on cold-start initialization timeouts.
  */
@@ -481,7 +509,7 @@ export async function invokeA2ARuntime(options: A2AInvokeOptions, message: strin
     params: {
       message: {
         role: 'user',
-        parts: [{ type: 'text', text: message }],
+        parts: [{ kind: 'text', text: message }],
         messageId: `msg-${Date.now()}`,
       },
     },
@@ -508,22 +536,21 @@ export async function invokeA2ARuntime(options: A2AInvokeOptions, message: strin
 
   options.logger?.logSSEEvent(`A2A response: ${text}`);
 
-  async function* streamGenerator(): AsyncGenerator<string, void, unknown> {
-    // Parse JSON-RPC response and extract text from artifacts
-    const parsed = parseA2AResponse(text);
-    if (parsed) {
-      yield await Promise.resolve(parsed);
-    }
-  }
+  const parsed = parseA2AResponse(text);
 
   return {
-    stream: streamGenerator(),
+    stream: singleValueStream(parsed),
     sessionId: undefined,
   };
 }
 
-/** Extract text content from A2A JSON-RPC response */
-function parseA2AResponse(text: string): string | null {
+/** Wrap a single string value as an AsyncGenerator for StreamingInvokeResult compatibility. */
+async function* singleValueStream(value: string): AsyncGenerator<string, void, unknown> {
+  yield await Promise.resolve(value);
+}
+
+/** Extract text content from A2A JSON-RPC response. Supports both kind:'text' and type:'text' part formats. */
+function parseA2AResponse(text: string): string {
   try {
     const parsed: unknown = JSON.parse(text);
     if (!parsed || typeof parsed !== 'object') return text;
@@ -540,13 +567,13 @@ function parseA2AResponse(text: string): string | null {
     const result = obj.result as Record<string, unknown> | undefined;
     if (!result) return text;
 
-    const artifacts = result.artifacts as { parts?: { type?: string; text?: string }[] }[] | undefined;
+    const artifacts = result.artifacts as { parts?: { kind?: string; type?: string; text?: string }[] }[] | undefined;
     if (artifacts) {
       const texts: string[] = [];
       for (const artifact of artifacts) {
         if (artifact.parts) {
           for (const part of artifact.parts) {
-            if (part.text !== undefined) {
+            if ((part.kind === 'text' || part.type === 'text') && part.text !== undefined) {
               texts.push(part.text);
             }
           }
@@ -556,12 +583,16 @@ function parseA2AResponse(text: string): string | null {
     }
 
     // Fallback: check history for the last assistant message
-    const history = result.history as { role?: string; parts?: { text?: string }[] }[] | undefined;
+    const history = result.history as
+      | { role?: string; parts?: { kind?: string; type?: string; text?: string }[] }[]
+      | undefined;
     if (history) {
       for (let i = history.length - 1; i >= 0; i--) {
         const msg = history[i];
         if (msg?.role === 'agent' && msg.parts) {
-          const agentTexts = msg.parts.filter(p => p.text !== undefined).map(p => p.text!);
+          const agentTexts = msg.parts
+            .filter(p => (p.kind === 'text' || p.type === 'text') && p.text !== undefined)
+            .map(p => p.text!);
           if (agentTexts.length > 0) return agentTexts.join('');
         }
       }
@@ -571,31 +602,6 @@ function parseA2AResponse(text: string): string | null {
   } catch {
     return text;
   }
-}
-
-/** Parse a JSON-RPC response, handling both plain JSON and SSE-wrapped formats */
-function parseMcpJsonRpcResponse(text: string): Record<string, unknown> {
-  const trimmed = text.trim();
-
-  try {
-    return JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    // Might be SSE format
-  }
-
-  const lines = trimmed.split('\n');
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!;
-    if (line.startsWith('data: ')) {
-      try {
-        return JSON.parse(line.slice(6)) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-    }
-  }
-
-  return {};
 }
 
 /**

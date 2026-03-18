@@ -1,5 +1,6 @@
 import { invokeA2AStreaming } from './invoke-a2a';
 import { ConnectionError, type InvokeStreamingOptions, type SSELogger, ServerError } from './invoke-types';
+import { isConnectionError, sleep } from './utils';
 
 // Re-export shared types so existing consumers don't break
 export { ConnectionError, ServerError, type InvokeStreamingOptions, type SSELogger } from './invoke-types';
@@ -47,13 +48,6 @@ function parseSSE(text: string): string {
     }
   }
   return parts.length > 0 ? parts.join('') : text;
-}
-
-/**
- * Sleep helper for retry delays.
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -182,9 +176,8 @@ export async function* invokeAgentStreaming(
       }
 
       lastError = err instanceof Error ? err : new Error(String(err));
-      const isConnectionError = lastError.message.includes('fetch') || lastError.message.includes('ECONNREFUSED');
 
-      if (isConnectionError) {
+      if (isConnectionError(lastError)) {
         const delay = baseDelay * Math.pow(2, attempt);
         logger?.log?.(
           'warn',
@@ -285,9 +278,8 @@ export async function invokeAgent(portOrOptions: number | InvokeOptions, message
       }
 
       lastError = err instanceof Error ? err : new Error(String(err));
-      const isConnectionError = lastError.message.includes('fetch') || lastError.message.includes('ECONNREFUSED');
 
-      if (isConnectionError) {
+      if (isConnectionError(lastError)) {
         const delay = baseDelay * Math.pow(2, attempt);
         logger?.log?.(
           'warn',

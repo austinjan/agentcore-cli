@@ -14,6 +14,7 @@ import {
   fetchA2AAgentCard,
   findAvailablePort,
   getDevConfig,
+  getEndpointUrl,
   invokeA2AStreaming,
   invokeAgentStreaming,
   listMcpTools,
@@ -21,7 +22,8 @@ import {
   waitForPort,
 } from '../../operations/dev';
 import { getGatewayEnvVars } from '../../operations/dev/gateway-env.js';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatMcpToolList } from '../../operations/dev/utils';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type ServerStatus = 'starting' | 'running' | 'error' | 'stopped';
 
@@ -178,7 +180,7 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
             setStatus('running');
             onReadyRef.current?.();
 
-            const endpointUrl = getEndpointUrlForProtocol(port, config.protocol);
+            const endpointUrl = getEndpointUrl(port, config.protocol);
             addLog('system', `Server ready at ${endpointUrl}`);
           } else {
             addLog(level, message);
@@ -227,22 +229,23 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
     envVars,
   ]);
 
+  // MCP: auto-list tools when server becomes ready
+  const mcpToolsRef = useRef<McpTool[]>([]);
+
   // A2A: fetch agent card when server becomes ready
-  const fetchAgentCard = async () => {
+  const fetchAgentCard = useCallback(async () => {
     try {
-      const card = await fetchA2AAgentCard(actualPort, loggerRef.current ?? undefined);
+      const card = await fetchA2AAgentCard(actualPortRef.current, loggerRef.current ?? undefined);
       setA2aAgentCard(card);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       addLog('warn', `Failed to fetch agent card: ${errMsg}`);
     }
-  };
+  }, []);
 
-  // MCP: auto-list tools when server becomes ready
-  const mcpToolsRef = useRef<McpTool[]>([]);
-  const fetchMcpTools = async () => {
+  const fetchMcpTools = useCallback(async () => {
     try {
-      const result = await listMcpTools(actualPort, loggerRef.current ?? undefined);
+      const result = await listMcpTools(actualPortRef.current, loggerRef.current ?? undefined);
       setMcpTools(result.tools);
       mcpToolsRef.current = result.tools;
       mcpSessionIdRef.current = result.sessionId;
@@ -252,19 +255,7 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
       setMcpTools([]);
       mcpToolsRef.current = [];
     }
-  };
-
-  const formatToolList = (tools: McpTool[]) => {
-    const toolLines = tools.map(t => {
-      const params = t.inputSchema?.properties
-        ? Object.entries(t.inputSchema.properties as Record<string, { type?: string }>)
-            .map(([name, schema]) => `${name}: ${schema.type ?? 'any'}`)
-            .join(', ')
-        : '';
-      return `  ${t.name}(${params})${t.description ? ` - ${t.description}` : ''}`;
-    });
-    return `Available tools (${tools.length}):\n${toolLines.join('\n')}\n\nType: tool_name {"arg": "value"} to call a tool. Type "list" to refresh.`;
-  };
+  }, []);
 
   const invoke = async (message: string) => {
     // MCP: parse tool calls from chat input
@@ -274,7 +265,7 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
         await fetchMcpTools();
         // Use ref for fresh value after async fetch
         const tools = mcpToolsRef.current;
-        setConversation(prev => [...prev, { role: 'assistant', content: formatToolList(tools), isHint: true }]);
+        setConversation(prev => [...prev, { role: 'assistant', content: formatMcpToolList(tools), isHint: true }]);
         return;
       }
 
@@ -408,7 +399,7 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
   const showMcpHint = () => {
     const tools = mcpToolsRef.current;
     if (tools.length > 0) {
-      setConversation(prev => [...prev, { role: 'assistant', content: formatToolList(tools), isHint: true }]);
+      setConversation(prev => [...prev, { role: 'assistant', content: formatMcpToolList(tools), isHint: true }]);
     }
   };
 
@@ -438,15 +429,4 @@ export function useDevServer(options: { workingDir: string; port: number; agentN
     a2aStatus,
     fetchAgentCard,
   };
-}
-
-function getEndpointUrlForProtocol(port: number, protocol: ProtocolMode): string {
-  switch (protocol) {
-    case 'MCP':
-      return `http://localhost:${port}/mcp`;
-    case 'A2A':
-      return `http://localhost:${port}/`;
-    default:
-      return `http://localhost:${port}/invocations`;
-  }
 }
