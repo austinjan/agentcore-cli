@@ -75,11 +75,11 @@ export function useAddGatewayWizard(unassignedTargetsCount = 0) {
   const setJwtConfig = useCallback(
     (jwtConfig: {
       discoveryUrl: string;
-      allowedAudience: string[];
-      allowedClients: string[];
+      allowedAudience?: string[];
+      allowedClients?: string[];
       allowedScopes?: string[];
-      agentClientId?: string;
-      agentClientSecret?: string;
+      clientId?: string;
+      clientSecret?: string;
     }) => {
       setConfig(c => ({
         ...c,
