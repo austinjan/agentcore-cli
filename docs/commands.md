@@ -490,6 +490,7 @@ agentcore dev call-tool --tool myTool --input '{"arg": "value"}'
 | `-l, --logs`           | Non-interactive stdout logging                           |
 | `--tool <name>`        | MCP tool name (with `call-tool` prompt)                  |
 | `--input <json>`       | MCP tool arguments as JSON (with `--tool`)               |
+| `-H, --header <h>`     | Custom header (`"Name: Value"`, repeatable)              |
 
 ### invoke
 
@@ -506,18 +507,20 @@ agentcore invoke --json                      # JSON output
 agentcore invoke call-tool --tool myTool --input '{"key": "value"}'
 ```
 
-| Flag                | Description                                              |
-| ------------------- | -------------------------------------------------------- |
-| `[prompt]`          | Prompt text (positional argument)                        |
-| `--prompt <text>`   | Prompt text (flag, takes precedence over positional)     |
-| `--runtime <name>`  | Specific runtime                                         |
-| `--target <name>`   | Deployment target                                        |
-| `--session-id <id>` | Continue a specific session                              |
-| `--user-id <id>`    | User ID for runtime invocation (default: `default-user`) |
-| `--stream`          | Stream response in real-time                             |
-| `--tool <name>`     | MCP tool name (use with `call-tool` prompt)              |
-| `--input <json>`    | MCP tool arguments as JSON (use with `--tool`)           |
-| `--json`            | JSON output                                              |
+| Flag                 | Description                                              |
+| -------------------- | -------------------------------------------------------- |
+| `[prompt]`           | Prompt text (positional argument)                        |
+| `--prompt <text>`    | Prompt text (flag, takes precedence over positional)     |
+| `--runtime <name>`   | Specific runtime                                         |
+| `--target <name>`    | Deployment target                                        |
+| `--session-id <id>`  | Continue a specific session                              |
+| `--user-id <id>`     | User ID for runtime invocation (default: `default-user`) |
+| `--stream`           | Stream response in real-time                             |
+| `--tool <name>`      | MCP tool name (use with `call-tool` prompt)              |
+| `--input <json>`     | MCP tool arguments as JSON (use with `--tool`)           |
+| `-H, --header <h>`   | Custom header (`"Name: Value"`, repeatable)              |
+| `--bearer-token <t>` | Bearer token for CUSTOM_JWT auth                         |
+| `--json`             | JSON output                                              |
 
 ---
 
