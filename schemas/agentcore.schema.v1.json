@@ -141,6 +141,10 @@
               "type": "string"
             }
           },
+          "executionRoleArn": {
+            "description": "ARN of an existing IAM execution role to use instead of creating a new one.",
+            "type": "string"
+          },
           "authorizerType": {
             "type": "string",
             "enum": ["AWS_IAM", "CUSTOM_JWT"]
