@@ -202,8 +202,7 @@ async function signedRequest(options: {
   });
 
   const credentials = getCredentialProvider() ?? defaultProvider();
-  const stage = process.env.AGENTCORE_STAGE?.toLowerCase();
-  const service = stage === 'beta' || stage === 'gamma' ? 'bedrock-agentcore' : 'bedrock-agentcore-control';
+  const service = 'bedrock-agentcore';
   const signer = new SignatureV4({
     service,
     region,
