@@ -360,7 +360,6 @@ export class ConfigBundlePrimitive extends BasePrimitive<AddConfigBundleOptions,
     this.checkDuplicate(project.configBundles, options.name);
 
     const bundle: ConfigBundle = {
-      type: 'ConfigurationBundle',
       name: options.name,
       ...(options.description && { description: options.description }),
       components: options.components,

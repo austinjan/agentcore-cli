@@ -28,7 +28,7 @@ vi.mock('../../../aws/agentcore-config-bundles', () => ({
 
 const REGION = 'us-west-2';
 
-function makeProjectSpec(configBundles: Array<Record<string, unknown>>) {
+function makeProjectSpec(configBundles: Record<string, unknown>[]) {
   return { configBundles } as any;
 }
 
@@ -59,12 +59,12 @@ describe('setupConfigBundles', () => {
           bundleName: 'MyBundle',
           components: { foo: { type: 'inline', value: 'bar' } },
           commitMessage: 'Create MyBundle',
-        }),
+        })
       );
       expect(result.hasErrors).toBe(false);
       expect(result.results).toHaveLength(1);
       expect(result.results[0]).toMatchObject({ bundleName: 'MyBundle', status: 'created', bundleId: 'b-new' });
-      expect(result.configBundles['MyBundle']).toEqual({
+      expect(result.configBundles.MyBundle).toEqual({
         bundleId: 'b-new',
         bundleArn: 'arn:aws:agentcore:us-west-2:123:bundle/b-new',
         versionId: 'v-1',
@@ -113,7 +113,7 @@ describe('setupConfigBundles', () => {
           parentVersionIds: ['v-1'],
           branchName: 'mainline',
           commitMessage: 'Update MyBundle',
-        }),
+        })
       );
       expect(result.results[0]).toMatchObject({ status: 'updated', versionId: 'v-2' });
       expect(result.hasErrors).toBe(false);
@@ -151,7 +151,7 @@ describe('setupConfigBundles', () => {
       expect(mockUpdateConfigurationBundle).not.toHaveBeenCalled();
       expect(mockCreateConfigurationBundle).not.toHaveBeenCalled();
       expect(result.results[0]).toMatchObject({ bundleName: 'MyBundle', status: 'skipped', versionId: 'v-1' });
-      expect(result.configBundles['MyBundle']).toEqual(existingBundles['MyBundle']);
+      expect(result.configBundles.MyBundle).toEqual(existingBundles.MyBundle);
     });
   });
 
@@ -181,7 +181,6 @@ describe('setupConfigBundles', () => {
         projectSpec: makeProjectSpec([
           {
             name: 'MyBundle',
-            type: 'ConfigurationBundle',
             components: { b: { type: 'inline', value: '2' }, a: { type: 'inline', value: '1' } },
           },
         ]),
@@ -271,7 +270,6 @@ describe('setupConfigBundles', () => {
         projectSpec: makeProjectSpec([
           {
             name: 'MyBundle',
-            type: 'ConfigurationBundle',
             components: { new: { type: 'inline', value: 'data' } },
             // no branchName specified
           },
@@ -282,7 +280,7 @@ describe('setupConfigBundles', () => {
       expect(mockUpdateConfigurationBundle).toHaveBeenCalledWith(
         expect.objectContaining({
           branchName: 'feature-branch',
-        }),
+        })
       );
     });
 
@@ -315,7 +313,6 @@ describe('setupConfigBundles', () => {
         projectSpec: makeProjectSpec([
           {
             name: 'MyBundle',
-            type: 'ConfigurationBundle',
             components: { new: { type: 'inline', value: 'data' } },
             branchName: 'spec-branch',
           },
@@ -326,7 +323,7 @@ describe('setupConfigBundles', () => {
       expect(mockUpdateConfigurationBundle).toHaveBeenCalledWith(
         expect.objectContaining({
           branchName: 'spec-branch',
-        }),
+        })
       );
     });
   });
@@ -342,16 +339,14 @@ describe('setupConfigBundles', () => {
       };
 
       // First call (existing bundle path) throws 404
-      mockGetConfigurationBundleVersion
-        .mockRejectedValueOnce(new Error('404 not found'))
-        .mockResolvedValueOnce({
-          bundleId: 'b-found',
-          bundleArn: 'arn:aws:agentcore:us-west-2:123:bundle/b-found',
-          versionId: 'v-latest',
-          components: { old: { type: 'inline', value: 'data' } },
-          description: undefined,
-          lineageMetadata: { branchName: 'mainline' },
-        });
+      mockGetConfigurationBundleVersion.mockRejectedValueOnce(new Error('404 not found')).mockResolvedValueOnce({
+        bundleId: 'b-found',
+        bundleArn: 'arn:aws:agentcore:us-west-2:123:bundle/b-found',
+        versionId: 'v-latest',
+        components: { old: { type: 'inline', value: 'data' } },
+        description: undefined,
+        lineageMetadata: { branchName: 'mainline' },
+      });
 
       mockListConfigurationBundles.mockResolvedValue({
         bundles: [{ bundleId: 'b-found', bundleName: 'MyBundle' }],
@@ -372,7 +367,6 @@ describe('setupConfigBundles', () => {
         projectSpec: makeProjectSpec([
           {
             name: 'MyBundle',
-            type: 'ConfigurationBundle',
             components: { new: { type: 'inline', value: 'data' } },
           },
         ]),

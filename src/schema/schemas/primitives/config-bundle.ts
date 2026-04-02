@@ -34,7 +34,6 @@ export const ComponentConfigurationMapSchema = z.record(z.string(), ComponentCon
 export type ComponentConfigurationMap = z.infer<typeof ComponentConfigurationMapSchema>;
 
 export const ConfigBundleSchema = z.object({
-  type: z.literal('ConfigurationBundle'),
   name: ConfigBundleNameSchema,
   description: ConfigBundleDescriptionSchema,
   /** Component configurations keyed by component ARN or placeholder. */

@@ -5,10 +5,10 @@ import { CLI_ONLY_EXAMPLES } from './copy';
 import { MissingProjectMessage, WrongDirectoryMessage, getProjectRootMismatch, projectExists } from './guards';
 import { AddFlow } from './screens/add/AddFlow';
 import { CliOnlyScreen } from './screens/cli-only';
-import { EditConfigBundleFlow } from './screens/config-bundle/EditConfigBundleFlow';
 import { CreateScreen } from './screens/create';
 import { DeployScreen } from './screens/deploy/DeployScreen';
 import { DevScreen } from './screens/dev/DevScreen';
+import { EditFlow } from './screens/edit';
 import { EvalHubScreen, EvalScreen } from './screens/eval';
 import { FetchAccessScreen } from './screens/fetch-access';
 import { HelpScreen, HomeScreen } from './screens/home';
@@ -183,7 +183,7 @@ function AppContent() {
 
   if (route.name === 'edit') {
     return (
-      <EditConfigBundleFlow
+      <EditFlow
         isInteractive={true}
         onExit={() => setRoute({ name: 'help' })}
         onBack={() => setRoute({ name: 'help' })}

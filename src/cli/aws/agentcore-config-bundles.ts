@@ -166,6 +166,7 @@ export interface ListConfigurationBundleVersionsResult {
 // HTTP signing helper
 // ============================================================================
 
+// TODO: Remove beta/gamma endpoints before GA merge
 function getControlPlaneEndpoint(region: string): string {
   const stage = process.env.AGENTCORE_STAGE?.toLowerCase();
   if (stage === 'beta') return `https://beta.${region}.elcapcp.genesis-primitives.aws.dev`;
