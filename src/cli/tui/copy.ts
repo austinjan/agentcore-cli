@@ -48,6 +48,7 @@ export const COMMAND_DESCRIPTIONS = {
   recommend: 'Run optimization recommendations for system prompts and tool descriptions.',
   recommendations: 'Manage optimization recommendations (history).',
   run: 'Run on-demand evaluation. Supports --agent-arn for agents outside the project.',
+  stop: 'Stop a running batch evaluation.',
   import: 'Import resources from a Bedrock AgentCore Starter Toolkit project.',
   update: 'Check for and install CLI updates',
   validate: 'Validate agentcore/ config files.',

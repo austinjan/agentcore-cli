@@ -6,10 +6,11 @@ import React, { useMemo } from 'react';
 
 interface RunScreenProps {
   onRunEval: () => void;
+  onRunBatchEval: () => void;
   onExit: () => void;
 }
 
-export function RunScreen({ onRunEval, onExit }: RunScreenProps) {
+export function RunScreen({ onRunEval, onRunBatchEval, onExit }: RunScreenProps) {
   const items: SelectableItem[] = useMemo(
     () => [
       {
@@ -17,13 +18,21 @@ export function RunScreen({ onRunEval, onExit }: RunScreenProps) {
         title: 'On-demand Evaluation',
         description: 'Evaluate agent traces with selected evaluators. CLI also supports --agent-arn.',
       },
+      {
+        id: 'run-batch-eval',
+        title: 'Batch Evaluation',
+        description: 'Run a batch evaluation against agent sessions via CloudWatch.',
+      },
     ],
     []
   );
 
   const nav = useListNavigation({
     items,
-    onSelect: () => onRunEval(),
+    onSelect: item => {
+      if (item.id === 'run-eval') onRunEval();
+      else if (item.id === 'run-batch-eval') onRunBatchEval();
+    },
     onExit,
     isActive: true,
   });

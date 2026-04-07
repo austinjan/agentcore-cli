@@ -3,12 +3,19 @@ import { getCredentialProvider } from './account';
 import {
   BedrockAgentCoreClient,
   EvaluateCommand,
-  type EvaluationReferenceInput,
   InvokeAgentRuntimeCommand,
   StopRuntimeSessionCommand,
 } from '@aws-sdk/client-bedrock-agentcore';
 import type { HttpRequest } from '@smithy/protocol-http';
 import type { DocumentType } from '@smithy/types';
+
+/** Local definition — SDK does not yet export this type. */
+export interface EvaluationReferenceInput {
+  context: { spanContext: { sessionId: string; traceId?: string } };
+  expectedTrajectory?: { toolNames: string[] };
+  assertions?: { text: string }[];
+  expectedResponse?: { text: string };
+}
 
 /**
  * Create a BedrockAgentCoreClient with optional custom header injection middleware.

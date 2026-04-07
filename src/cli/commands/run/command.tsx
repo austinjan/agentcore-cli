@@ -2,6 +2,12 @@ import type { RecommendationType } from '../../aws/agentcore-recommendation';
 import { getErrorMessage } from '../../errors';
 import { handleRunEval } from '../../operations/eval';
 import type { RunEvalOptions } from '../../operations/eval';
+import { saveBatchEvalRun } from '../../operations/eval/batch-eval-storage';
+import { runBatchEvaluationCommand } from '../../operations/eval/run-batch-evaluation';
+import type {
+  BatchEvaluationResult,
+  RunBatchEvaluationCommandResult,
+} from '../../operations/eval/run-batch-evaluation';
 import { runRecommendationCommand, saveRecommendationRun } from '../../operations/recommendation';
 import { COMMAND_DESCRIPTIONS } from '../../tui/copy';
 import { requireProject } from '../../tui/guards';
@@ -141,6 +147,72 @@ export const registerRun = (program: Command) => {
             formatRunOutput(result);
           } else {
             formatRunOutput(result);
+            render(<Text color="red">{result.error}</Text>);
+          }
+
+          process.exit(result.success ? 0 : 1);
+        } catch (error) {
+          if (cliOptions.json) {
+            console.log(JSON.stringify({ success: false, error: getErrorMessage(error) }));
+          } else {
+            render(<Text color="red">Error: {getErrorMessage(error)}</Text>);
+          }
+          process.exit(1);
+        }
+      }
+    );
+
+  runCmd
+    .command('batch-evaluation')
+    .description('Run a batch evaluation against agent sessions')
+    .requiredOption('-a, --agent <name>', 'Agent name from project config')
+    .requiredOption('-e, --evaluator <ids...>', 'Evaluator ID(s) (Builtin.* or custom)')
+    .option('-n, --name <name>', 'Name for the batch evaluation (auto-generated if omitted)')
+    .option('--region <region>', 'AWS region (auto-detected if omitted)')
+    .option('--execution-role <arn>', 'IAM execution role ARN (temporary — will be removed)')
+    .option('--json', 'Output as JSON')
+    .action(
+      async (cliOptions: {
+        agent: string;
+        evaluator: string[];
+        name?: string;
+        region?: string;
+        executionRole?: string;
+        json?: boolean;
+      }) => {
+        requireProject();
+
+        try {
+          const result = await runBatchEvaluationCommand({
+            agent: cliOptions.agent,
+            evaluators: cliOptions.evaluator,
+            name: cliOptions.name,
+            region: cliOptions.region,
+            executionRoleArn: cliOptions.executionRole,
+            onProgress: cliOptions.json
+              ? undefined
+              : (_status, message) => {
+                  console.log(message);
+                },
+          });
+
+          // Save results locally
+          if (result.success) {
+            try {
+              const filePath = saveBatchEvalRun(result);
+              if (!cliOptions.json) {
+                console.log(`\nResults saved to: ${filePath}`);
+              }
+            } catch {
+              // Non-fatal — skip saving
+            }
+          }
+
+          if (cliOptions.json) {
+            console.log(JSON.stringify(result));
+          } else if (result.success) {
+            formatBatchEvalOutput(result);
+          } else {
             render(<Text color="red">{result.error}</Text>);
           }
 
@@ -319,3 +391,43 @@ export const registerRun = (program: Command) => {
       }
     );
 };
+
+function formatBatchEvalOutput(result: RunBatchEvaluationCommandResult): void {
+  console.log(`\nBatch Evaluation: ${result.name ?? result.batchEvaluateId}`);
+  console.log(`ID: ${result.batchEvaluateId}`);
+  console.log(`Status: ${result.status}`);
+  console.log(`Results: ${result.results.length}\n`);
+
+  if (result.results.length === 0) {
+    console.log('  No evaluation results found.');
+    return;
+  }
+
+  // Group by evaluator
+  const byEvaluator = new Map<string, BatchEvaluationResult[]>();
+  for (const r of result.results) {
+    const group = byEvaluator.get(r.evaluatorId) ?? [];
+    group.push(r);
+    byEvaluator.set(r.evaluatorId, group);
+  }
+
+  for (const [evalId, evalResults] of byEvaluator) {
+    const scores = evalResults.filter(r => !r.error).map(r => r.score!);
+    const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+    const errors = evalResults.filter(r => r.error).length;
+    const errorSuffix = errors > 0 ? ` (${errors} errors)` : '';
+
+    console.log(`  ${evalId}: ${avg.toFixed(2)} avg${errorSuffix}`);
+
+    for (const r of evalResults) {
+      if (r.error) {
+        console.log(`    ERROR: ${r.error.slice(0, 80)}`);
+      } else {
+        const labelStr = r.label ? ` (${r.label})` : '';
+        console.log(`    ${r.score?.toFixed(2)}${labelStr}`);
+      }
+    }
+  }
+
+  console.log('');
+}
