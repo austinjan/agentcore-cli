@@ -89,6 +89,7 @@ agentcore create \
 | `--output-dir <dir>`       | Output directory                                                                                               |
 | `--skip-git`               | Skip git initialization                                                                                        |
 | `--skip-python-setup`      | Skip venv setup                                                                                                |
+| `--skip-install`           | Skip all dependency installation (npm install, uv sync)                                                        |
 | `--dry-run`                | Preview without creating                                                                                       |
 | `--json`                   | JSON output                                                                                                    |
 
@@ -149,6 +150,88 @@ agentcore validate -d ./my-project
 | Flag                     | Description       |
 | ------------------------ | ----------------- |
 | `-d, --directory <path>` | Project directory |
+
+### import
+
+Import resources from AWS or from a starter toolkit YAML.
+
+```bash
+# Interactive TUI wizard
+agentcore import
+
+# Import from starter toolkit YAML
+agentcore import --source .bedrock_agentcore.yaml
+agentcore import --source .bedrock_agentcore.yaml --target staging -y
+```
+
+| Flag              | Description                                                  |
+| ----------------- | ------------------------------------------------------------ |
+| `--source <path>` | Path to `.bedrock_agentcore.yaml` configuration file         |
+| `--target <name>` | Deployment target (only needed if project has multiple)      |
+| `-y, --yes`       | Auto-confirm prompts                                         |
+
+#### import runtime
+
+Import an existing AgentCore Runtime from your AWS account.
+
+```bash
+agentcore import runtime
+agentcore import runtime --arn arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/abc123 --code ./src
+agentcore import runtime --arn ... --code ./src --entrypoint handler.py --name MyAgent -y
+```
+
+| Flag                  | Description                                                         |
+| --------------------- | ------------------------------------------------------------------- |
+| `--arn <runtimeArn>`  | Runtime ARN to import                                               |
+| `--code <path>`       | Path to directory containing the entrypoint file                    |
+| `--entrypoint <file>` | Entrypoint file (auto-detected from runtime if omitted, e.g. `main.py`) |
+| `--name <name>`       | Local name for the imported runtime                                 |
+| `-y, --yes`           | Auto-confirm prompts                                                |
+
+#### import memory
+
+Import an existing AgentCore Memory from your AWS account.
+
+```bash
+agentcore import memory
+agentcore import memory --arn arn:aws:bedrock-agentcore:us-east-1:123456789012:memory/def456 --name SharedMemory -y
+```
+
+| Flag                | Description                        |
+| ------------------- | ---------------------------------- |
+| `--arn <memoryArn>` | Memory ARN to import               |
+| `--name <name>`     | Local name for the imported memory |
+| `-y, --yes`         | Auto-confirm prompts               |
+
+#### import evaluator
+
+Import an existing AgentCore Evaluator from your AWS account.
+
+```bash
+agentcore import evaluator
+agentcore import evaluator --arn arn:aws:bedrock-agentcore:us-east-1:123456789012:evaluator/ghi789 --name MyEvaluator -y
+```
+
+| Flag                   | Description                           |
+| ---------------------- | ------------------------------------- |
+| `--arn <evaluatorArn>` | Evaluator ARN to import               |
+| `--name <name>`        | Local name for the imported evaluator |
+| `-y, --yes`            | Auto-confirm prompts                  |
+
+#### import online-eval
+
+Import an existing AgentCore Online Evaluation Config from your AWS account.
+
+```bash
+agentcore import online-eval
+agentcore import online-eval --arn arn:aws:bedrock-agentcore:us-east-1:123456789012:online-eval-config/jkl012 --name QualityMonitor -y
+```
+
+| Flag              | Description                                    |
+| ----------------- | ---------------------------------------------- |
+| `--arn <configArn>` | Online evaluation config ARN to import       |
+| `--name <name>`   | Local name for the imported online eval config |
+| `-y, --yes`       | Auto-confirm prompts                           |
 
 ---
 
@@ -239,10 +322,14 @@ agentcore add memory \
 
 | Flag                   | Description                                                                 |
 | ---------------------- | --------------------------------------------------------------------------- |
-| `--name <name>`        | Memory name                                                                 |
-| `--strategies <types>` | Comma-separated: `SEMANTIC`, `SUMMARIZATION`, `USER_PREFERENCE`, `EPISODIC` |
-| `--expiry <days>`      | Event expiry duration in days (default: 30, min: 7, max: 365)               |
-| `--json`               | JSON output                                                                 |
+| `--name <name>`                    | Memory name                                                                 |
+| `--strategies <types>`             | Comma-separated: `SEMANTIC`, `SUMMARIZATION`, `USER_PREFERENCE`, `EPISODIC` |
+| `--expiry <days>`                  | Event expiry duration in days (default: 30, min: 7, max: 365)               |
+| `--data-stream-arn <arn>`          | Kinesis data stream ARN for memory record streaming                         |
+| `--stream-content-level <level>`   | Stream content level: `FULL_CONTENT` or `METADATA_ONLY`                     |
+| `--delivery-type <type>`           | Delivery target type (default: `kinesis`)                                   |
+| `--stream-delivery-resources <json>` | Stream delivery config as JSON (advanced, overrides flat flags)            |
+| `--json`                           | JSON output                                                                 |
 
 ### add gateway
 
@@ -409,24 +496,42 @@ agentcore add credential \
 
 ### add evaluator
 
-Add a custom LLM-as-a-Judge evaluator. See [Evaluations](evals.md) for full details.
+Add an evaluator. Supports LLM-as-a-Judge (default) and code-based evaluator types. See [Evaluations](evals.md) for full details.
 
 ```bash
+# LLM-as-a-Judge evaluator
 agentcore add evaluator \
   --name ResponseQuality \
   --level SESSION \
   --model us.anthropic.claude-sonnet-4-5-20250514-v1:0 \
   --instructions "Evaluate the response quality. Context: {context}" \
   --rating-scale 1-5-quality
+
+# Code-based evaluator (managed — scaffolds a Python Lambda)
+agentcore add evaluator \
+  --name CustomScorer \
+  --type code-based \
+  --level TRACE
+
+# Code-based evaluator (external — uses existing Lambda)
+agentcore add evaluator \
+  --name ExternalScorer \
+  --type code-based \
+  --level TRACE \
+  --lambda-arn arn:aws:lambda:us-east-1:123456789012:function:my-scorer \
+  --timeout 120
 ```
 
 | Flag                      | Description                                                                |
 | ------------------------- | -------------------------------------------------------------------------- |
 | `--name <name>`           | Evaluator name                                                             |
 | `--level <level>`         | `SESSION`, `TRACE`, or `TOOL_CALL`                                         |
-| `--model <model>`         | Bedrock model ID for the LLM judge                                         |
-| `--instructions <text>`   | Evaluation prompt with placeholders (e.g. `{context}`)                     |
-| `--rating-scale <preset>` | `1-5-quality`, `1-3-simple`, `pass-fail`, `good-neutral-bad`, or custom    |
+| `--type <type>`           | `llm-as-a-judge` (default) or `code-based`                                 |
+| `--model <model>`         | [LLM] Bedrock model ID for the LLM judge                                  |
+| `--instructions <text>`   | [LLM] Evaluation prompt with placeholders (e.g. `{context}`)              |
+| `--rating-scale <preset>` | [LLM] `1-5-quality`, `1-3-simple`, `pass-fail`, `good-neutral-bad`, or custom |
+| `--lambda-arn <arn>`      | [Code-based] Existing Lambda function ARN (external)                       |
+| `--timeout <seconds>`     | [Code-based] Lambda timeout in seconds, 1–300 (default: 60)               |
 | `--config <path>`         | Config JSON file (overrides `--model`, `--instructions`, `--rating-scale`) |
 | `--json`                  | JSON output                                                                |
 
@@ -491,6 +596,7 @@ agentcore dev --runtime MyAgent --port 3000
 agentcore dev --logs                      # Non-interactive
 agentcore dev "Hello" --stream            # Invoke running dev server
 agentcore dev "Hello" --runtime MyAgent    # Invoke specific runtime
+agentcore dev --exec "pip list"            # Run command in dev container
 
 # MCP protocol dev commands
 agentcore dev list-tools
@@ -504,6 +610,7 @@ agentcore dev call-tool --tool myTool --input '{"arg": "value"}'
 | `-r, --runtime <name>` | Runtime to run or invoke (required if multiple runtimes) |
 | `-s, --stream`         | Stream response when invoking                            |
 | `-l, --logs`           | Non-interactive stdout logging                           |
+| `--exec`               | Execute a shell command in the running dev container (Container agents only) |
 | `--tool <name>`        | MCP tool name (with `call-tool` prompt)                  |
 | `--input <json>`       | MCP tool arguments as JSON (with `--tool`)               |
 | `-H, --header <h>`     | Custom header (`"Name: Value"`, repeatable)              |
@@ -518,6 +625,8 @@ agentcore invoke --prompt "Hello" --stream
 agentcore invoke --runtime MyAgent --target staging
 agentcore invoke --session-id abc123         # Continue session
 agentcore invoke --json                      # JSON output
+agentcore invoke --exec "pip list"           # Run shell command in runtime container
+agentcore invoke --exec "python script.py" --timeout 30
 
 # MCP protocol invoke
 agentcore invoke call-tool --tool myTool --input '{"key": "value"}'
@@ -532,6 +641,8 @@ agentcore invoke call-tool --tool myTool --input '{"key": "value"}'
 | `--session-id <id>`  | Continue a specific session                              |
 | `--user-id <id>`     | User ID for runtime invocation (default: `default-user`) |
 | `--stream`           | Stream response in real-time                             |
+| `--exec`             | Execute a shell command in the runtime container         |
+| `--timeout <seconds>`| Timeout in seconds for `--exec` commands                 |
 | `--tool <name>`      | MCP tool name (use with `call-tool` prompt)              |
 | `--input <json>`     | MCP tool arguments as JSON (use with `--tool`)           |
 | `-H, --header <h>`   | Custom header (`"Name: Value"`, repeatable)              |
@@ -621,16 +732,19 @@ agentcore run eval \
 
 | Flag                         | Description                                 |
 | ---------------------------- | ------------------------------------------- |
-| `-r, --runtime <name>`       | Runtime name from project                   |
-| `--runtime-arn <arn>`        | Runtime ARN (standalone mode)               |
-| `-e, --evaluator <names...>` | Evaluator name(s) or `Builtin.*` IDs        |
-| `--evaluator-arn <arns...>`  | Evaluator ARN(s) (use with `--runtime-arn`) |
-| `--region <region>`          | AWS region (required with `--runtime-arn`)  |
-| `-s, --session-id <id>`      | Evaluate a specific session                 |
-| `-t, --trace-id <id>`        | Evaluate a specific trace                   |
-| `--days <days>`              | Lookback window in days (default: 7)        |
-| `--output <path>`            | Custom output file path                     |
-| `--json`                     | JSON output                                 |
+| `-r, --runtime <name>`            | Runtime name from project                              |
+| `--runtime-arn <arn>`             | Runtime ARN (standalone mode)                          |
+| `-e, --evaluator <names...>`      | Evaluator name(s) or `Builtin.*` IDs                   |
+| `--evaluator-arn <arns...>`       | Evaluator ARN(s) (use with `--runtime-arn`)            |
+| `--region <region>`               | AWS region (required with `--runtime-arn`)             |
+| `-s, --session-id <id>`           | Evaluate a specific session                            |
+| `-t, --trace-id <id>`             | Evaluate a specific trace                              |
+| `--days <days>`                   | Lookback window in days (default: 7)                   |
+| `-A, --assertion <text...>`       | Ground truth assertion (repeatable)                    |
+| `--expected-trajectory <names>`   | Expected tool calls in order (comma-separated)         |
+| `--expected-response <text>`      | Expected agent response text                           |
+| `--output <path>`                 | Custom output file path                                |
+| `--json`                          | JSON output                                            |
 
 ### evals history
 
@@ -713,10 +827,11 @@ agentcore fetch access --name MyAgent --type agent --target staging
 
 | Flag              | Description                                   |
 | ----------------- | --------------------------------------------- |
-| `--name <name>`   | Gateway or agent name                         |
-| `--type <type>`   | Resource type: `gateway` (default) or `agent` |
-| `--target <name>` | Deployment target                             |
-| `--json`          | JSON output                                   |
+| `--name <name>`            | Gateway or agent name                                |
+| `--type <type>`            | Resource type: `gateway` (default) or `agent`        |
+| `--target <name>`          | Deployment target                                    |
+| `--identity-name <name>`   | Identity credential name for token fetch             |
+| `--json`                   | JSON output                                          |
 
 ### package
 

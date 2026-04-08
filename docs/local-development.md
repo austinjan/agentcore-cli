@@ -98,6 +98,41 @@ Changes to your code are picked up by uvicorn's `--reload` inside the container 
 
 See [Container Builds](container-builds.md) for full details on container development.
 
+## Exec Mode
+
+Run shell commands directly inside running dev containers or deployed runtime containers.
+
+### Dev Exec
+
+```bash
+# Non-interactive
+agentcore dev --exec "pip list"
+agentcore dev --exec "python -c 'import sys; print(sys.version)'"
+
+# TUI: prefix with ! to enter exec mode
+agentcore dev
+# Then in the TUI prompt: !pip list
+# Use !! to escalate to container exec: !!ls /app
+```
+
+> **Note**: `--exec` is only available for Container build agents.
+
+### Invoke Exec
+
+Run commands in deployed runtime containers:
+
+```bash
+agentcore invoke --exec "pip list"
+agentcore invoke --exec "python script.py" --timeout 30
+```
+
+| Flag                  | Description                              |
+| --------------------- | ---------------------------------------- |
+| `--exec`              | Execute a shell command in the container |
+| `--timeout <seconds>` | Timeout in seconds for exec commands     |
+
+---
+
 ## Dev vs Deployed Behavior
 
 | Aspect     | Local Dev                    | Deployed                   |

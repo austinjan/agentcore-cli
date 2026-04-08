@@ -220,6 +220,55 @@ Memory events expire after a configurable duration (7-365 days, default 30):
 }
 ```
 
+## Memory Record Streaming
+
+Memory record streaming delivers memory events to a Kinesis data stream in real-time, enabling downstream analytics and processing.
+
+### CLI Flags
+
+```bash
+agentcore add memory \
+  --name StreamedMemory \
+  --strategies SEMANTIC \
+  --data-stream-arn arn:aws:kinesis:us-east-1:123456789012:stream/my-stream \
+  --stream-content-level FULL_CONTENT
+```
+
+| Flag                                 | Description                                              |
+| ------------------------------------ | -------------------------------------------------------- |
+| `--data-stream-arn <arn>`            | Kinesis data stream ARN                                  |
+| `--stream-content-level <level>`     | `FULL_CONTENT` (default) or `METADATA_ONLY`              |
+| `--delivery-type <type>`             | Delivery target type (default: `kinesis`)                |
+| `--stream-delivery-resources <json>` | Advanced: stream delivery config as JSON (overrides flat flags) |
+
+### Configuration
+
+In `agentcore.json`:
+
+```json
+{
+  "memories": [
+    {
+      "name": "StreamedMemory",
+      "strategies": [{ "type": "SEMANTIC" }],
+      "streamDeliveryResources": {
+        "deliveryTargets": [
+          {
+            "type": "kinesis",
+            "kinesisDataStream": {
+              "streamArn": "arn:aws:kinesis:us-east-1:123456789012:stream/my-stream"
+            }
+          }
+        ],
+        "contentLevel": "FULL_CONTENT"
+      }
+    }
+  ]
+}
+```
+
+---
+
 ## Using Memory in Code
 
 The memory ID is available via environment variable:

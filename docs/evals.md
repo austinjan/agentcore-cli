@@ -27,32 +27,64 @@ traffic.
 Scores range from **0 (worst) to 1 (best)**, normalized from the rating scale you define. For example, a score of `3` on
 a 1–5 numerical scale produces a normalized score of `0.60`.
 
+## Evaluator Types
+
+AgentCore supports two evaluator types:
+
+| Type                | Description                                                                       |
+| ------------------- | --------------------------------------------------------------------------------- |
+| **LLM-as-a-Judge**  | Uses a Bedrock LLM to evaluate agent responses against a scoring rubric (default) |
+| **Code-based**      | Runs custom Python logic in a Lambda function for deterministic or rule-based evaluation |
+
+Code-based evaluators come in two flavors:
+- **Managed** — the CLI scaffolds a Python Lambda project in your agent directory. You write the scoring logic and deploy it with `agentcore deploy`.
+- **External** — you bring an existing Lambda function via `--lambda-arn`.
+
+> **Note**: Code-based evaluators cannot be used with online eval configs. Use LLM-as-a-Judge evaluators for continuous monitoring.
+
 ## Adding an Evaluator
 
 ```bash
 # Interactive (TUI wizard)
 agentcore add evaluator
 
-# Non-interactive
+# LLM-as-a-Judge (default)
 agentcore add evaluator \
   --name ResponseQuality \
   --level SESSION \
   --model us.anthropic.claude-sonnet-4-5-20250514-v1:0 \
   --instructions "Evaluate the agent response quality. Context: {context}" \
   --rating-scale 1-5-quality
+
+# Code-based evaluator (managed — scaffolds Lambda project)
+agentcore add evaluator \
+  --name CustomScorer \
+  --type code-based \
+  --level TRACE
+
+# Code-based evaluator (external — uses existing Lambda)
+agentcore add evaluator \
+  --name ExternalScorer \
+  --type code-based \
+  --level TRACE \
+  --lambda-arn arn:aws:lambda:us-east-1:123456789012:function:my-scorer \
+  --timeout 120
 ```
 
 | Flag                      | Description                                                                             |
 | ------------------------- | --------------------------------------------------------------------------------------- |
 | `--name <name>`           | Evaluator name (alphanumeric + underscore, max 48 chars)                                |
 | `--level <level>`         | Evaluation level: `SESSION`, `TRACE`, `TOOL_CALL`                                       |
-| `--model <model>`         | Bedrock model ID for the LLM judge                                                      |
-| `--instructions <text>`   | Evaluation prompt (must include level-appropriate placeholders — see below)             |
-| `--rating-scale <preset>` | Rating scale preset or custom format (default: `1-5-quality`)                           |
+| `--type <type>`           | `llm-as-a-judge` (default) or `code-based`                                              |
+| `--model <model>`         | [LLM] Bedrock model ID for the LLM judge                                                |
+| `--instructions <text>`   | [LLM] Evaluation prompt (must include level-appropriate placeholders — see below)       |
+| `--rating-scale <preset>` | [LLM] Rating scale preset or custom format (default: `1-5-quality`)                     |
+| `--lambda-arn <arn>`      | [Code-based] Existing Lambda function ARN (external)                                    |
+| `--timeout <seconds>`     | [Code-based] Lambda timeout in seconds, 1–300 (default: 60)                             |
 | `--config <path>`         | Path to evaluator config JSON (overrides `--model`, `--instructions`, `--rating-scale`) |
 | `--json`                  | JSON output                                                                             |
 
-> **Note**: `--instructions` is required in non-interactive mode unless `--config` is provided.
+> **Note**: For LLM-as-a-Judge, `--instructions` is required in non-interactive mode unless `--config` is provided.
 
 ### Instruction Placeholders
 
@@ -171,20 +203,43 @@ agentcore run eval \
   --evaluator ResponseQuality \
   --session-id abc123 \
   --days 7
+
+# With ground truth reference inputs
+agentcore run eval \
+  --runtime MyAgent \
+  --evaluator ResponseQuality \
+  --assertion "Agent completed the task" \
+  --assertion "Response was polite" \
+  --expected-trajectory "search_docs,summarize" \
+  --expected-response "Here is the summary..."
 ```
 
-| Flag                         | Description                                        |
-| ---------------------------- | -------------------------------------------------- |
-| `-r, --runtime <name>`       | Runtime name from project config                   |
-| `--runtime-arn <arn>`        | Runtime ARN (standalone mode, no project required) |
-| `-e, --evaluator <names...>` | Evaluator name(s) from project or `Builtin.*` IDs  |
-| `--evaluator-arn <arns...>`  | Evaluator ARN(s) (use with `--runtime-arn`)        |
-| `--region <region>`          | AWS region (required with `--runtime-arn`)         |
-| `-s, --session-id <id>`      | Evaluate a specific session only                   |
-| `-t, --trace-id <id>`        | Evaluate a specific trace only                     |
-| `--days <days>`              | Lookback window in days (default: 7)               |
-| `--output <path>`            | Custom output file path                            |
-| `--json`                     | JSON output                                        |
+| Flag                              | Description                                        |
+| --------------------------------- | -------------------------------------------------- |
+| `-r, --runtime <name>`            | Runtime name from project config                   |
+| `--runtime-arn <arn>`             | Runtime ARN (standalone mode, no project required) |
+| `-e, --evaluator <names...>`      | Evaluator name(s) from project or `Builtin.*` IDs  |
+| `--evaluator-arn <arns...>`       | Evaluator ARN(s) (use with `--runtime-arn`)        |
+| `--region <region>`               | AWS region (required with `--runtime-arn`)         |
+| `-s, --session-id <id>`           | Evaluate a specific session only                   |
+| `-t, --trace-id <id>`             | Evaluate a specific trace only                     |
+| `--days <days>`                   | Lookback window in days (default: 7)               |
+| `-A, --assertion <text...>`       | Ground truth assertion (repeatable)                |
+| `--expected-trajectory <names>`   | Expected tool calls in order (comma-separated)     |
+| `--expected-response <text>`      | Expected agent response text                       |
+| `--output <path>`                 | Custom output file path                            |
+| `--json`                          | JSON output                                        |
+
+### Ground Truth Reference Inputs
+
+Ground truth inputs let you provide expected outcomes for evaluation. These are injected into evaluator instructions via placeholders:
+
+| Placeholder                  | Source Flag                  |
+| ---------------------------- | ---------------------------- |
+| `{assertions}`               | `--assertion`                |
+| `{expected_tool_trajectory}` | `--expected-trajectory`      |
+| `{actual_tool_trajectory}`   | Auto-populated from traces   |
+| `{expected_response}`        | `--expected-response`        |
 
 > **Note**: Traces may take 5–10 minutes to appear after agent invocations. If a run returns no sessions, try increasing
 > `--days` or waiting for traces to propagate.
