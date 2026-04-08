@@ -129,7 +129,7 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
           promptFile: config.inputSource === 'file' ? config.content : undefined,
           tools: config.tools
             ? config.tools
-                .split(',')
+                .split(/,(?=[a-zA-Z0-9_\-.]+:)/)
                 .map(t => t.trim())
                 .filter(Boolean)
             : undefined,

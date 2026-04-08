@@ -242,8 +242,8 @@ export const registerRun = (program: Command) => {
     .option('--bundle-name <name>', 'Read current content from a deployed config bundle')
     .option('--bundle-version <version>', 'Config bundle version (used with --bundle-name)')
     .option(
-      '--tools <names>',
-      'Tool name:description pairs, comma-separated (e.g. "search:Searches the web,calc:Does math")'
+      '--tools <pair...>',
+      'Tool name:description pairs (repeatable, e.g. --tools "search:Searches the web" --tools "calc:Does math")'
     )
     .option('--spans-file <path>', 'JSON file with OTEL session spans (use instead of CloudWatch traces)')
     .option('--lookback <days>', 'How far back to search for traces in CloudWatch (days)', '7')
@@ -260,7 +260,7 @@ export const registerRun = (program: Command) => {
         inline?: string;
         bundleName?: string;
         bundleVersion?: string;
-        tools?: string;
+        tools?: string[];
         spansFile?: string;
         lookback: string;
         sessionId?: string[];
@@ -329,7 +329,7 @@ export const registerRun = (program: Command) => {
             inlineContent: cliOptions.inline,
             bundleName: cliOptions.bundleName,
             bundleVersion: cliOptions.bundleVersion,
-            tools: cliOptions.tools ? cliOptions.tools.split(',').map(t => t.trim()) : undefined,
+            tools: cliOptions.tools,
             lookbackDays: parseInt(cliOptions.lookback, 10),
             sessionIds: cliOptions.sessionId,
             spansFile: cliOptions.spansFile,
