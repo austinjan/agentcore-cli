@@ -12,11 +12,20 @@ function getAllSteps(
   inputSource: RecommendationInputSourceKind,
   traceSource: TraceSourceKind
 ): RecommendationStep[] {
-  const steps: RecommendationStep[] = ['type', 'agent', 'evaluator', 'inputSource'];
+  const steps: RecommendationStep[] = ['type', 'agent'];
 
-  // Content step for inline/file; skip for config-bundle
-  if (inputSource === 'inline' || inputSource === 'file') {
-    steps.push('content');
+  // Evaluator step only for system prompt recommendations (tool desc API does not accept evaluators)
+  if (type === 'SYSTEM_PROMPT_RECOMMENDATION') {
+    steps.push('evaluator');
+  }
+
+  // For system prompt: ask input source and content
+  // For tool description: skip inputSource/content (tools step handles it)
+  if (type === 'SYSTEM_PROMPT_RECOMMENDATION') {
+    steps.push('inputSource');
+    if (inputSource === 'inline' || inputSource === 'file') {
+      steps.push('content');
+    }
   }
 
   // Tools step only for tool description recommendations

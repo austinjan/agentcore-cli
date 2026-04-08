@@ -210,13 +210,11 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
     isActive: isAgentStep,
   });
 
-  const evaluatorNav = useMultiSelectNavigation({
+  const evaluatorNav = useListNavigation({
     items: evaluatorItems,
-    getId: item => item.id,
-    onConfirm: ids => wizard.setEvaluators(ids),
+    onSelect: item => wizard.setEvaluators([item.id]),
     onExit: () => wizard.goBack(),
     isActive: isEvaluatorStep,
-    requireSelection: true,
   });
 
   const inputSourceNav = useListNavigation({
@@ -260,7 +258,7 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
   // ── Help text ─────────────────────────────────────────────────────────────
 
   const helpText = isEvaluatorStep
-    ? HELP_TEXT.MULTI_SELECT
+    ? HELP_TEXT.NAVIGATE_SELECT
     : isSessionsStep
       ? sessionPhase === 'loading'
         ? ''
@@ -282,10 +280,15 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
   const confirmFields = [
     { label: 'Type', value: isSystemPrompt ? 'System Prompt' : 'Tool Description' },
     { label: 'Agent', value: wizard.config.agent },
-    {
-      label: 'Evaluator(s)',
-      value: wizard.config.evaluators.map(e => (e.includes('/') ? e.split('/').pop()! : e)).join(', ') || '(none)',
-    },
+    ...(isSystemPrompt
+      ? [
+          {
+            label: 'Evaluator',
+            value:
+              wizard.config.evaluators.map(e => (e.includes('/') ? e.split('/').pop()! : e)).join(', ') || '(none)',
+          },
+        ]
+      : []),
     { label: 'Input', value: wizard.config.inputSource === 'file' ? `File: ${wizard.config.content}` : 'Inline' },
     {
       label: 'Traces',
@@ -331,14 +334,12 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
         )}
 
         {isEvaluatorStep && (
-          <WizardMultiSelect
-            title="Select evaluator(s)"
-            description="Space to toggle, Enter to confirm (at least one required)"
+          <WizardSelect
+            title="Select evaluator"
+            description="System prompt optimization requires exactly one evaluator"
             items={evaluatorItems}
-            cursorIndex={evaluatorNav.cursorIndex}
-            selectedIds={evaluatorNav.selectedIds}
+            selectedIndex={evaluatorNav.selectedIndex}
             emptyMessage="No evaluators available."
-            maxVisibleItems={8}
           />
         )}
 

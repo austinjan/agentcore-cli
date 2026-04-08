@@ -31,7 +31,7 @@ export const COMMAND_DESCRIPTIONS = {
   /** Main program description */
   program: 'Build and deploy Agentic AI applications on AgentCore',
   /** Command descriptions */
-  add: 'Add resources (agent, evaluator, online-eval, memory, credential, target)',
+  add: 'Add resources to project config.',
   create: 'Create a new AgentCore project',
   deploy: 'Deploy project infrastructure to AWS via CDK.',
   dev: 'Launch local dev server, or invoke an agent locally.',
@@ -41,15 +41,15 @@ export const COMMAND_DESCRIPTIONS = {
   remove: 'Remove resources from project config.',
   status: 'Show deployed resource details and status.',
   traces: 'View and download agent traces.',
-  evals: 'View past eval run results.',
+  evals: 'View saved eval and batch eval results from past runs.',
   fetch: 'Fetch access info for deployed resources.',
   pause: 'Pause an online eval config. Supports --arn for configs outside the project.',
   resume: 'Resume a paused online eval config. Supports --arn for configs outside the project.',
   recommend: 'Run optimization recommendations for system prompts and tool descriptions.',
-  recommendations: 'Manage optimization recommendations (history).',
-  run: 'Run on-demand evaluation. Supports --agent-arn for agents outside the project.',
+  recommendations: 'View recommendation history from past runs.',
+  run: 'Run evaluations, batch evaluations, or optimization recommendations.',
   stop: 'Stop a running batch evaluation.',
-  import: 'Import resources from a Bedrock AgentCore Starter Toolkit project.',
+  import: 'Import a runtime, memory, or starter toolkit into this project. [experimental]',
   update: 'Check for and install CLI updates',
   validate: 'Validate agentcore/ config files.',
   'config-bundle': 'Manage configuration bundle versions and diffs.',
@@ -65,7 +65,7 @@ export const CLI_ONLY_EXAMPLES: Record<string, { description: string; examples: 
     examples: [
       'agentcore logs',
       'agentcore logs --since 30m --level error',
-      'agentcore logs --agent MyAgent --query "timeout"',
+      'agentcore logs --runtime MyAgent --query "timeout"',
       'agentcore logs evals --since 1h',
     ],
   },
@@ -84,5 +84,54 @@ export const CLI_ONLY_EXAMPLES: Record<string, { description: string; examples: 
   resume: {
     description: 'Resume a paused online eval config. This command runs in the terminal.',
     examples: ['agentcore resume online-eval <name>', 'agentcore resume online-eval --arn <arn>'],
+  },
+  'run eval': {
+    description: 'Run on-demand evaluation of runtime traces against one or more evaluators.',
+    examples: [
+      'agentcore run eval -r MyAgent -e Builtin.Correctness',
+      'agentcore run eval -r MyAgent -e Builtin.Faithfulness --lookback 14',
+      'agentcore run eval -r MyAgent -e Builtin.Correctness -A "Must mention pricing" --expected-response "The price is $10"',
+      'agentcore run eval --runtime-arn <arn> --evaluator-arn <arn> --region us-east-1',
+    ],
+  },
+  'run batch-evaluation': {
+    description: 'Run evaluators in batch across all agent sessions found in CloudWatch.',
+    examples: [
+      'agentcore run batch-evaluation -r MyAgent -e Builtin.Correctness',
+      'agentcore run batch-evaluation -r MyAgent -e Builtin.Correctness Builtin.Faithfulness --json',
+      'agentcore run batch-evaluation -r MyAgent -e Builtin.Completeness -n "weekly-check"',
+    ],
+  },
+  'run recommendation': {
+    description: 'Optimize system prompts or tool descriptions using agent traces.',
+    examples: [
+      'agentcore run recommendation -t system-prompt -r MyAgent -e Builtin.Correctness --inline "You are a helpful assistant"',
+      'agentcore run recommendation -t system-prompt -r MyAgent -e Builtin.Correctness --prompt-file ./prompt.txt',
+      'agentcore run recommendation -t tool-description -r MyAgent --tools "search:Searches the web,calc:Does math"',
+      'agentcore run recommendation -t system-prompt -r MyAgent -e Builtin.Correctness --bundle-name MyBundle',
+    ],
+  },
+  'config-bundle': {
+    description: 'View configuration bundle version history and compare versions.',
+    examples: [
+      'agentcore config-bundle versions --bundle MyBundle',
+      'agentcore config-bundle versions --bundle MyBundle --latest-per-branch',
+      'agentcore config-bundle diff --bundle MyBundle --from v1-id --to v2-id',
+    ],
+  },
+  stop: {
+    description: 'Stop a running batch evaluation.',
+    examples: [
+      'agentcore stop batch-evaluation -i <batch-eval-id>',
+      'agentcore stop batch-evaluation -i <batch-eval-id> --json',
+    ],
+  },
+  evals: {
+    description: 'View saved eval and batch eval results from past runs.',
+    examples: [
+      'agentcore evals history',
+      'agentcore evals history -r MyAgent --limit 5',
+      'agentcore evals history --json',
+    ],
   },
 };

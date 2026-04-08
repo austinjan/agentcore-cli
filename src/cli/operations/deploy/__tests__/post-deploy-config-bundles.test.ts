@@ -88,7 +88,7 @@ describe('setupConfigBundles', () => {
         versionId: 'v-1',
         components: { foo: { type: 'inline', value: 'old' } },
         description: undefined,
-        lineageMetadata: { branchName: 'mainline' },
+        lineageMetadata: { branchName: 'main' },
       });
 
       mockUpdateConfigurationBundle.mockResolvedValue({
@@ -111,7 +111,7 @@ describe('setupConfigBundles', () => {
           bundleId: 'b-123',
           components: { foo: { type: 'inline', value: 'new' } },
           parentVersionIds: ['v-1'],
-          branchName: 'mainline',
+          branchName: 'main',
           commitMessage: 'Update MyBundle',
         })
       );
@@ -137,7 +137,7 @@ describe('setupConfigBundles', () => {
         versionId: 'v-1',
         components,
         description: 'My desc',
-        lineageMetadata: { branchName: 'mainline' },
+        lineageMetadata: { branchName: 'main' },
       });
 
       const result = await setupConfigBundles({
@@ -172,7 +172,7 @@ describe('setupConfigBundles', () => {
         versionId: 'v-1',
         components: { a: { type: 'inline', value: '1' }, b: { type: 'inline', value: '2' } },
         description: undefined,
-        lineageMetadata: { branchName: 'mainline' },
+        lineageMetadata: { branchName: 'main' },
       });
 
       // Spec has same keys in different order
@@ -202,7 +202,7 @@ describe('setupConfigBundles', () => {
         },
       };
 
-      mockDeleteConfigurationBundle.mockResolvedValue({ success: true });
+      mockDeleteConfigurationBundle.mockResolvedValue(undefined);
 
       const result = await setupConfigBundles({
         region: REGION,
@@ -218,7 +218,7 @@ describe('setupConfigBundles', () => {
       expect(result.hasErrors).toBe(false);
     });
 
-    it('should report error status when delete returns success false', async () => {
+    it('should report error status when delete throws', async () => {
       const existingBundles = {
         OrphanBundle: {
           bundleId: 'b-orphan',
@@ -227,7 +227,7 @@ describe('setupConfigBundles', () => {
         },
       };
 
-      mockDeleteConfigurationBundle.mockResolvedValue({ success: false, error: 'Access denied' });
+      mockDeleteConfigurationBundle.mockRejectedValue(new Error('Access denied'));
 
       const result = await setupConfigBundles({
         region: REGION,
@@ -345,7 +345,7 @@ describe('setupConfigBundles', () => {
         versionId: 'v-latest',
         components: { old: { type: 'inline', value: 'data' } },
         description: undefined,
-        lineageMetadata: { branchName: 'mainline' },
+        lineageMetadata: { branchName: 'main' },
       });
 
       mockListConfigurationBundles.mockResolvedValue({

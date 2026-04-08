@@ -16,11 +16,12 @@ import {
   Panel,
   Screen,
   StepIndicator,
+  StepProgress,
   TextInput,
   WizardMultiSelect,
   WizardSelect,
 } from '../../components';
-import type { SelectableItem } from '../../components';
+import type { SelectableItem, Step } from '../../components';
 import { HELP_TEXT } from '../../constants';
 import { useListNavigation, useMultiSelectNavigation } from '../../hooks';
 import type { EvaluatorItem } from '../online-eval/types';
@@ -51,7 +52,7 @@ const STEP_LABELS: Record<BatchEvalStep, string> = {
 type FlowState =
   | { name: 'loading' }
   | { name: 'wizard'; agents: AgentItem[]; evaluators: EvaluatorItem[] }
-  | { name: 'running'; config: BatchEvalConfig; progress: string }
+  | { name: 'running'; config: BatchEvalConfig; steps: Step[]; elapsed: number }
   | { name: 'results'; result: RunBatchEvaluationCommandResult }
   | { name: 'creds-error'; message: string }
   | { name: 'error'; message: string };
@@ -140,7 +141,12 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
   }, [flow.name]);
 
   const handleWizardComplete = useCallback((config: BatchEvalConfig) => {
-    setFlow({ name: 'running', config, progress: 'Starting batch evaluation...' });
+    const initialSteps: Step[] = [
+      { label: 'Starting batch evaluation...', status: 'running' },
+      { label: 'Polling for results', status: 'pending' },
+      { label: 'Fetching scores', status: 'pending' },
+    ];
+    setFlow({ name: 'running', config, steps: initialSteps, elapsed: 0 });
   }, []);
 
   // Execute batch evaluation
@@ -149,6 +155,16 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
     let cancelled = false;
 
     const { config } = flow;
+    const startTime = Date.now();
+
+    const timer = setInterval(() => {
+      if (!cancelled) {
+        setFlow(prev => {
+          if (prev.name !== 'running') return prev;
+          return { ...prev, elapsed: Math.floor((Date.now() - startTime) / 1000) };
+        });
+      }
+    }, 1000);
 
     void (async () => {
       try {
@@ -156,11 +172,21 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
           agent: config.agent,
           evaluators: config.evaluators,
           name: config.name || undefined,
-          onProgress: (_status, message) => {
-            if (!cancelled) setFlow(prev => (prev.name === 'running' ? { ...prev, progress: message } : prev));
+          onProgress: (status, _message) => {
+            if (cancelled) return;
+            setFlow(prev => {
+              if (prev.name !== 'running') return prev;
+              const steps = [...prev.steps];
+              if (status === 'running') {
+                steps[0] = { ...steps[0]!, status: 'success' };
+                steps[1] = { ...steps[1]!, status: 'running' };
+              }
+              return { ...prev, steps };
+            });
           },
         });
 
+        clearInterval(timer);
         if (cancelled) return;
 
         // Save results locally
@@ -173,18 +199,47 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
         }
 
         if (!result.success) {
+          setFlow(prev => {
+            if (prev.name !== 'running') return prev;
+            const steps = prev.steps.map(s =>
+              s.status === 'running' ? { ...s, status: 'error' as const, error: result.error } : s
+            );
+            return { ...prev, steps };
+          });
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          if (cancelled) return;
           setFlow({ name: 'error', message: result.error ?? 'Batch evaluation failed' });
           return;
         }
 
+        // Mark all steps success
+        setFlow(prev => {
+          if (prev.name !== 'running') return prev;
+          const steps = prev.steps.map(s => ({ ...s, status: 'success' as const }));
+          return { ...prev, steps };
+        });
+
         setFlow({ name: 'results', result });
       } catch (err) {
-        if (!cancelled) setFlow({ name: 'error', message: getErrorMessage(err) });
+        clearInterval(timer);
+        if (!cancelled) {
+          const errorMsg = getErrorMessage(err);
+          setFlow(prev => {
+            if (prev.name !== 'running') return prev;
+            const steps = prev.steps.map(s =>
+              s.status === 'running' ? { ...s, status: 'error' as const, error: errorMsg } : s
+            );
+            return { ...prev, steps };
+          });
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          setFlow({ name: 'error', message: errorMsg });
+        }
       }
     })();
 
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, [flow.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -212,9 +267,24 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
   }
 
   if (flow.name === 'running') {
+    const minutes = Math.floor(flow.elapsed / 60);
+    const seconds = flow.elapsed % 60;
+    const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
     return (
       <Screen title="Run Batch Evaluation" onExit={onExit}>
-        <GradientText text={flow.progress} />
+        <Panel>
+          <Box flexDirection="column" gap={1}>
+            <Text>
+              <Text bold>Agent:</Text> {flow.config.agent}
+              {'  '}
+              <Text bold>Evaluators:</Text> {flow.config.evaluatorNames.join(', ')}
+              {'  '}
+              <Text dimColor>({timeStr})</Text>
+            </Text>
+            <StepProgress steps={flow.steps} />
+          </Box>
+        </Panel>
       </Screen>
     );
   }
@@ -419,8 +489,12 @@ function ResultsView({ result, onRunAnother, onExit }: ResultsViewProps) {
     isActive: true,
   });
 
-  // Group results by evaluator
+  const evalRes = result.evaluationResults;
+  const summaries = evalRes?.evaluatorSummaries;
+
+  // Fall back to local grouping when API summaries aren't available
   const byEvaluator = useMemo(() => {
+    if (summaries && summaries.length > 0) return null;
     const map = new Map<string, BatchEvaluationResult[]>();
     for (const r of result.results) {
       const group = map.get(r.evaluatorId) ?? [];
@@ -428,7 +502,7 @@ function ResultsView({ result, onRunAnother, onExit }: ResultsViewProps) {
       map.set(r.evaluatorId, group);
     }
     return map;
-  }, [result.results]);
+  }, [result.results, summaries]);
 
   return (
     <Screen title="Batch Evaluation Complete" onExit={onExit} helpText={HELP_TEXT.NAVIGATE_SELECT} exitEnabled={false}>
@@ -446,7 +520,34 @@ function ResultsView({ result, onRunAnother, onExit }: ResultsViewProps) {
             </Text>
           )}
 
-          {result.results.length > 0 ? (
+          {evalRes?.totalSessions != null && (
+            <Text>
+              <Text bold>Sessions:</Text> {evalRes.totalSessions} total
+              {evalRes.sessionsCompleted != null && <Text>, {evalRes.sessionsCompleted} completed</Text>}
+              {evalRes.sessionsFailed ? <Text color="red">, {evalRes.sessionsFailed} failed</Text> : null}
+            </Text>
+          )}
+
+          {summaries && summaries.length > 0 ? (
+            <Box marginTop={1} flexDirection="column">
+              <Text dimColor>Scores range from 0 (worst) to 1 (best).</Text>
+              {summaries.map(s => {
+                const avg = s.statistics?.averageScore;
+                const avgStr = avg != null ? avg.toFixed(2) : 'N/A';
+                const color = avg != null ? scoreColor(avg) : undefined;
+                return (
+                  <Text key={s.evaluatorId}>
+                    {'  '}
+                    <Text bold>{s.evaluatorId}</Text>
+                    {'  '}
+                    <Text color={color}>{avgStr}</Text>
+                    {s.totalFailed ? <Text color="red"> ({s.totalFailed} failed)</Text> : null}
+                    {s.totalEvaluated != null && <Text dimColor> [{s.totalEvaluated} evaluated]</Text>}
+                  </Text>
+                );
+              })}
+            </Box>
+          ) : byEvaluator && byEvaluator.size > 0 ? (
             <Box marginTop={1} flexDirection="column">
               <Text dimColor>Scores range from 0 (worst) to 1 (best).</Text>
               {[...byEvaluator.entries()].map(([evalId, evalResults]) => {

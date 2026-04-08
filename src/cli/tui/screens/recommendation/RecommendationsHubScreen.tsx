@@ -4,7 +4,7 @@ import { HELP_TEXT } from '../../constants';
 import { useListNavigation } from '../../hooks';
 import React, { useMemo } from 'react';
 
-export type RecommendationsHubView = 'run-recommendation' | 'recommendation-history' | 'list-recommendations';
+export type RecommendationsHubView = 'run-recommendation' | 'recommendation-history';
 
 interface RecommendationsHubScreenProps {
   onSelect: (view: RecommendationsHubView) => void;
@@ -23,11 +23,6 @@ export function RecommendationsHubScreen({ onSelect, onExit }: RecommendationsHu
         id: 'recommendation-history',
         title: 'Recommendation History',
         description: 'View past recommendation results (local)',
-      },
-      {
-        id: 'list-recommendations',
-        title: 'List Recommendations',
-        description: 'List recommendations from the API',
       },
     ],
     []

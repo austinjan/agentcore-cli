@@ -72,7 +72,7 @@ export const registerRun = (program: Command) => {
     )
     .option('-r, --runtime <name>', 'Runtime name from project config')
     .option('--runtime-arn <arn>', 'Runtime ARN — run outside a project directory')
-    .option('-e, --evaluator <names...>', 'Evaluator name(s) from project or Builtin.* IDs')
+    .option('-e, --evaluator <names...>', 'Evaluator name(s) — project evaluators or Builtin.* IDs')
     .option('--evaluator-arn <arns...>', 'Evaluator ARN(s) — use with --runtime-arn for standalone mode')
     .option('--region <region>', 'AWS region (required with --runtime-arn, auto-detected otherwise)')
     .option('-s, --session-id <id>', 'Evaluate a specific session only')
@@ -81,10 +81,10 @@ export const registerRun = (program: Command) => {
       '--endpoint <name>',
       'Runtime endpoint name (e.g. PROMPT_V1). Defaults to AGENTCORE_RUNTIME_ENDPOINT env var, then DEFAULT'
     )
-    .option('--days <days>', 'Lookback window in days', '7')
-    .option('-A, --assertion <text...>', 'Assertion the agent should satisfy (repeatable)')
-    .option('--expected-trajectory <names>', 'Expected tool calls in order (comma-separated)')
-    .option('--expected-response <text>', 'Expected agent response text')
+    .option('--lookback <days>', 'How far back to search for traces in CloudWatch (days)', '7')
+    .option('-A, --assertion <text...>', 'Ground truth assertion the agent response must satisfy (repeatable)')
+    .option('--expected-trajectory <names>', 'Ground truth: expected tool call names in order (comma-separated)')
+    .option('--expected-response <text>', 'Ground truth: expected agent response text to compare against')
     .option('--output <path>', 'Custom output file path for results')
     .option('--json', 'Output as JSON')
     .action(
@@ -100,7 +100,7 @@ export const registerRun = (program: Command) => {
         assertion?: string[];
         expectedTrajectory?: string;
         expectedResponse?: string;
-        days: string;
+        lookback: string;
         output?: string;
         json?: boolean;
       }) => {
@@ -133,7 +133,7 @@ export const registerRun = (program: Command) => {
             ? cliOptions.expectedTrajectory.split(',').map(s => s.trim())
             : undefined,
           expectedResponse: cliOptions.expectedResponse,
-          days: parseInt(cliOptions.days, 10),
+          days: parseInt(cliOptions.lookback, 10),
           output: cliOptions.output,
           json: cliOptions.json,
         };
@@ -164,16 +164,16 @@ export const registerRun = (program: Command) => {
 
   runCmd
     .command('batch-evaluation')
-    .description('Run a batch evaluation against agent sessions')
-    .requiredOption('-a, --agent <name>', 'Agent name from project config')
-    .requiredOption('-e, --evaluator <ids...>', 'Evaluator ID(s) (Builtin.* or custom)')
+    .description('Run evaluators in batch across all agent sessions in CloudWatch')
+    .requiredOption('-r, --runtime <name>', 'Runtime name from project config')
+    .requiredOption('-e, --evaluator <ids...>', 'Evaluator name(s) — Builtin.* IDs')
     .option('-n, --name <name>', 'Name for the batch evaluation (auto-generated if omitted)')
     .option('--region <region>', 'AWS region (auto-detected if omitted)')
-    .option('--execution-role <arn>', 'IAM execution role ARN (temporary — will be removed)')
+    .option('--execution-role <arn>', 'IAM execution role ARN for batch evaluation')
     .option('--json', 'Output as JSON')
     .action(
       async (cliOptions: {
-        agent: string;
+        runtime: string;
         evaluator: string[];
         name?: string;
         region?: string;
@@ -184,7 +184,7 @@ export const registerRun = (program: Command) => {
 
         try {
           const result = await runBatchEvaluationCommand({
-            agent: cliOptions.agent,
+            agent: cliOptions.runtime,
             evaluators: cliOptions.evaluator,
             name: cliOptions.name,
             region: cliOptions.region,
@@ -230,25 +230,31 @@ export const registerRun = (program: Command) => {
 
   runCmd
     .command('recommendation')
-    .description('Run an optimization recommendation for system prompt or tool descriptions')
-    .option('-t, --type <type>', 'What to optimize: system-prompt or tool-description')
-    .option('-a, --agent <name>', 'Agent name from project')
-    .option('-e, --evaluator <names...>', 'Evaluator name(s) or Builtin.* ID(s) (repeatable)')
-    .option('--prompt-file <path>', 'Load system prompt from file')
-    .option('--inline <content>', 'Provide content inline')
-    .option('--bundle-name <name>', 'Config bundle name')
-    .option('--bundle-version <version>', 'Config bundle version')
-    .option('--tools <names>', 'Comma-separated toolName:description pairs (for tool-description type)')
-    .option('--spans-file <path>', 'JSON file with session spans (inline traces instead of CloudWatch)')
-    .option('--lookback <days>', 'Lookback window in days', '7')
-    .option('-s, --session-id <ids...>', 'Specific session IDs for traces')
-    .option('-r, --run <name>', 'Run name prefix')
+    .description('Optimize a system prompt or tool descriptions using agent traces as signal')
+    .option('-t, --type <type>', 'What to optimize: system-prompt or tool-description (default: system-prompt)')
+    .option('-r, --runtime <name>', 'Runtime name from project config')
+    .option(
+      '-e, --evaluator <names...>',
+      'Evaluator name(s) — required for system-prompt, optional for tool-description'
+    )
+    .option('--prompt-file <path>', 'Load the current system prompt from a file')
+    .option('--inline <content>', 'Provide the current system prompt or tool descriptions inline')
+    .option('--bundle-name <name>', 'Read current content from a deployed config bundle')
+    .option('--bundle-version <version>', 'Config bundle version (used with --bundle-name)')
+    .option(
+      '--tools <names>',
+      'Tool name:description pairs, comma-separated (e.g. "search:Searches the web,calc:Does math")'
+    )
+    .option('--spans-file <path>', 'JSON file with OTEL session spans (use instead of CloudWatch traces)')
+    .option('--lookback <days>', 'How far back to search for traces in CloudWatch (days)', '7')
+    .option('-s, --session-id <ids...>', 'Limit trace collection to specific session IDs')
+    .option('-n, --run <name>', 'Run name prefix for the recommendation')
     .option('--region <region>', 'AWS region')
     .option('--json', 'Output as JSON')
     .action(
       async (cliOptions: {
         type?: string;
-        agent?: string;
+        runtime?: string;
         evaluator?: string[];
         promptFile?: string;
         inline?: string;
@@ -276,11 +282,11 @@ export const registerRun = (program: Command) => {
           process.exit(1);
         }
 
-        const agent = cliOptions.agent;
+        const agent = cliOptions.runtime;
         const evaluators = cliOptions.evaluator;
 
         if (!agent) {
-          const error = '--agent is required';
+          const error = '--runtime is required';
           if (cliOptions.json) {
             console.log(JSON.stringify({ success: false, error }));
           } else {
@@ -289,8 +295,9 @@ export const registerRun = (program: Command) => {
           process.exit(1);
         }
 
-        if (!evaluators || evaluators.length === 0) {
-          const error = '--evaluator is required (at least one)';
+        // Evaluator is required for system-prompt recs, optional for tool-description
+        if (recType === 'SYSTEM_PROMPT_RECOMMENDATION' && (!evaluators || evaluators.length === 0)) {
+          const error = '--evaluator is required for system-prompt recommendations';
           if (cliOptions.json) {
             console.log(JSON.stringify({ success: false, error }));
           } else {
@@ -317,7 +324,7 @@ export const registerRun = (program: Command) => {
           const result = await runRecommendationCommand({
             type: recType,
             agent,
-            evaluators,
+            evaluators: evaluators ?? [],
             promptFile: cliOptions.promptFile,
             inlineContent: cliOptions.inline,
             bundleName: cliOptions.bundleName,
@@ -344,7 +351,7 @@ export const registerRun = (program: Command) => {
           // Save results locally
           try {
             if (result.recommendationId) {
-              saveRecommendationRun(result.recommendationId, result, recType, agent, evaluators);
+              saveRecommendationRun(result.recommendationId, result, recType, agent, evaluators ?? []);
             }
           } catch {
             // Non-fatal — skip saving
@@ -396,37 +403,57 @@ function formatBatchEvalOutput(result: RunBatchEvaluationCommandResult): void {
   console.log(`\nBatch Evaluation: ${result.name ?? result.batchEvaluateId}`);
   console.log(`ID: ${result.batchEvaluateId}`);
   console.log(`Status: ${result.status}`);
-  console.log(`Results: ${result.results.length}\n`);
 
-  if (result.results.length === 0) {
-    console.log('  No evaluation results found.');
-    return;
+  // Show session stats from API if available
+  const evalResults = result.evaluationResults;
+  if (evalResults) {
+    const parts: string[] = [];
+    if (evalResults.totalSessions != null) parts.push(`${evalResults.totalSessions} sessions`);
+    if (evalResults.sessionsCompleted != null) parts.push(`${evalResults.sessionsCompleted} completed`);
+    if (evalResults.sessionsFailed) parts.push(`${evalResults.sessionsFailed} failed`);
+    if (parts.length > 0) console.log(`Sessions: ${parts.join(', ')}`);
   }
 
-  // Group by evaluator
-  const byEvaluator = new Map<string, BatchEvaluationResult[]>();
-  for (const r of result.results) {
-    const group = byEvaluator.get(r.evaluatorId) ?? [];
-    group.push(r);
-    byEvaluator.set(r.evaluatorId, group);
-  }
+  console.log('');
 
-  for (const [evalId, evalResults] of byEvaluator) {
-    const scores = evalResults.filter(r => !r.error).map(r => r.score!);
-    const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-    const errors = evalResults.filter(r => r.error).length;
-    const errorSuffix = errors > 0 ? ` (${errors} errors)` : '';
+  // Prefer API evaluatorSummaries over local computation
+  const summaries = evalResults?.evaluatorSummaries;
+  if (summaries && summaries.length > 0) {
+    for (const s of summaries) {
+      const avg = s.statistics?.averageScore;
+      const avgStr = avg != null ? avg.toFixed(2) : 'N/A';
+      const failSuffix = s.totalFailed ? ` (${s.totalFailed} failed)` : '';
+      const evalCount = s.totalEvaluated != null ? ` [${s.totalEvaluated} evaluated]` : '';
+      console.log(`  ${s.evaluatorId}: ${avgStr} avg${failSuffix}${evalCount}`);
+    }
+  } else if (result.results.length > 0) {
+    // Fall back to local computation from CloudWatch results
+    const byEvaluator = new Map<string, BatchEvaluationResult[]>();
+    for (const r of result.results) {
+      const group = byEvaluator.get(r.evaluatorId) ?? [];
+      group.push(r);
+      byEvaluator.set(r.evaluatorId, group);
+    }
 
-    console.log(`  ${evalId}: ${avg.toFixed(2)} avg${errorSuffix}`);
+    for (const [evalId, evalGroup] of byEvaluator) {
+      const scores = evalGroup.filter(r => !r.error).map(r => r.score!);
+      const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+      const errors = evalGroup.filter(r => r.error).length;
+      const errorSuffix = errors > 0 ? ` (${errors} errors)` : '';
 
-    for (const r of evalResults) {
-      if (r.error) {
-        console.log(`    ERROR: ${r.error.slice(0, 80)}`);
-      } else {
-        const labelStr = r.label ? ` (${r.label})` : '';
-        console.log(`    ${r.score?.toFixed(2)}${labelStr}`);
+      console.log(`  ${evalId}: ${avg.toFixed(2)} avg${errorSuffix}`);
+
+      for (const r of evalGroup) {
+        if (r.error) {
+          console.log(`    ERROR: ${r.error.slice(0, 80)}`);
+        } else {
+          const labelStr = r.label ? ` (${r.label})` : '';
+          console.log(`    ${r.score?.toFixed(2)}${labelStr}`);
+        }
       }
     }
+  } else {
+    console.log('  No evaluation results found.');
   }
 
   console.log('');

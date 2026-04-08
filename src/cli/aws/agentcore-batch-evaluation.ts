@@ -70,6 +70,7 @@ export interface GetBatchEvaluationResult {
       logStreamName: string;
     };
   };
+  evaluationResults?: EvaluationResults;
   results?: BatchEvaluationResultEntry[];
   errorDetails?: string[];
   statusReasons?: string[];
@@ -81,6 +82,28 @@ export interface BatchEvaluationResultEntry {
   label?: string;
   explanation?: string;
   error?: string;
+}
+
+export interface EvaluatorSummary {
+  evaluatorId: string;
+  statistics?: {
+    averageScore?: number;
+    averageTokenUsage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+    };
+  };
+  totalEvaluated?: number;
+  totalFailed?: number;
+}
+
+export interface EvaluationResults {
+  evaluatorSummaries?: EvaluatorSummary[];
+  sessionsCompleted?: number;
+  sessionsFailed?: number;
+  sessionsInProgress?: number;
+  totalSessions?: number;
 }
 
 export interface ListBatchEvaluationsOptions {

@@ -277,7 +277,7 @@ async function signedRequest(options: {
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Recommendation API error (${response.status}): ${errorBody}\n[RequestId: ${requestId}]`);
+    throw new Error(`Recommendation API error (${response.status}): ${errorBody}`);
   }
 
   if (response.status === 204) return { data: {}, status: 204, requestId };

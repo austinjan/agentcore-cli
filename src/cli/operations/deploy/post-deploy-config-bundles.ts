@@ -90,7 +90,7 @@ export async function setupConfigBundles(options: SetupConfigBundlesOptions): Pr
             updated = true;
           } else {
             // Use the branch from the spec, or fall back to whatever branch the API has
-            const effectiveBranch = bundleSpec.branchName ?? current.lineageMetadata?.branchName ?? 'mainline';
+            const effectiveBranch = bundleSpec.branchName ?? current.lineageMetadata?.branchName ?? 'main';
             const result = await updateConfigurationBundle({
               region,
               bundleId: existingBundle.bundleId,
@@ -158,7 +158,7 @@ export async function setupConfigBundles(options: SetupConfigBundlesOptions): Pr
               versionId: current.versionId,
             });
           } else {
-            const effectiveBranch = bundleSpec.branchName ?? current.lineageMetadata?.branchName ?? 'mainline';
+            const effectiveBranch = bundleSpec.branchName ?? current.lineageMetadata?.branchName ?? 'main';
             const result = await updateConfigurationBundle({
               region,
               bundleId: existingByName.bundleId,
@@ -223,15 +223,14 @@ export async function setupConfigBundles(options: SetupConfigBundlesOptions): Pr
     for (const [bundleName, bundleState] of Object.entries(existingBundles)) {
       if (!specBundleNames.has(bundleName)) {
         try {
-          const deleteResult = await deleteConfigurationBundle({
+          await deleteConfigurationBundle({
             region,
             bundleId: bundleState.bundleId,
           });
 
           results.push({
             bundleName,
-            status: deleteResult.success ? 'deleted' : 'error',
-            error: deleteResult.error,
+            status: 'deleted',
           });
         } catch (err) {
           results.push({

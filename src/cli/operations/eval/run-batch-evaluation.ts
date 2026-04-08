@@ -9,7 +9,7 @@
 import { ConfigIO } from '../../../lib';
 import type { DeployedState } from '../../../schema';
 import { generateClientToken, getBatchEvaluation, startBatchEvaluation } from '../../aws/agentcore-batch-evaluation';
-import type { GetBatchEvaluationResult } from '../../aws/agentcore-batch-evaluation';
+import type { EvaluationResults, GetBatchEvaluationResult } from '../../aws/agentcore-batch-evaluation';
 import { detectRegion } from '../../aws/region';
 import { ExecLogger } from '../../logging/exec-logger';
 import { CloudWatchLogsClient, GetLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
@@ -50,6 +50,7 @@ export interface RunBatchEvaluationCommandResult {
   name?: string;
   status?: string;
   results: BatchEvaluationResult[];
+  evaluationResults?: EvaluationResults;
   startedAt?: string;
   completedAt?: string;
   logFilePath?: string;
@@ -102,7 +103,6 @@ export async function runBatchEvaluationCommand(
     }
 
     const runtimeId = agentState.runtimeId;
-    const roleArn = agentState.roleArn;
     // Service name in CW logs uses project_agent format without the CDK hash suffix
     const serviceName = `${projectSpec.name}_${agent}.DEFAULT`;
     const runtimeLogGroup = `/aws/bedrock-agentcore/runtimes/${runtimeId}-DEFAULT`;
@@ -130,7 +130,7 @@ export async function runBatchEvaluationCommand(
           logGroupNames: [runtimeLogGroup],
         },
       },
-      executionRoleArn: options.executionRoleArn ?? roleArn,
+      ...(options.executionRoleArn ? { executionRoleArn: options.executionRoleArn } : {}),
       clientToken: generateClientToken(),
     };
 
@@ -218,6 +218,7 @@ export async function runBatchEvaluationCommand(
       name: evalName,
       status: current.status,
       results,
+      evaluationResults: current.evaluationResults,
       startedAt: current.createdAt,
       completedAt: current.updatedAt ?? new Date().toISOString(),
       logFilePath: logger?.logFilePath,

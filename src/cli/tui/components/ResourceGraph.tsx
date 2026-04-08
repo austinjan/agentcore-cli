@@ -73,6 +73,7 @@ function ResourceRow({
   statusColor,
   deploymentState,
   identifier,
+  invocationUrl,
 }: {
   icon: string;
   color: string;
@@ -82,6 +83,7 @@ function ResourceRow({
   statusColor?: string;
   deploymentState?: ResourceStatusEntry['deploymentState'];
   identifier?: string;
+  invocationUrl?: string;
 }) {
   const badge = deploymentState ? getDeploymentBadge(deploymentState) : undefined;
 
@@ -97,6 +99,11 @@ function ResourceRow({
       {identifier && (
         <Text dimColor>
           {'      '}ID: {identifier}
+        </Text>
+      )}
+      {invocationUrl && (
+        <Text dimColor>
+          {'      '}URL: {invocationUrl}
         </Text>
       )}
     </Box>
@@ -184,6 +191,7 @@ export function ResourceGraph({ project, mcp, agentName, resourceStatuses }: Res
                 statusColor={runtimeStatusColor}
                 deploymentState={rsEntry?.deploymentState}
                 identifier={rsEntry?.identifier}
+                invocationUrl={rsEntry?.invocationUrl}
               />
             );
           })}

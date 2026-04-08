@@ -1,4 +1,5 @@
 import { findConfigRoot } from '../../../lib';
+import type { EvaluationResults } from '../../aws/agentcore-batch-evaluation';
 import type { BatchEvaluationResult, RunBatchEvaluationCommandResult } from './run-batch-evaluation';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -13,6 +14,7 @@ export interface BatchEvalRunRecord {
   completedAt?: string;
   evaluators: string[];
   results: BatchEvaluationResult[];
+  evaluationResults?: EvaluationResults;
 }
 
 function getResultsDir(): string {
@@ -38,6 +40,7 @@ export function saveBatchEvalRun(result: RunBatchEvaluationCommandResult): strin
     completedAt: result.completedAt,
     evaluators: result.results.map(r => r.evaluatorId),
     results: result.results,
+    evaluationResults: result.evaluationResults,
   };
 
   writeFileSync(filePath, JSON.stringify(record, null, 2));

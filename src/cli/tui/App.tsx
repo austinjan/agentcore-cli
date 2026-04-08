@@ -12,6 +12,7 @@ import { DevScreen } from './screens/dev/DevScreen';
 import { EvalHubScreen, EvalScreen } from './screens/eval';
 import { FetchAccessScreen } from './screens/fetch-access';
 import { HelpScreen, HomeScreen } from './screens/home';
+import { ImportFlow } from './screens/import';
 import { InvokeScreen } from './screens/invoke';
 import { OnlineEvalDashboard } from './screens/online-eval';
 import { PackageScreen } from './screens/package';
@@ -52,6 +53,7 @@ type Route =
   | { name: 'package' }
   | { name: 'update' }
   | { name: 'config-bundle' }
+  | { name: 'import' }
   | { name: 'cli-only'; commandId: string };
 
 // Commands that don't require being at the project root
@@ -121,6 +123,12 @@ function AppContent() {
       setRoute({ name: 'validate' });
     } else if (id === 'package') {
       setRoute({ name: 'package' });
+    } else if (id === 'import') {
+      if (!projectExists() && route.name === 'help') {
+        setHelpNotice(<MissingProjectMessage inTui />);
+        return;
+      }
+      setRoute({ name: 'import' });
     } else if (id === 'update') {
       setRoute({ name: 'update' });
     } else if (id === 'config-bundle') {
@@ -256,7 +264,6 @@ function AppContent() {
         onSelect={view => {
           if (view === 'run-recommendation') setRoute({ name: 'recommend', from: 'recommendations-hub' });
           if (view === 'recommendation-history') setRoute({ name: 'recommendation-history' });
-          if (view === 'list-recommendations') setRoute({ name: 'help' }); // TODO: wire to list recommendations TUI
         }}
         onExit={() => setRoute({ name: 'help' })}
       />
@@ -290,6 +297,15 @@ function AppContent() {
 
   if (route.name === 'package') {
     return <PackageScreen isInteractive={true} onExit={() => setRoute({ name: 'help' })} />;
+  }
+
+  if (route.name === 'import') {
+    return (
+      <ImportFlow
+        onBack={() => setRoute({ name: 'help' })}
+        onNavigate={command => setRoute({ name: command } as Route)}
+      />
+    );
   }
 
   if (route.name === 'update') {

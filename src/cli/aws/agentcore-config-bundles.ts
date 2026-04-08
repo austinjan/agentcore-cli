@@ -301,19 +301,12 @@ export async function updateConfigurationBundle(
   return data as UpdateConfigurationBundleResult;
 }
 
-export async function deleteConfigurationBundle(
-  options: DeleteConfigurationBundleOptions
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    await signedRequest({
-      region: options.region,
-      method: 'DELETE',
-      path: `/configuration-bundles/${options.bundleId}`,
-    });
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : String(err) };
-  }
+export async function deleteConfigurationBundle(options: DeleteConfigurationBundleOptions): Promise<void> {
+  await signedRequest({
+    region: options.region,
+    method: 'DELETE',
+    path: `/configuration-bundles/${options.bundleId}`,
+  });
 }
 
 export async function listConfigurationBundles(

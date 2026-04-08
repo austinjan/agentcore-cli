@@ -188,7 +188,7 @@ export function AddConfigBundleScreen({ onComplete, onExit, existingBundleNames 
               { label: 'Name', value: wizard.config.name },
               ...(wizard.config.description ? [{ label: 'Description', value: wizard.config.description }] : []),
               { label: 'Components', value: componentsPreview },
-              { label: 'Branch', value: wizard.config.branchName || 'mainline' },
+              { label: 'Branch', value: wizard.config.branchName || 'main' },
               { label: 'Message', value: wizard.config.commitMessage || `Create ${wizard.config.name}` },
             ]}
           />

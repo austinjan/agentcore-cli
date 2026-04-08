@@ -1,19 +1,17 @@
 /**
- * Hook for the Config Bundle Hub — fetches deployed bundles
- * and enriches them with version counts.
+ * Hook for the Config Bundle Hub — reads bundles from project config
+ * and enriches deployed ones with version metadata from the API.
  */
-import type {
-  ConfigurationBundleSummary,
-  ConfigurationBundleVersionSummary,
-} from '../../../../cli/aws/agentcore-config-bundles';
-import {
-  listConfigurationBundleVersions,
-  listConfigurationBundles,
-} from '../../../../cli/aws/agentcore-config-bundles';
+import type { ConfigurationBundleVersionSummary } from '../../../../cli/aws/agentcore-config-bundles';
+import { listConfigurationBundleVersions } from '../../../../cli/aws/agentcore-config-bundles';
 import { ConfigIO } from '../../../../lib';
 import { useEffect, useRef, useState } from 'react';
 
-export interface BundleWithMeta extends ConfigurationBundleSummary {
+export interface BundleWithMeta {
+  bundleId: string;
+  bundleArn: string;
+  bundleName: string;
+  description?: string;
   versionCount: number;
   branches: string[];
   lastUpdated?: string;
@@ -41,7 +39,12 @@ export function useConfigBundleHub(): ConfigBundleHubState {
       setError(undefined);
       try {
         const configIO = new ConfigIO();
-        const targets = await configIO.resolveAWSDeploymentTargets();
+        const [projectSpec, deployedState, targets] = await Promise.all([
+          configIO.readProjectSpec(),
+          configIO.readDeployedState(),
+          configIO.resolveAWSDeploymentTargets(),
+        ]);
+
         if (targets.length === 0) {
           if (mountedRef.current) {
             setError('No AWS deployment targets configured.');
@@ -52,15 +55,41 @@ export function useConfigBundleHub(): ConfigBundleHubState {
         const resolvedRegion = targets[0]!.region;
         if (mountedRef.current) setRegion(resolvedRegion);
 
-        const result = await listConfigurationBundles({ region: resolvedRegion, maxResults: 100 });
+        // Get config bundles from project config (agentcore.json)
+        const projectBundles = projectSpec.configBundles ?? [];
+        if (projectBundles.length === 0) {
+          if (mountedRef.current) {
+            setBundles([]);
+            setIsLoading(false);
+          }
+          return;
+        }
 
-        // Enrich each bundle with version metadata
+        // Get deployed state to look up bundleIds
+        const deployedBundles =
+          Object.values(deployedState.targets).find(t => t.resources?.configBundles)?.resources?.configBundles ?? {};
+
+        // Build bundle list from project config, enriching with deployed version info
         const enriched = await Promise.all(
-          result.bundles.map(async (bundle): Promise<BundleWithMeta> => {
+          projectBundles.map(async (bundleSpec): Promise<BundleWithMeta> => {
+            const deployed = deployedBundles[bundleSpec.name];
+            if (!deployed) {
+              // Not yet deployed — show from project config only
+              return {
+                bundleId: '',
+                bundleArn: '',
+                bundleName: bundleSpec.name,
+                description: bundleSpec.description,
+                versionCount: 0,
+                branches: bundleSpec.branchName ? [bundleSpec.branchName] : [],
+              };
+            }
+
+            // Deployed — fetch version metadata from API
             try {
               const versions = await listConfigurationBundleVersions({
                 region: resolvedRegion,
-                bundleId: bundle.bundleId,
+                bundleId: deployed.bundleId,
                 maxResults: 50,
               });
               const branchSet = new Set<string>();
@@ -70,13 +99,23 @@ export function useConfigBundleHub(): ConfigBundleHubState {
                 if (v.versionCreatedAt > latestTs) latestTs = v.versionCreatedAt;
               }
               return {
-                ...bundle,
+                bundleId: deployed.bundleId,
+                bundleArn: deployed.bundleArn,
+                bundleName: bundleSpec.name,
+                description: bundleSpec.description,
                 versionCount: versions.versions.length,
                 branches: [...branchSet],
                 lastUpdated: latestTs || undefined,
               };
             } catch {
-              return { ...bundle, versionCount: 0, branches: [] };
+              return {
+                bundleId: deployed.bundleId,
+                bundleArn: deployed.bundleArn,
+                bundleName: bundleSpec.name,
+                description: bundleSpec.description,
+                versionCount: 0,
+                branches: [],
+              };
             }
           })
         );
