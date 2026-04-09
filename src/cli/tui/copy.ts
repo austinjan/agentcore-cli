@@ -111,14 +111,6 @@ export const CLI_ONLY_EXAMPLES: Record<string, { description: string; examples: 
       'agentcore run recommendation -t system-prompt -r MyAgent -e Builtin.Correctness --bundle-name MyBundle',
     ],
   },
-  'config-bundle': {
-    description: 'View configuration bundle version history and compare versions.',
-    examples: [
-      'agentcore config-bundle versions --bundle MyBundle',
-      'agentcore config-bundle versions --bundle MyBundle --latest-per-branch',
-      'agentcore config-bundle diff --bundle MyBundle --from v1-id --to v2-id',
-    ],
-  },
   stop: {
     description: 'Stop a running batch evaluation or A/B test.',
     examples: [
