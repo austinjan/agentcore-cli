@@ -288,6 +288,7 @@ Strategy configuration:
 | `vendor`         | No       | Credential provider vendor (default: `"CustomOauth2"`) |
 | `managed`        | No       | Whether auto-created by the CLI (do not edit)          |
 | `usage`          | No       | `"inbound"` or `"outbound"`                            |
+| `tags`           | No       | Credential-level tags                                  |
 
 The actual secrets (API keys, client IDs, client secrets) are stored in `.env.local` for local development and in
 AgentCore Identity service for deployed environments.
@@ -369,6 +370,7 @@ See [Evaluations](evals.md) for the full guide.
 | `samplingRate`   | Yes      | Percentage of requests to evaluate (0.01–100)                |
 | `description`    | No       | Config description (max 200 chars)                           |
 | `enableOnCreate` | No       | Enable evaluation on deploy (default: true)                  |
+| `tags`           | No       | Online eval config tags                                      |
 
 ---
 
@@ -408,6 +410,7 @@ Gateway and MCP tool configuration is part of `agentcore.json` (in the `agentCor
 | `targets`                 | Yes      | Array of gateway targets                                     |
 | `authorizerType`          | No       | `"NONE"` (default), `"AWS_IAM"`, or `"CUSTOM_JWT"`           |
 | `authorizerConfiguration` | No       | Required when `authorizerType` is `"CUSTOM_JWT"` (see below) |
+| `tags`                    | No       | Gateway-level tags                                           |
 
 ### CUSTOM_JWT Authorizer Configuration
 
