@@ -178,6 +178,7 @@ on the next deployment.
 | Field                     | Required | Description                                                     |
 | ------------------------- | -------- | --------------------------------------------------------------- |
 | `name`                    | Yes      | Agent name (1-48 chars, alphanumeric + underscore)              |
+| `description`             | No       | Agent description (max 200 chars)                               |
 | `build`                   | Yes      | `"CodeZip"` or `"Container"`                                    |
 | `entrypoint`              | Yes      | Entry file (e.g., `main.py` or `main.py:handler`)               |
 | `codeLocation`            | Yes      | Directory containing agent code                                 |
@@ -190,6 +191,8 @@ on the next deployment.
 | `authorizerType`          | No       | `"AWS_IAM"` or `"CUSTOM_JWT"`                                   |
 | `authorizerConfiguration` | No       | JWT authorizer settings (for `CUSTOM_JWT`)                      |
 | `requestHeaderAllowlist`  | No       | Headers to forward to the agent                                 |
+| `dockerfile`              | No       | Custom Dockerfile path (Container builds only)                  |
+| `executionRoleArn`        | No       | Custom IAM execution role ARN                                   |
 | `lifecycleConfiguration`  | No       | Runtime session lifecycle settings (idle timeout, max lifetime) |
 | `tags`                    | No       | Agent-level tags                                                |
 
@@ -224,7 +227,8 @@ on the next deployment.
 | --------------------- | -------- | --------------------------------------------------------------- |
 | `name`                | Yes      | Memory name (1-48 chars)                                        |
 | `eventExpiryDuration` | Yes      | Days until events expire (7-365)                                |
-| `strategies`          | Yes      | Array of memory strategies (can be empty for short-term memory) |
+| `strategies`          | No       | Array of memory strategies (defaults to empty for short-term memory) |
+| `tags`                | No       | Memory-level tags                                                    |
 
 ### Memory Strategies
 
@@ -279,7 +283,7 @@ Strategy configuration:
 | ---------------- | -------- | ------------------------------------------------------ |
 | `authorizerType` | Yes      | Always `"OAuthCredentialProvider"`                     |
 | `name`           | Yes      | Credential name (1-128 chars)                          |
-| `discoveryUrl`   | Yes      | OIDC discovery URL (must be a valid URL)               |
+| `discoveryUrl`   | No       | OIDC discovery URL (optional for imported providers)   |
 | `scopes`         | No       | Array of OAuth scopes                                  |
 | `vendor`         | No       | Credential provider vendor (default: `"CustomOauth2"`) |
 | `managed`        | No       | Whether auto-created by the CLI (do not edit)          |

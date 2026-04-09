@@ -35,7 +35,7 @@ The generated agent code includes gateway client setup, authentication, and envi
 ## Gateway Targets
 
 A gateway target is a backend tool source exposed through a gateway. The gateway proxies requests to the target and
-handles tool discovery and authentication. There are five target types.
+handles tool discovery and authentication. There are six target types.
 
 ### MCP Server (`mcp-server`)
 
@@ -166,7 +166,8 @@ agentcore add gateway-target \
   --outbound-auth oauth \
   --oauth-client-id my-client \
   --oauth-client-secret my-secret \
-  --oauth-discovery-url https://auth.example.com/.well-known/openid-configuration
+  --oauth-discovery-url https://auth.example.com/.well-known/openid-configuration \
+  --oauth-scopes read,write
 ```
 
 You can also reference an existing credential:

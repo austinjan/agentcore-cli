@@ -224,6 +224,7 @@ agentcore run eval \
 | `-s, --session-id <id>`           | Evaluate a specific session only                   |
 | `-t, --trace-id <id>`             | Evaluate a specific trace only                     |
 | `--days <days>`                   | Lookback window in days (default: 7)               |
+| `--endpoint <name>`              | Runtime endpoint name (default: `DEFAULT`)         |
 | `-A, --assertion <text...>`       | Ground truth assertion (repeatable)                |
 | `--expected-trajectory <names>`   | Expected tool calls in order (comma-separated)     |
 | `--expected-response <text>`      | Expected agent response text                       |
@@ -275,7 +276,7 @@ agentcore evals history --json --limit 10
 | `-n, --limit <count>`  | Max number of runs to display |
 | `--json`               | JSON output                   |
 
-Results are stored in `agentcore/.cli/eval-runs/` within your project directory.
+Results are stored in `agentcore/.cli/eval-results/` within your project directory.
 
 ---
 
@@ -410,6 +411,19 @@ agentcore remove online-eval --name QualityMonitor
 
 AgentCore provides pre-built evaluators that can be used without creating custom evaluator definitions. Reference them
 by their `Builtin.*` ID in `--evaluator` flags or in online eval config `evaluators` arrays.
+
+| Builtin ID                       | Level       |
+| -------------------------------- | ----------- |
+| `Builtin.GoalSuccessRate`        | `SESSION`   |
+| `Builtin.Correctness`           | `TRACE`     |
+| `Builtin.Faithfulness`          | `TRACE`     |
+| `Builtin.Helpfulness`           | `TRACE`     |
+| `Builtin.ResponseRelevance`     | `TRACE`     |
+| `Builtin.Conciseness`           | `TRACE`     |
+| `Builtin.Coherence`             | `TRACE`     |
+| `Builtin.InstructionFollowing`  | `TRACE`     |
+| `Builtin.Refusal`               | `TRACE`     |
+| `Builtin.ToolSelectionAccuracy` | `TOOL_CALL` |
 
 ```bash
 agentcore run eval --runtime MyAgent --evaluator Builtin.Faithfulness
