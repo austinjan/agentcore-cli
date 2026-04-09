@@ -10,6 +10,7 @@ export type RecommendationStep =
   | 'evaluator'
   | 'inputSource'
   | 'content'
+  | 'bundle'
   | 'tools'
   | 'traceSource'
   | 'days'
@@ -26,6 +27,8 @@ export interface RecommendationWizardConfig {
   traceSource: TraceSourceKind;
   days: number;
   sessionIds: string[];
+  bundleName: string;
+  bundleVersion: string;
 }
 
 export const RECOMMENDATION_STEP_LABELS: Record<RecommendationStep, string> = {
@@ -34,6 +37,7 @@ export const RECOMMENDATION_STEP_LABELS: Record<RecommendationStep, string> = {
   evaluator: 'Evaluator',
   inputSource: 'Source',
   content: 'Content',
+  bundle: 'Bundle',
   tools: 'Tools',
   traceSource: 'Traces',
   days: 'Lookback',
@@ -53,4 +57,13 @@ export interface EvaluatorItem {
   id: string;
   title: string;
   description: string;
+}
+
+export interface ConfigBundleItem {
+  name: string;
+  bundleId: string;
+  bundleArn: string;
+  versionId: string;
+  /** System prompt extracted from the local project config (first component with a systemPrompt field). */
+  systemPrompt?: string;
 }

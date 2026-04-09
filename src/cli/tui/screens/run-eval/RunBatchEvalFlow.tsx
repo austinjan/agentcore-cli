@@ -424,6 +424,7 @@ function BatchEvalWizard({ agents, evaluators: rawEvaluators, onComplete, onExit
             items={evaluatorItems}
             cursorIndex={evaluatorsNav.cursorIndex}
             selectedIds={evaluatorsNav.selectedIds}
+            maxVisibleItems={10}
           />
         )}
 
@@ -434,6 +435,7 @@ function BatchEvalWizard({ agents, evaluators: rawEvaluators, onComplete, onExit
               key="name"
               prompt="Batch evaluation name"
               initialValue=""
+              allowEmpty
               onSubmit={value => {
                 setConfig(c => ({ ...c, name: value }));
                 goNext();

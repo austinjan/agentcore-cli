@@ -25,6 +25,8 @@ function getAllSteps(
     steps.push('inputSource');
     if (inputSource === 'inline' || inputSource === 'file') {
       steps.push('content');
+    } else if (inputSource === 'config-bundle') {
+      steps.push('bundle');
     }
   }
 
@@ -63,6 +65,8 @@ function getDefaultConfig(): RecommendationWizardConfig {
     traceSource: 'cloudwatch',
     days: DEFAULT_LOOKBACK_DAYS,
     sessionIds: [],
+    bundleName: '',
+    bundleVersion: '',
   };
 }
 
@@ -163,6 +167,14 @@ export function useRecommendationWizard() {
     [advance]
   );
 
+  const setBundle = useCallback(
+    (bundleName: string, bundleVersion: string) => {
+      setConfig(c => ({ ...c, bundleName, bundleVersion }));
+      advance('bundle');
+    },
+    [advance]
+  );
+
   const setSessions = useCallback(
     (sessionIds: string[]) => {
       setConfig(c => ({ ...c, sessionIds }));
@@ -187,6 +199,7 @@ export function useRecommendationWizard() {
     setEvaluators,
     setInputSource,
     setContent,
+    setBundle,
     setTools,
     setTraceSource,
     setDays,

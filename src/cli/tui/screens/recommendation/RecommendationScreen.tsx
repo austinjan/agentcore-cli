@@ -16,7 +16,7 @@ import {
 } from '../../components';
 import { HELP_TEXT } from '../../constants';
 import { useListNavigation, useMultiSelectNavigation } from '../../hooks';
-import type { AgentItem, EvaluatorItem, RecommendationWizardConfig } from './types';
+import type { AgentItem, ConfigBundleItem, EvaluatorItem, RecommendationWizardConfig } from './types';
 import { DEFAULT_LOOKBACK_DAYS, RECOMMENDATION_STEP_LABELS } from './types';
 import { useRecommendationWizard } from './useRecommendationWizard';
 import { Box, Text } from 'ink';
@@ -25,11 +25,18 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 interface RecommendationScreenProps {
   agents: AgentItem[];
   evaluators: EvaluatorItem[];
+  configBundles: ConfigBundleItem[];
   onComplete: (config: RecommendationWizardConfig) => void;
   onExit: () => void;
 }
 
-export function RecommendationScreen({ agents, evaluators, onComplete, onExit }: RecommendationScreenProps) {
+export function RecommendationScreen({
+  agents,
+  evaluators,
+  configBundles,
+  onComplete,
+  onExit,
+}: RecommendationScreenProps) {
   const wizard = useRecommendationWizard();
 
   // ── Selectable items ──────────────────────────────────────────────────────
@@ -74,6 +81,11 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
     () => [
       { id: 'inline', title: 'Enter inline', description: 'Type or paste content directly' },
       { id: 'file', title: 'Load from file', description: 'Read content from a file path' },
+      {
+        id: 'config-bundle',
+        title: 'Config bundle',
+        description: 'Use system prompt from a deployed config bundle',
+      },
     ],
     []
   );
@@ -111,6 +123,7 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
   const isEvaluatorStep = wizard.step === 'evaluator';
   const isInputSourceStep = wizard.step === 'inputSource';
   const isContentStep = wizard.step === 'content';
+  const isBundleStep = wizard.step === 'bundle';
   const isToolsStep = wizard.step === 'tools';
   const isTraceSourceStep = wizard.step === 'traceSource';
   const isDaysStep = wizard.step === 'days';
@@ -219,9 +232,29 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
 
   const inputSourceNav = useListNavigation({
     items: inputSourceItems,
-    onSelect: item => wizard.setInputSource(item.id as 'inline' | 'file'),
+    onSelect: item => wizard.setInputSource(item.id as 'inline' | 'file' | 'config-bundle'),
     onExit: () => wizard.goBack(),
     isActive: isInputSourceStep,
+  });
+
+  const bundleItems: SelectableItem[] = useMemo(
+    () =>
+      configBundles.map(cb => ({
+        id: cb.bundleArn,
+        title: cb.name,
+        description: `Version: ${cb.versionId.slice(0, 8)}`,
+      })),
+    [configBundles]
+  );
+
+  const bundleNav = useListNavigation({
+    items: bundleItems,
+    onSelect: item => {
+      const cb = configBundles.find(b => b.bundleArn === item.id);
+      if (cb) wizard.setBundle(cb.bundleArn, cb.versionId);
+    },
+    onExit: () => wizard.goBack(),
+    isActive: isBundleStep,
   });
 
   const traceSourceNav = useListNavigation({
@@ -265,7 +298,7 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
         : sessionPhase === 'error'
           ? HELP_TEXT.CONFIRM_CANCEL
           : 'Space toggle · Enter confirm · Esc back'
-      : isTypeStep || isAgentStep || isInputSourceStep || isTraceSourceStep
+      : isTypeStep || isAgentStep || isInputSourceStep || isTraceSourceStep || isBundleStep
         ? HELP_TEXT.NAVIGATE_SELECT
         : isConfirmStep
           ? HELP_TEXT.CONFIRM_CANCEL
@@ -289,7 +322,15 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
           },
         ]
       : []),
-    { label: 'Input', value: wizard.config.inputSource === 'file' ? `File: ${wizard.config.content}` : 'Inline' },
+    {
+      label: 'Input',
+      value:
+        wizard.config.inputSource === 'file'
+          ? `File: ${wizard.config.content}`
+          : wizard.config.inputSource === 'config-bundle'
+            ? `Bundle: ${configBundles.find(b => b.bundleArn === wizard.config.bundleName)?.name ?? wizard.config.bundleName}`
+            : 'Inline',
+    },
     {
       label: 'Traces',
       value:
@@ -340,6 +381,7 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
             items={evaluatorItems}
             selectedIndex={evaluatorNav.selectedIndex}
             emptyMessage="No evaluators available."
+            maxVisibleItems={10}
           />
         )}
 
@@ -373,6 +415,26 @@ export function RecommendationScreen({ agents, evaluators, onComplete, onExit }:
             onCancel={() => wizard.goBack()}
             placeholder="/path/to/prompt.txt"
             pathType="file"
+          />
+        )}
+
+        {isBundleStep && configBundles.length === 0 && (
+          <Box flexDirection="column">
+            <Text bold>Select config bundle</Text>
+            <Text color="yellow">
+              No deployed config bundles found. Run `agentcore add config-bundle` and `agentcore deploy` first.
+            </Text>
+            <Text dimColor>Press Esc to go back and choose a different input source.</Text>
+          </Box>
+        )}
+
+        {isBundleStep && configBundles.length > 0 && (
+          <WizardSelect
+            title="Select config bundle"
+            description="Choose a deployed config bundle to read the system prompt from"
+            items={bundleItems}
+            selectedIndex={bundleNav.selectedIndex}
+            maxVisibleItems={10}
           />
         )}
 

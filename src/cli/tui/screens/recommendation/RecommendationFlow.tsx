@@ -12,14 +12,20 @@ import type { Step } from '../../components';
 import { HELP_TEXT } from '../../constants';
 import { useListNavigation } from '../../hooks';
 import { RecommendationScreen } from './RecommendationScreen';
-import type { AgentItem, EvaluatorItem, RecommendationWizardConfig } from './types';
+import type { AgentItem, ConfigBundleItem, EvaluatorItem, RecommendationWizardConfig } from './types';
 import { Box, Text } from 'ink';
 import React, { useCallback, useEffect, useState } from 'react';
 
 type FlowState =
   | { name: 'loading' }
-  | { name: 'wizard'; agents: AgentItem[]; evaluators: EvaluatorItem[] }
-  | { name: 'running'; config: RecommendationWizardConfig; steps: Step[]; elapsed: number }
+  | { name: 'wizard'; agents: AgentItem[]; evaluators: EvaluatorItem[]; configBundles: ConfigBundleItem[] }
+  | {
+      name: 'running';
+      config: RecommendationWizardConfig;
+      configBundles: ConfigBundleItem[];
+      steps: Step[];
+      elapsed: number;
+    }
   | { name: 'results'; result: RunRecommendationCommandResult; config: RecommendationWizardConfig; filePath?: string }
   | { name: 'creds-error'; message: string }
   | { name: 'error'; message: string };
@@ -68,7 +74,10 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
           description: e.description ?? e.evaluatorType,
         }));
 
-        setFlow({ name: 'wizard', agents, evaluators });
+        const projectSpec = await configIO.readProjectSpec();
+        const configBundles = buildConfigBundleItems(deployedState, projectSpec.configBundles ?? []);
+
+        setFlow({ name: 'wizard', agents, evaluators, configBundles });
       } catch (err) {
         if (!cancelled) setFlow({ name: 'error', message: getErrorMessage(err) });
       }
@@ -79,34 +88,39 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
     };
   }, [flow.name]);
 
-  const handleRunComplete = useCallback((config: RecommendationWizardConfig) => {
-    const isToolDescWithSessions =
-      config.type === 'TOOL_DESCRIPTION_RECOMMENDATION' && config.traceSource === 'sessions';
+  const handleRunComplete = useCallback(
+    (config: RecommendationWizardConfig) => {
+      const isToolDescWithSessions =
+        config.type === 'TOOL_DESCRIPTION_RECOMMENDATION' && config.traceSource === 'sessions';
 
-    const initialSteps: Step[] = [
-      ...(isToolDescWithSessions
-        ? [{ label: 'Fetching session spans from CloudWatch...', status: 'pending' as const }]
-        : []),
-      { label: 'Starting recommendation...', status: 'running' },
-      { label: 'Polling for results', status: 'pending' },
-      { label: 'Saving results', status: 'pending' },
-    ];
+      const initialSteps: Step[] = [
+        ...(isToolDescWithSessions
+          ? [{ label: 'Fetching session spans from CloudWatch...', status: 'pending' as const }]
+          : []),
+        { label: 'Starting recommendation...', status: 'running' },
+        { label: 'Polling for results', status: 'pending' },
+        { label: 'Saving results', status: 'pending' },
+      ];
 
-    // If auto-fetching, the first step is active
-    if (isToolDescWithSessions) {
-      initialSteps[0] = { ...initialSteps[0]!, status: 'running' };
-      initialSteps[1] = { ...initialSteps[1]!, status: 'pending' };
-    }
+      // If auto-fetching, the first step is active
+      if (isToolDescWithSessions) {
+        initialSteps[0] = { ...initialSteps[0]!, status: 'running' };
+        initialSteps[1] = { ...initialSteps[1]!, status: 'pending' };
+      }
 
-    setFlow({ name: 'running', config, steps: initialSteps, elapsed: 0 });
-  }, []);
+      // Carry configBundles from wizard state so the running effect can look up systemPrompt
+      const bundles = flow.name === 'wizard' ? flow.configBundles : [];
+      setFlow({ name: 'running', config, configBundles: bundles, steps: initialSteps, elapsed: 0 });
+    },
+    [flow]
+  );
 
   // Execute the recommendation when entering 'running' state
   useEffect(() => {
     if (flow.name !== 'running') return;
     let cancelled = false;
 
-    const { config } = flow;
+    const { config, configBundles } = flow;
     const startTime = Date.now();
 
     const timer = setInterval(() => {
@@ -118,14 +132,25 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
       }
     }, 1000);
 
+    // For config-bundle input, look up the system prompt from the loaded config bundles
+    const bundleSystemPrompt =
+      config.inputSource === 'config-bundle'
+        ? configBundles.find(cb => cb.bundleArn === config.bundleName)?.systemPrompt
+        : undefined;
+
     void (async () => {
       try {
         const result = await runRecommendationCommand({
           type: config.type,
           agent: config.agent,
           evaluators: config.evaluators,
-          inputSource: config.inputSource,
-          inlineContent: config.inputSource === 'inline' ? config.content : undefined,
+          inputSource: config.inputSource === 'config-bundle' ? 'inline' : config.inputSource,
+          inlineContent:
+            config.inputSource === 'inline'
+              ? config.content
+              : config.inputSource === 'config-bundle'
+                ? bundleSystemPrompt
+                : undefined,
           promptFile: config.inputSource === 'file' ? config.content : undefined,
           tools: config.tools
             ? config.tools
@@ -246,6 +271,7 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
       <RecommendationScreen
         agents={flow.agents}
         evaluators={flow.evaluators}
+        configBundles={flow.configBundles}
         onComplete={handleRunComplete}
         onExit={onExit}
       />
@@ -425,4 +451,44 @@ function buildAgentItems(deployedState: DeployedState): AgentItem[] {
   }
 
   return agents;
+}
+
+function buildConfigBundleItems(
+  deployedState: DeployedState,
+  projectBundles: { name: string; components?: Record<string, { configuration?: Record<string, unknown> }> }[]
+): ConfigBundleItem[] {
+  const bundles: ConfigBundleItem[] = [];
+  const seen = new Set<string>();
+
+  for (const target of Object.values(deployedState.targets)) {
+    const bundleMap = target.resources?.configBundles;
+    if (!bundleMap) continue;
+    for (const [name, state] of Object.entries(bundleMap)) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+
+      // Extract systemPrompt from matching project config bundle
+      let systemPrompt: string | undefined;
+      const projBundle = projectBundles.find(pb => pb.name === name);
+      if (projBundle?.components) {
+        for (const comp of Object.values(projBundle.components)) {
+          const sp = comp?.configuration?.systemPrompt;
+          if (typeof sp === 'string') {
+            systemPrompt = sp;
+            break;
+          }
+        }
+      }
+
+      bundles.push({
+        name,
+        bundleId: state.bundleId,
+        bundleArn: state.bundleArn,
+        versionId: state.versionId,
+        systemPrompt,
+      });
+    }
+  }
+
+  return bundles;
 }

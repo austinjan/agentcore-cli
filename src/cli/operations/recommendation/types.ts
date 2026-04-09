@@ -24,6 +24,8 @@ export interface RunRecommendationCommandOptions {
   bundleName?: string;
   /** Config bundle version (when inputSource is 'config-bundle') */
   bundleVersion?: string;
+  /** JSON path to system prompt within the config bundle component (default: $.systemPrompt) */
+  systemPromptJsonPath?: string;
   /** Inline content (when inputSource is 'inline') */
   inlineContent?: string;
   /** File path (when inputSource is 'file') */

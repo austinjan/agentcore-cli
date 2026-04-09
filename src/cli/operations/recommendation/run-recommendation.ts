@@ -93,6 +93,7 @@ export async function runRecommendationCommand(
       inlineContent,
       bundleName: options.bundleName,
       bundleVersion: options.bundleVersion,
+      systemPromptJsonPath: options.systemPromptJsonPath,
       inputSource: options.inputSource,
       tools: options.tools,
       traceSource: options.traceSource,
@@ -298,6 +299,7 @@ interface BuildConfigOptions {
   inlineContent?: string;
   bundleName?: string;
   bundleVersion?: string;
+  systemPromptJsonPath?: string;
   inputSource: string;
   tools?: string[];
   traceSource: string;
@@ -392,6 +394,7 @@ async function buildRecommendationConfig(opts: BuildConfigOptions): Promise<Reco
                 configurationBundle: {
                   bundleArn: opts.bundleName,
                   versionId: opts.bundleVersion,
+                  systemPromptJsonPath: opts.systemPromptJsonPath ?? '$.components.*.configuration.systemPrompt',
                 },
               }
             : { text: opts.inlineContent ?? '' },
