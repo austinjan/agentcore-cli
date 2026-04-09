@@ -31,16 +31,19 @@ a 1–5 numerical scale produces a normalized score of `0.60`.
 
 AgentCore supports two evaluator types:
 
-| Type                | Description                                                                       |
-| ------------------- | --------------------------------------------------------------------------------- |
-| **LLM-as-a-Judge**  | Uses a Bedrock LLM to evaluate agent responses against a scoring rubric (default) |
-| **Code-based**      | Runs custom Python logic in a Lambda function for deterministic or rule-based evaluation |
+| Type               | Description                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| **LLM-as-a-Judge** | Uses a Bedrock LLM to evaluate agent responses against a scoring rubric (default)        |
+| **Code-based**     | Runs custom Python logic in a Lambda function for deterministic or rule-based evaluation |
 
 Code-based evaluators come in two flavors:
-- **Managed** — the CLI scaffolds a Python Lambda project in your agent directory. You write the scoring logic and deploy it with `agentcore deploy`.
+
+- **Managed** — the CLI scaffolds a Python Lambda project in your agent directory. You write the scoring logic and
+  deploy it with `agentcore deploy`.
 - **External** — you bring an existing Lambda function via `--lambda-arn`.
 
-> **Note**: Code-based evaluators cannot be used with online eval configs. Use LLM-as-a-Judge evaluators for continuous monitoring.
+> **Note**: Code-based evaluators cannot be used with online eval configs. Use LLM-as-a-Judge evaluators for continuous
+> monitoring.
 
 ## Adding an Evaluator
 
@@ -214,33 +217,34 @@ agentcore run eval \
   --expected-response "Here is the summary..."
 ```
 
-| Flag                              | Description                                        |
-| --------------------------------- | -------------------------------------------------- |
-| `-r, --runtime <name>`            | Runtime name from project config                   |
-| `--runtime-arn <arn>`             | Runtime ARN (standalone mode, no project required) |
-| `-e, --evaluator <names...>`      | Evaluator name(s) from project or `Builtin.*` IDs  |
-| `--evaluator-arn <arns...>`       | Evaluator ARN(s) (use with `--runtime-arn`)        |
-| `--region <region>`               | AWS region (required with `--runtime-arn`)         |
-| `-s, --session-id <id>`           | Evaluate a specific session only                   |
-| `-t, --trace-id <id>`             | Evaluate a specific trace only                     |
-| `--days <days>`                   | Lookback window in days (default: 7)               |
-| `--endpoint <name>`              | Runtime endpoint name (default: `DEFAULT`)         |
-| `-A, --assertion <text...>`       | Ground truth assertion (repeatable)                |
-| `--expected-trajectory <names>`   | Expected tool calls in order (comma-separated)     |
-| `--expected-response <text>`      | Expected agent response text                       |
-| `--output <path>`                 | Custom output file path                            |
-| `--json`                          | JSON output                                        |
+| Flag                            | Description                                        |
+| ------------------------------- | -------------------------------------------------- |
+| `-r, --runtime <name>`          | Runtime name from project config                   |
+| `--runtime-arn <arn>`           | Runtime ARN (standalone mode, no project required) |
+| `-e, --evaluator <names...>`    | Evaluator name(s) from project or `Builtin.*` IDs  |
+| `--evaluator-arn <arns...>`     | Evaluator ARN(s) (use with `--runtime-arn`)        |
+| `--region <region>`             | AWS region (required with `--runtime-arn`)         |
+| `-s, --session-id <id>`         | Evaluate a specific session only                   |
+| `-t, --trace-id <id>`           | Evaluate a specific trace only                     |
+| `--days <days>`                 | Lookback window in days (default: 7)               |
+| `--endpoint <name>`             | Runtime endpoint name (default: `DEFAULT`)         |
+| `-A, --assertion <text...>`     | Ground truth assertion (repeatable)                |
+| `--expected-trajectory <names>` | Expected tool calls in order (comma-separated)     |
+| `--expected-response <text>`    | Expected agent response text                       |
+| `--output <path>`               | Custom output file path                            |
+| `--json`                        | JSON output                                        |
 
 ### Ground Truth Reference Inputs
 
-Ground truth inputs let you provide expected outcomes for evaluation. These are injected into evaluator instructions via placeholders:
+Ground truth inputs let you provide expected outcomes for evaluation. These are injected into evaluator instructions via
+placeholders:
 
-| Placeholder                  | Source Flag                  |
-| ---------------------------- | ---------------------------- |
-| `{assertions}`               | `--assertion`                |
-| `{expected_tool_trajectory}` | `--expected-trajectory`      |
-| `{actual_tool_trajectory}`   | Auto-populated from traces   |
-| `{expected_response}`        | `--expected-response`        |
+| Placeholder                  | Source Flag                |
+| ---------------------------- | -------------------------- |
+| `{assertions}`               | `--assertion`              |
+| `{expected_tool_trajectory}` | `--expected-trajectory`    |
+| `{actual_tool_trajectory}`   | Auto-populated from traces |
+| `{expected_response}`        | `--expected-response`      |
 
 > **Note**: Traces may take 5–10 minutes to appear after agent invocations. If a run returns no sessions, try increasing
 > `--days` or waiting for traces to propagate.
@@ -412,9 +416,9 @@ agentcore remove online-eval --name QualityMonitor
 AgentCore provides pre-built evaluators that can be used without creating custom evaluator definitions. Reference them
 by their `Builtin.*` ID in `--evaluator` flags or in online eval config `evaluators` arrays.
 
-| Builtin ID                       | Level       |
-| -------------------------------- | ----------- |
-| `Builtin.GoalSuccessRate`        | `SESSION`   |
+| Builtin ID                      | Level       |
+| ------------------------------- | ----------- |
+| `Builtin.GoalSuccessRate`       | `SESSION`   |
 | `Builtin.Correctness`           | `TRACE`     |
 | `Builtin.Faithfulness`          | `TRACE`     |
 | `Builtin.Helpfulness`           | `TRACE`     |

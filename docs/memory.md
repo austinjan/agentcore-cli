@@ -222,7 +222,8 @@ Memory events expire after a configurable duration (7-365 days, default 30):
 
 ## Memory Record Streaming
 
-Memory record streaming delivers memory events to a Kinesis data stream in real-time, enabling downstream analytics and processing.
+Memory record streaming delivers memory events to a Kinesis data stream in real-time, enabling downstream analytics and
+processing.
 
 ### CLI Flags
 
@@ -234,11 +235,11 @@ agentcore add memory \
   --stream-content-level FULL_CONTENT
 ```
 
-| Flag                                 | Description                                              |
-| ------------------------------------ | -------------------------------------------------------- |
-| `--data-stream-arn <arn>`            | Kinesis data stream ARN                                  |
-| `--stream-content-level <level>`     | `FULL_CONTENT` (default) or `METADATA_ONLY`              |
-| `--delivery-type <type>`             | Delivery target type (default: `kinesis`)                |
+| Flag                                 | Description                                                     |
+| ------------------------------------ | --------------------------------------------------------------- |
+| `--data-stream-arn <arn>`            | Kinesis data stream ARN                                         |
+| `--stream-content-level <level>`     | `FULL_CONTENT` (default) or `METADATA_ONLY`                     |
+| `--delivery-type <type>`             | Delivery target type (default: `kinesis`)                       |
 | `--stream-delivery-resources <json>` | Advanced: stream delivery config as JSON (overrides flat flags) |
 
 ### Configuration

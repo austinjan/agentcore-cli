@@ -223,10 +223,10 @@ on the next deployment.
 }
 ```
 
-| Field                 | Required | Description                                                     |
-| --------------------- | -------- | --------------------------------------------------------------- |
-| `name`                | Yes      | Memory name (1-48 chars)                                        |
-| `eventExpiryDuration` | Yes      | Days until events expire (7-365)                                |
+| Field                 | Required | Description                                                          |
+| --------------------- | -------- | -------------------------------------------------------------------- |
+| `name`                | Yes      | Memory name (1-48 chars)                                             |
+| `eventExpiryDuration` | Yes      | Days until events expire (7-365)                                     |
 | `strategies`          | No       | Array of memory strategies (defaults to empty for short-term memory) |
 | `tags`                | No       | Memory-level tags                                                    |
 

@@ -164,11 +164,11 @@ agentcore import --source .bedrock_agentcore.yaml
 agentcore import --source .bedrock_agentcore.yaml --target staging -y
 ```
 
-| Flag              | Description                                                  |
-| ----------------- | ------------------------------------------------------------ |
-| `--source <path>` | Path to `.bedrock_agentcore.yaml` configuration file         |
-| `--target <name>` | Deployment target (only needed if project has multiple)      |
-| `-y, --yes`       | Auto-confirm prompts                                         |
+| Flag              | Description                                             |
+| ----------------- | ------------------------------------------------------- |
+| `--source <path>` | Path to `.bedrock_agentcore.yaml` configuration file    |
+| `--target <name>` | Deployment target (only needed if project has multiple) |
+| `-y, --yes`       | Auto-confirm prompts                                    |
 
 #### import runtime
 
@@ -180,13 +180,13 @@ agentcore import runtime --arn arn:aws:bedrock-agentcore:us-east-1:123456789012:
 agentcore import runtime --arn ... --code ./src --entrypoint handler.py --name MyAgent -y
 ```
 
-| Flag                  | Description                                                         |
-| --------------------- | ------------------------------------------------------------------- |
-| `--arn <runtimeArn>`  | Runtime ARN to import                                               |
-| `--code <path>`       | Path to directory containing the entrypoint file                    |
+| Flag                  | Description                                                             |
+| --------------------- | ----------------------------------------------------------------------- |
+| `--arn <runtimeArn>`  | Runtime ARN to import                                                   |
+| `--code <path>`       | Path to directory containing the entrypoint file                        |
 | `--entrypoint <file>` | Entrypoint file (auto-detected from runtime if omitted, e.g. `main.py`) |
-| `--name <name>`       | Local name for the imported runtime                                 |
-| `-y, --yes`           | Auto-confirm prompts                                                |
+| `--name <name>`       | Local name for the imported runtime                                     |
+| `-y, --yes`           | Auto-confirm prompts                                                    |
 
 #### import memory
 
@@ -227,11 +227,11 @@ agentcore import online-eval
 agentcore import online-eval --arn arn:aws:bedrock-agentcore:us-east-1:123456789012:online-eval-config/jkl012 --name QualityMonitor -y
 ```
 
-| Flag              | Description                                    |
-| ----------------- | ---------------------------------------------- |
-| `--arn <configArn>` | Online evaluation config ARN to import       |
-| `--name <name>`   | Local name for the imported online eval config |
-| `-y, --yes`       | Auto-confirm prompts                           |
+| Flag                | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| `--arn <configArn>` | Online evaluation config ARN to import         |
+| `--name <name>`     | Local name for the imported online eval config |
+| `-y, --yes`         | Auto-confirm prompts                           |
 
 ---
 
@@ -320,16 +320,16 @@ agentcore add memory \
   --expiry 30
 ```
 
-| Flag                   | Description                                                                 |
-| ---------------------- | --------------------------------------------------------------------------- |
-| `--name <name>`                    | Memory name                                                                 |
-| `--strategies <types>`             | Comma-separated: `SEMANTIC`, `SUMMARIZATION`, `USER_PREFERENCE`, `EPISODIC` |
-| `--expiry <days>`                  | Event expiry duration in days (default: 30, min: 7, max: 365)               |
-| `--data-stream-arn <arn>`          | Kinesis data stream ARN for memory record streaming                         |
-| `--stream-content-level <level>`   | Stream content level: `FULL_CONTENT` or `METADATA_ONLY`                     |
-| `--delivery-type <type>`           | Delivery target type (default: `kinesis`)                                   |
-| `--stream-delivery-resources <json>` | Stream delivery config as JSON (advanced, overrides flat flags)            |
-| `--json`                           | JSON output                                                                 |
+| Flag                                 | Description                                                                 |
+| ------------------------------------ | --------------------------------------------------------------------------- |
+| `--name <name>`                      | Memory name                                                                 |
+| `--strategies <types>`               | Comma-separated: `SEMANTIC`, `SUMMARIZATION`, `USER_PREFERENCE`, `EPISODIC` |
+| `--expiry <days>`                    | Event expiry duration in days (default: 30, min: 7, max: 365)               |
+| `--data-stream-arn <arn>`            | Kinesis data stream ARN for memory record streaming                         |
+| `--stream-content-level <level>`     | Stream content level: `FULL_CONTENT` or `METADATA_ONLY`                     |
+| `--delivery-type <type>`             | Delivery target type (default: `kinesis`)                                   |
+| `--stream-delivery-resources <json>` | Stream delivery config as JSON (advanced, overrides flat flags)             |
+| `--json`                             | JSON output                                                                 |
 
 ### add gateway
 
@@ -496,7 +496,8 @@ agentcore add credential \
 
 ### add evaluator
 
-Add an evaluator. Supports LLM-as-a-Judge (default) and code-based evaluator types. See [Evaluations](evals.md) for full details.
+Add an evaluator. Supports LLM-as-a-Judge (default) and code-based evaluator types. See [Evaluations](evals.md) for full
+details.
 
 ```bash
 # LLM-as-a-Judge evaluator
@@ -522,18 +523,18 @@ agentcore add evaluator \
   --timeout 120
 ```
 
-| Flag                      | Description                                                                |
-| ------------------------- | -------------------------------------------------------------------------- |
-| `--name <name>`           | Evaluator name                                                             |
-| `--level <level>`         | `SESSION`, `TRACE`, or `TOOL_CALL`                                         |
-| `--type <type>`           | `llm-as-a-judge` (default) or `code-based`                                 |
-| `--model <model>`         | [LLM] Bedrock model ID for the LLM judge                                  |
-| `--instructions <text>`   | [LLM] Evaluation prompt with placeholders (e.g. `{context}`)              |
+| Flag                      | Description                                                                   |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| `--name <name>`           | Evaluator name                                                                |
+| `--level <level>`         | `SESSION`, `TRACE`, or `TOOL_CALL`                                            |
+| `--type <type>`           | `llm-as-a-judge` (default) or `code-based`                                    |
+| `--model <model>`         | [LLM] Bedrock model ID for the LLM judge                                      |
+| `--instructions <text>`   | [LLM] Evaluation prompt with placeholders (e.g. `{context}`)                  |
 | `--rating-scale <preset>` | [LLM] `1-5-quality`, `1-3-simple`, `pass-fail`, `good-neutral-bad`, or custom |
-| `--lambda-arn <arn>`      | [Code-based] Existing Lambda function ARN (external)                       |
-| `--timeout <seconds>`     | [Code-based] Lambda timeout in seconds, 1–300 (default: 60)               |
-| `--config <path>`         | Config JSON file (overrides `--model`, `--instructions`, `--rating-scale`) |
-| `--json`                  | JSON output                                                                |
+| `--lambda-arn <arn>`      | [Code-based] Existing Lambda function ARN (external)                          |
+| `--timeout <seconds>`     | [Code-based] Lambda timeout in seconds, 1–300 (default: 60)                   |
+| `--config <path>`         | Config JSON file (overrides `--model`, `--instructions`, `--rating-scale`)    |
+| `--json`                  | JSON output                                                                   |
 
 ### add online-eval
 
@@ -603,17 +604,17 @@ agentcore dev list-tools
 agentcore dev call-tool --tool myTool --input '{"arg": "value"}'
 ```
 
-| Flag / Argument        | Description                                              |
-| ---------------------- | -------------------------------------------------------- |
-| `[prompt]`             | Send a prompt to a running dev server                    |
-| `-p, --port <port>`    | Port (default: 8080; MCP uses 8000, A2A uses 9000)       |
-| `-r, --runtime <name>` | Runtime to run or invoke (required if multiple runtimes) |
-| `-s, --stream`         | Stream response when invoking                            |
-| `-l, --logs`           | Non-interactive stdout logging                           |
+| Flag / Argument        | Description                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `[prompt]`             | Send a prompt to a running dev server                                        |
+| `-p, --port <port>`    | Port (default: 8080; MCP uses 8000, A2A uses 9000)                           |
+| `-r, --runtime <name>` | Runtime to run or invoke (required if multiple runtimes)                     |
+| `-s, --stream`         | Stream response when invoking                                                |
+| `-l, --logs`           | Non-interactive stdout logging                                               |
 | `--exec`               | Execute a shell command in the running dev container (Container agents only) |
-| `--tool <name>`        | MCP tool name (with `call-tool` prompt)                  |
-| `--input <json>`       | MCP tool arguments as JSON (with `--tool`)               |
-| `-H, --header <h>`     | Custom header (`"Name: Value"`, repeatable)              |
+| `--tool <name>`        | MCP tool name (with `call-tool` prompt)                                      |
+| `--input <json>`       | MCP tool arguments as JSON (with `--tool`)                                   |
+| `-H, --header <h>`     | Custom header (`"Name: Value"`, repeatable)                                  |
 
 ### invoke
 
@@ -632,22 +633,22 @@ agentcore invoke --exec "python script.py" --timeout 30
 agentcore invoke call-tool --tool myTool --input '{"key": "value"}'
 ```
 
-| Flag                 | Description                                              |
-| -------------------- | -------------------------------------------------------- |
-| `[prompt]`           | Prompt text (positional argument)                        |
-| `--prompt <text>`    | Prompt text (flag, takes precedence over positional)     |
-| `--runtime <name>`   | Specific runtime                                         |
-| `--target <name>`    | Deployment target                                        |
-| `--session-id <id>`  | Continue a specific session                              |
-| `--user-id <id>`     | User ID for runtime invocation (default: `default-user`) |
-| `--stream`           | Stream response in real-time                             |
-| `--exec`             | Execute a shell command in the runtime container         |
-| `--timeout <seconds>`| Timeout in seconds for `--exec` commands                 |
-| `--tool <name>`      | MCP tool name (use with `call-tool` prompt)              |
-| `--input <json>`     | MCP tool arguments as JSON (use with `--tool`)           |
-| `-H, --header <h>`   | Custom header (`"Name: Value"`, repeatable)              |
-| `--bearer-token <t>` | Bearer token for CUSTOM_JWT auth                         |
-| `--json`             | JSON output                                              |
+| Flag                  | Description                                              |
+| --------------------- | -------------------------------------------------------- |
+| `[prompt]`            | Prompt text (positional argument)                        |
+| `--prompt <text>`     | Prompt text (flag, takes precedence over positional)     |
+| `--runtime <name>`    | Specific runtime                                         |
+| `--target <name>`     | Deployment target                                        |
+| `--session-id <id>`   | Continue a specific session                              |
+| `--user-id <id>`      | User ID for runtime invocation (default: `default-user`) |
+| `--stream`            | Stream response in real-time                             |
+| `--exec`              | Execute a shell command in the runtime container         |
+| `--timeout <seconds>` | Timeout in seconds for `--exec` commands                 |
+| `--tool <name>`       | MCP tool name (use with `call-tool` prompt)              |
+| `--input <json>`      | MCP tool arguments as JSON (use with `--tool`)           |
+| `-H, --header <h>`    | Custom header (`"Name: Value"`, repeatable)              |
+| `--bearer-token <t>`  | Bearer token for CUSTOM_JWT auth                         |
+| `--json`              | JSON output                                              |
 
 ---
 
@@ -730,21 +731,21 @@ agentcore run eval \
   --region us-east-1
 ```
 
-| Flag                         | Description                                 |
-| ---------------------------- | ------------------------------------------- |
-| `-r, --runtime <name>`            | Runtime name from project                              |
-| `--runtime-arn <arn>`             | Runtime ARN (standalone mode)                          |
-| `-e, --evaluator <names...>`      | Evaluator name(s) or `Builtin.*` IDs                   |
-| `--evaluator-arn <arns...>`       | Evaluator ARN(s) (use with `--runtime-arn`)            |
-| `--region <region>`               | AWS region (required with `--runtime-arn`)             |
-| `-s, --session-id <id>`           | Evaluate a specific session                            |
-| `-t, --trace-id <id>`             | Evaluate a specific trace                              |
-| `--days <days>`                   | Lookback window in days (default: 7)                   |
-| `-A, --assertion <text...>`       | Ground truth assertion (repeatable)                    |
-| `--expected-trajectory <names>`   | Expected tool calls in order (comma-separated)         |
-| `--expected-response <text>`      | Expected agent response text                           |
-| `--output <path>`                 | Custom output file path                                |
-| `--json`                          | JSON output                                            |
+| Flag                            | Description                                    |
+| ------------------------------- | ---------------------------------------------- |
+| `-r, --runtime <name>`          | Runtime name from project                      |
+| `--runtime-arn <arn>`           | Runtime ARN (standalone mode)                  |
+| `-e, --evaluator <names...>`    | Evaluator name(s) or `Builtin.*` IDs           |
+| `--evaluator-arn <arns...>`     | Evaluator ARN(s) (use with `--runtime-arn`)    |
+| `--region <region>`             | AWS region (required with `--runtime-arn`)     |
+| `-s, --session-id <id>`         | Evaluate a specific session                    |
+| `-t, --trace-id <id>`           | Evaluate a specific trace                      |
+| `--days <days>`                 | Lookback window in days (default: 7)           |
+| `-A, --assertion <text...>`     | Ground truth assertion (repeatable)            |
+| `--expected-trajectory <names>` | Expected tool calls in order (comma-separated) |
+| `--expected-response <text>`    | Expected agent response text                   |
+| `--output <path>`               | Custom output file path                        |
+| `--json`                        | JSON output                                    |
 
 ### evals history
 
@@ -825,13 +826,13 @@ agentcore fetch access --name MyGateway --type gateway --json
 agentcore fetch access --name MyAgent --type agent --target staging
 ```
 
-| Flag              | Description                                   |
-| ----------------- | --------------------------------------------- |
-| `--name <name>`            | Gateway or agent name                                |
-| `--type <type>`            | Resource type: `gateway` (default) or `agent`        |
-| `--target <name>`          | Deployment target                                    |
-| `--identity-name <name>`   | Identity credential name for token fetch             |
-| `--json`                   | JSON output                                          |
+| Flag                     | Description                                   |
+| ------------------------ | --------------------------------------------- |
+| `--name <name>`          | Gateway or agent name                         |
+| `--type <type>`          | Resource type: `gateway` (default) or `agent` |
+| `--target <name>`        | Deployment target                             |
+| `--identity-name <name>` | Identity credential name for token fetch      |
+| `--json`                 | JSON output                                   |
 
 ### package
 
