@@ -1,5 +1,8 @@
 import { ConfigIO } from '../../../lib';
 import { listABTests, updateABTest } from '../../aws/agentcore-ab-tests';
+import { stopBatchEvaluation } from '../../aws/agentcore-batch-evaluation';
+import { deleteRecommendation } from '../../aws/agentcore-recommendation';
+import { detectRegion } from '../../aws/region';
 import { getErrorMessage } from '../../errors';
 import { handlePauseResume } from '../../operations/eval';
 import type { OnlineEvalActionOptions } from '../../operations/eval';
@@ -196,6 +199,76 @@ export const registerStop = (program: Command) => {
           console.log(JSON.stringify({ success: false, error: getErrorMessage(error) }));
         } else {
           console.error(`Error: ${getErrorMessage(error)}`);
+        }
+        process.exit(1);
+      }
+    });
+
+  stopCmd
+    .command('batch-evaluation')
+    .description('Stop a running batch evaluation')
+    .requiredOption('-i, --id <id>', 'Batch evaluation ID to stop')
+    .option('--region <region>', 'AWS region (auto-detected if omitted)')
+    .option('--json', 'Output as JSON')
+    .action(async (cliOptions: { id: string; region?: string; json?: boolean }) => {
+      try {
+        const { region: detectedRegion } = await detectRegion();
+        const region = cliOptions.region ?? detectedRegion;
+
+        const result = await stopBatchEvaluation({
+          region,
+          batchEvaluateId: cliOptions.id,
+        });
+
+        if (cliOptions.json) {
+          console.log(JSON.stringify({ success: true, ...result }));
+        } else {
+          console.log(`\nBatch evaluation stopped successfully`);
+          console.log(`ID: ${result.batchEvaluateId}`);
+          console.log(`Status: ${result.status}\n`);
+        }
+
+        process.exit(0);
+      } catch (error) {
+        if (cliOptions.json) {
+          console.log(JSON.stringify({ success: false, error: getErrorMessage(error) }));
+        } else {
+          render(<Text color="red">Error: {getErrorMessage(error)}</Text>);
+        }
+        process.exit(1);
+      }
+    });
+
+  stopCmd
+    .command('recommendation')
+    .description('Stop a running recommendation (deletes the recommendation resource)')
+    .requiredOption('-i, --id <id>', 'Recommendation ID to stop')
+    .option('--region <region>', 'AWS region (auto-detected if omitted)')
+    .option('--json', 'Output as JSON')
+    .action(async (cliOptions: { id: string; region?: string; json?: boolean }) => {
+      try {
+        const { region: detectedRegion } = await detectRegion();
+        const region = cliOptions.region ?? detectedRegion;
+
+        const result = await deleteRecommendation({
+          region,
+          recommendationId: cliOptions.id,
+        });
+
+        if (cliOptions.json) {
+          console.log(JSON.stringify({ success: true, ...result }));
+        } else {
+          console.log(`\nRecommendation stopped successfully`);
+          console.log(`ID: ${result.recommendationId}`);
+          console.log(`Status: ${result.status}\n`);
+        }
+
+        process.exit(0);
+      } catch (error) {
+        if (cliOptions.json) {
+          console.log(JSON.stringify({ success: false, error: getErrorMessage(error) }));
+        } else {
+          render(<Text color="red">Error: {getErrorMessage(error)}</Text>);
         }
         process.exit(1);
       }

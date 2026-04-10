@@ -50,6 +50,8 @@ export interface RunRecommendationCommandOptions {
   maxPollDurationMs?: number;
   /** Progress callback */
   onProgress?: (status: string, message: string) => void;
+  /** Called once the recommendation has been created, with ID and region for cancellation */
+  onStarted?: (info: { recommendationId: string; region: string }) => void;
 }
 
 export interface RunRecommendationCommandResult {

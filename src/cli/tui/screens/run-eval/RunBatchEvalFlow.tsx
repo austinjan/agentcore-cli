@@ -1,4 +1,5 @@
 import { validateAwsCredentials } from '../../../aws/account';
+import { stopBatchEvaluation } from '../../../aws/agentcore-batch-evaluation';
 import type { SessionMetadataEntry } from '../../../aws/agentcore-batch-evaluation';
 import { listEvaluators } from '../../../aws/agentcore-control';
 import { detectRegion } from '../../../aws/region';
@@ -32,7 +33,7 @@ import type { EvaluatorItem } from '../online-eval/types';
 import { GroundTruthForm } from './GroundTruthForm';
 import type { AgentItem } from './types';
 import type { GroundTruthData } from './useRunEvalWizard';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -69,7 +70,14 @@ const STEP_LABELS: Record<BatchEvalStep, string> = {
 type FlowState =
   | { name: 'loading' }
   | { name: 'wizard'; agents: AgentItem[]; evaluators: EvaluatorItem[] }
-  | { name: 'running'; config: BatchEvalConfig; steps: Step[]; elapsed: number }
+  | {
+      name: 'running';
+      config: BatchEvalConfig;
+      steps: Step[];
+      elapsed: number;
+      batchEvaluateId?: string;
+      region?: string;
+    }
   | { name: 'results'; result: RunBatchEvaluationCommandResult; savedFilePath?: string }
   | { name: 'creds-error'; message: string }
   | { name: 'error'; message: string; logFilePath?: string };
@@ -84,6 +92,25 @@ interface RunBatchEvalFlowProps {
 
 export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
   const [flow, setFlow] = useState<FlowState>({ name: 'loading' });
+  const stoppingRef = useRef(false);
+
+  // Handle Esc to stop a running batch evaluation
+  useInput((_input, key) => {
+    if (flow.name !== 'running' || !flow.batchEvaluateId || !flow.region || stoppingRef.current) return;
+    if (key.escape) {
+      stoppingRef.current = true;
+      void stopBatchEvaluation({ region: flow.region, batchEvaluateId: flow.batchEvaluateId }).catch(() => {
+        // Best-effort — the poll loop will pick up the final status
+      });
+      setFlow(prev => {
+        if (prev.name !== 'running') return prev;
+        const steps = prev.steps.map(s =>
+          s.status === 'running' ? { ...s, status: 'error' as const, error: 'Stopping...' } : s
+        );
+        return { ...prev, steps };
+      });
+    }
+  });
 
   // Load agents and evaluators
   useEffect(() => {
@@ -161,6 +188,7 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
   }, [flow.name]);
 
   const handleWizardComplete = useCallback((config: BatchEvalConfig) => {
+    stoppingRef.current = false;
     const initialSteps: Step[] = [
       { label: 'Starting batch evaluation...', status: 'running' },
       { label: 'Polling for results', status: 'pending' },
@@ -205,6 +233,12 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
                 steps[1] = { ...steps[1]!, status: 'running' };
               }
               return { ...prev, steps };
+            });
+          },
+          onStarted: info => {
+            setFlow(prev => {
+              if (prev.name !== 'running') return prev;
+              return { ...prev, batchEvaluateId: info.batchEvaluateId, region: info.region };
             });
           },
         });
@@ -311,6 +345,7 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
               <Text dimColor>({timeStr})</Text>
             </Text>
             <StepProgress steps={flow.steps} />
+            {flow.batchEvaluateId && <Text dimColor>Press Esc to stop the evaluation</Text>}
           </Box>
         </Panel>
       </Screen>

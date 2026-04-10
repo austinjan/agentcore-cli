@@ -146,6 +146,7 @@ export async function runRecommendationCommand(
     logger?.log(`Response: ${JSON.stringify(startResult, null, 2)}`);
     logger?.endStep('success');
     onProgress?.('started', `Recommendation created: ${startResult.recommendationId} (status: ${startResult.status})`);
+    options.onStarted?.({ recommendationId: startResult.recommendationId, region });
 
     // 8. Poll GetRecommendation until terminal status
     logger?.startStep('Poll for completion');

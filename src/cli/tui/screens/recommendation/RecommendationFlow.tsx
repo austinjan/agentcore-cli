@@ -2,6 +2,7 @@ import { ConfigIO } from '../../../../lib';
 import type { DeployedState } from '../../../../schema';
 import { validateAwsCredentials } from '../../../aws/account';
 import { listEvaluators } from '../../../aws/agentcore-control';
+import { deleteRecommendation } from '../../../aws/agentcore-recommendation';
 import { detectRegion } from '../../../aws/region';
 import { getErrorMessage } from '../../../errors';
 import { runRecommendationCommand } from '../../../operations/recommendation';
@@ -13,8 +14,8 @@ import { HELP_TEXT } from '../../constants';
 import { useListNavigation } from '../../hooks';
 import { RecommendationScreen } from './RecommendationScreen';
 import type { AgentItem, ConfigBundleItem, EvaluatorItem, RecommendationWizardConfig } from './types';
-import { Box, Text } from 'ink';
-import React, { useCallback, useEffect, useState } from 'react';
+import { Box, Text, useInput } from 'ink';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 type FlowState =
   | { name: 'loading' }
@@ -25,6 +26,8 @@ type FlowState =
       configBundles: ConfigBundleItem[];
       steps: Step[];
       elapsed: number;
+      recommendationId?: string;
+      region?: string;
     }
   | { name: 'results'; result: RunRecommendationCommandResult; config: RecommendationWizardConfig; filePath?: string }
   | { name: 'creds-error'; message: string }
@@ -36,6 +39,25 @@ interface RecommendationFlowProps {
 
 export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
   const [flow, setFlow] = useState<FlowState>({ name: 'loading' });
+  const stoppingRef = useRef(false);
+
+  // Handle Esc to stop a running recommendation
+  useInput((_input, key) => {
+    if (flow.name !== 'running' || !flow.recommendationId || !flow.region || stoppingRef.current) return;
+    if (key.escape) {
+      stoppingRef.current = true;
+      void deleteRecommendation({ region: flow.region, recommendationId: flow.recommendationId }).catch(() => {
+        // Best-effort — the poll loop will pick up the final status
+      });
+      setFlow(prev => {
+        if (prev.name !== 'running') return prev;
+        const steps = prev.steps.map(s =>
+          s.status === 'running' ? { ...s, status: 'error' as const, error: 'Stopping...' } : s
+        );
+        return { ...prev, steps };
+      });
+    }
+  });
 
   // Load agents and evaluators
   useEffect(() => {
@@ -109,6 +131,7 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
       }
 
       // Carry configBundles from wizard state so the running effect can look up systemPrompt
+      stoppingRef.current = false;
       const bundles = flow.name === 'wizard' ? flow.configBundles : [];
       setFlow({ name: 'running', config, configBundles: bundles, steps: initialSteps, elapsed: 0 });
     },
@@ -206,6 +229,12 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
                 steps[offset + 1] = { ...steps[offset + 1]!, status: 'running' };
               }
               return { ...prev, steps };
+            });
+          },
+          onStarted: info => {
+            setFlow(prev => {
+              if (prev.name !== 'running') return prev;
+              return { ...prev, recommendationId: info.recommendationId, region: info.region };
             });
           },
         });
@@ -323,6 +352,7 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
               <Text dimColor>({timeStr})</Text>
             </Text>
             <StepProgress steps={flow.steps} />
+            {flow.recommendationId && <Text dimColor>Press Esc to stop the recommendation</Text>}
           </Box>
         </Panel>
       </Screen>

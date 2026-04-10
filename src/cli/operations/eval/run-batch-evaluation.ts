@@ -44,6 +44,8 @@ export interface RunBatchEvaluationOptions {
   pollIntervalMs?: number;
   /** Progress callback */
   onProgress?: (status: string, message: string) => void;
+  /** Called once the batch evaluation has been created, with ID and region for cancellation */
+  onStarted?: (info: { batchEvaluateId: string; region: string }) => void;
 }
 
 export interface BatchEvaluationResult {
@@ -199,6 +201,7 @@ export async function runBatchEvaluationCommand(
     logger?.endStep('success');
 
     onProgress?.('running', `Batch evaluation started (ID: ${startResult.batchEvaluateId})`);
+    options.onStarted?.({ batchEvaluateId: startResult.batchEvaluateId, region });
 
     // 4. Poll for completion
     logger?.startStep('Poll for completion');
