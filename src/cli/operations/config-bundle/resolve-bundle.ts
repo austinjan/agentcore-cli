@@ -25,6 +25,7 @@ export async function resolveBundleByName(
 ): Promise<ResolvedBundle> {
   // Fast path: check deployed state
   const deployedState = await configIO.readDeployedState();
+  let projectName: string | undefined;
   for (const targetName of Object.keys(deployedState.targets ?? {})) {
     const target = deployedState.targets?.[targetName];
     const bundles = target?.resources?.configBundles;
@@ -45,9 +46,21 @@ export async function resolveBundleByName(
     }
   }
 
+  // Read project name for prefixed API-side bundle name lookup
+  try {
+    const projectSpec = await configIO.readProjectSpec();
+    projectName = projectSpec.name;
+  } catch {
+    // Project spec may not be available
+  }
+
   // Fallback: search via API
+  // The API stores bundles with a prefixed name: {projectName}_{bundleName}
   const result = await listConfigurationBundles({ region, maxResults: 100 });
-  const match = result.bundles.find(b => b.bundleName === bundleName);
+  const prefixedName = projectName ? `${projectName}_${bundleName}` : undefined;
+  const match = result.bundles.find(
+    b => b.bundleName === bundleName || (prefixedName && b.bundleName === prefixedName)
+  );
   if (!match) {
     throw new Error(`Configuration bundle "${bundleName}" not found. Has it been deployed?`);
   }
