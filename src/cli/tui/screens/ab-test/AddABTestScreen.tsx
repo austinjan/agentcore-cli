@@ -30,6 +30,7 @@ interface AddABTestScreenProps {
   deployedBundles: { name: string; bundleId: string }[];
   onlineEvalConfigs: string[];
   fetchBundleVersions: (bundleId: string) => Promise<{ versionId: string; createdAt: string }[]>;
+  onCreateBundle?: () => void;
 }
 
 export function AddABTestScreen({
@@ -41,6 +42,7 @@ export function AddABTestScreen({
   deployedBundles,
   onlineEvalConfigs,
   fetchBundleVersions,
+  onCreateBundle,
 }: AddABTestScreenProps) {
   const wizard = useAddABTestWizard();
 
@@ -246,6 +248,7 @@ export function AddABTestScreen({
             treatmentVersionLoadState={treatmentVersionLoadState}
             onComplete={wizard.setVariants}
             onCancel={() => wizard.goBack()}
+            onCreateBundle={onCreateBundle}
           />
         )}
 

@@ -1,12 +1,14 @@
 import type { ComponentConfigurationMap } from '../../../../schema';
-import type { AddConfigBundleConfig, AddConfigBundleStep, ComponentInputMethod } from './types';
+import type { AddConfigBundleConfig, AddConfigBundleStep, ComponentType } from './types';
 import { useCallback, useState } from 'react';
 
 const ALL_STEPS: AddConfigBundleStep[] = [
   'name',
   'description',
-  'inputMethod',
-  'components',
+  'componentType',
+  'componentSelect',
+  'configuration',
+  'addAnother',
   'branchName',
   'commitMessage',
   'confirm',
@@ -16,7 +18,6 @@ function getDefaultConfig(): AddConfigBundleConfig {
   return {
     name: '',
     description: '',
-    inputMethod: 'inline',
     components: {},
     componentsRaw: '',
     branchName: 'main',
@@ -35,64 +36,57 @@ export function useAddConfigBundleWizard() {
     if (prevStep) setStep(prevStep);
   }, [currentIndex]);
 
-  const nextStep = useCallback((currentStep: AddConfigBundleStep): AddConfigBundleStep | undefined => {
-    const idx = ALL_STEPS.indexOf(currentStep);
-    return ALL_STEPS[idx + 1];
+  const setName = useCallback((name: string) => {
+    setConfig(c => ({ ...c, name }));
+    setStep('description');
   }, []);
 
-  const setName = useCallback(
-    (name: string) => {
-      setConfig(c => ({ ...c, name }));
-      const next = nextStep('name');
-      if (next) setStep(next);
-    },
-    [nextStep]
-  );
+  const setDescription = useCallback((description: string) => {
+    setConfig(c => ({ ...c, description }));
+    setStep('componentType');
+  }, []);
 
-  const setDescription = useCallback(
-    (description: string) => {
-      setConfig(c => ({ ...c, description }));
-      const next = nextStep('description');
-      if (next) setStep(next);
-    },
-    [nextStep]
-  );
+  const setComponentType = useCallback((componentType: ComponentType) => {
+    setConfig(c => ({ ...c, currentComponentType: componentType, currentComponentArn: undefined }));
+    setStep('componentSelect');
+  }, []);
 
-  const setInputMethod = useCallback(
-    (inputMethod: ComponentInputMethod) => {
-      setConfig(c => ({ ...c, inputMethod }));
-      const next = nextStep('inputMethod');
-      if (next) setStep(next);
-    },
-    [nextStep]
-  );
+  const setSelectedComponent = useCallback((arn: string) => {
+    setConfig(c => ({ ...c, currentComponentArn: arn }));
+    setStep('configuration');
+  }, []);
 
-  const setComponents = useCallback(
-    (components: ComponentConfigurationMap, raw: string) => {
-      setConfig(c => ({ ...c, components, componentsRaw: raw }));
-      const next = nextStep('components');
-      if (next) setStep(next);
-    },
-    [nextStep]
-  );
+  const setConfiguration = useCallback((configuration: Record<string, unknown>) => {
+    setConfig(c => {
+      const arn = c.currentComponentArn;
+      if (!arn) return c;
+      const updatedComponents: ComponentConfigurationMap = {
+        ...c.components,
+        [arn]: { configuration },
+      };
+      return { ...c, components: updatedComponents };
+    });
+    setStep('addAnother');
+  }, []);
 
-  const setBranchName = useCallback(
-    (branchName: string) => {
-      setConfig(c => ({ ...c, branchName }));
-      const next = nextStep('branchName');
-      if (next) setStep(next);
-    },
-    [nextStep]
-  );
+  const addAnotherComponent = useCallback(() => {
+    setConfig(c => ({ ...c, currentComponentType: undefined, currentComponentArn: undefined }));
+    setStep('componentType');
+  }, []);
 
-  const setCommitMessage = useCallback(
-    (commitMessage: string) => {
-      setConfig(c => ({ ...c, commitMessage }));
-      const next = nextStep('commitMessage');
-      if (next) setStep(next);
-    },
-    [nextStep]
-  );
+  const doneAddingComponents = useCallback(() => {
+    setStep('branchName');
+  }, []);
+
+  const setBranchName = useCallback((branchName: string) => {
+    setConfig(c => ({ ...c, branchName }));
+    setStep('commitMessage');
+  }, []);
+
+  const setCommitMessage = useCallback((commitMessage: string) => {
+    setConfig(c => ({ ...c, commitMessage }));
+    setStep('confirm');
+  }, []);
 
   const reset = useCallback(() => {
     setConfig(getDefaultConfig());
@@ -107,8 +101,11 @@ export function useAddConfigBundleWizard() {
     goBack,
     setName,
     setDescription,
-    setInputMethod,
-    setComponents,
+    setComponentType,
+    setSelectedComponent,
+    setConfiguration,
+    addAnotherComponent,
+    doneAddingComponents,
     setBranchName,
     setCommitMessage,
     reset,

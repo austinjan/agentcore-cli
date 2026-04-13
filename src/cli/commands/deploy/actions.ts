@@ -675,6 +675,9 @@ function resolveComponentKey(
     if (httpGw) return httpGw.gatewayArn;
     const mcpGw = resources.mcp?.gateways?.[gwName];
     if (mcpGw) return mcpGw.gatewayArn;
+    throw new Error(
+      `Config bundle references gateway "${gwName}" but it was not found in deployed resources. Ensure the gateway is defined in agentcore.json and deploys successfully.`
+    );
   }
 
   const rtMatch = /^\{\{runtime:(.+)\}\}$/.exec(key);
@@ -682,6 +685,9 @@ function resolveComponentKey(
     const rtName = rtMatch[1]!;
     const rt = resources.runtimes?.[rtName];
     if (rt) return rt.runtimeArn;
+    throw new Error(
+      `Config bundle references runtime "${rtName}" but it was not found in deployed resources. Ensure the runtime is defined in agentcore.json and deploys successfully.`
+    );
   }
 
   return key;

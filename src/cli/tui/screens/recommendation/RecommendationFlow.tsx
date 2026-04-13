@@ -5,7 +5,7 @@ import { listEvaluators } from '../../../aws/agentcore-control';
 import { deleteRecommendation } from '../../../aws/agentcore-recommendation';
 import { detectRegion } from '../../../aws/region';
 import { getErrorMessage } from '../../../errors';
-import { runRecommendationCommand } from '../../../operations/recommendation';
+import { applyRecommendationToBundle, runRecommendationCommand } from '../../../operations/recommendation';
 import type { RunRecommendationCommandResult } from '../../../operations/recommendation';
 import { saveRecommendationRun } from '../../../operations/recommendation/recommendation-storage';
 import { ErrorPrompt, GradientText, Panel, Screen, StepProgress } from '../../components';
@@ -13,7 +13,13 @@ import type { Step } from '../../components';
 import { HELP_TEXT } from '../../constants';
 import { useListNavigation } from '../../hooks';
 import { RecommendationScreen } from './RecommendationScreen';
-import type { AgentItem, ConfigBundleItem, EvaluatorItem, RecommendationWizardConfig } from './types';
+import type {
+  AgentItem,
+  ConfigBundleField,
+  ConfigBundleItem,
+  EvaluatorItem,
+  RecommendationWizardConfig,
+} from './types';
 import { Box, Text, useInput } from 'ink';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -23,7 +29,6 @@ type FlowState =
   | {
       name: 'running';
       config: RecommendationWizardConfig;
-      configBundles: ConfigBundleItem[];
       steps: Step[];
       elapsed: number;
       recommendationId?: string;
@@ -112,28 +117,23 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
 
   const handleRunComplete = useCallback(
     (config: RecommendationWizardConfig) => {
-      const isToolDescWithSessions =
-        config.type === 'TOOL_DESCRIPTION_RECOMMENDATION' && config.traceSource === 'sessions';
+      const willFetchSpans = config.traceSource === 'sessions';
 
       const initialSteps: Step[] = [
-        ...(isToolDescWithSessions
-          ? [{ label: 'Fetching session spans from CloudWatch...', status: 'pending' as const }]
-          : []),
+        ...(willFetchSpans ? [{ label: 'Fetching session spans from CloudWatch...', status: 'pending' as const }] : []),
         { label: 'Starting recommendation...', status: 'running' },
         { label: 'Polling for results', status: 'pending' },
         { label: 'Saving results', status: 'pending' },
       ];
 
       // If auto-fetching, the first step is active
-      if (isToolDescWithSessions) {
+      if (willFetchSpans) {
         initialSteps[0] = { ...initialSteps[0]!, status: 'running' };
         initialSteps[1] = { ...initialSteps[1]!, status: 'pending' };
       }
 
-      // Carry configBundles from wizard state so the running effect can look up systemPrompt
       stoppingRef.current = false;
-      const bundles = flow.name === 'wizard' ? flow.configBundles : [];
-      setFlow({ name: 'running', config, configBundles: bundles, steps: initialSteps, elapsed: 0 });
+      setFlow({ name: 'running', config, steps: initialSteps, elapsed: 0 });
     },
     [flow]
   );
@@ -143,7 +143,7 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
     if (flow.name !== 'running') return;
     let cancelled = false;
 
-    const { config, configBundles } = flow;
+    const { config } = flow;
     const startTime = Date.now();
 
     const timer = setInterval(() => {
@@ -155,65 +155,37 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
       }
     }, 1000);
 
-    // For config-bundle input, look up selected field values from the loaded config bundles
-    const selectedBundle =
-      config.inputSource === 'config-bundle' ? configBundles.find(cb => cb.bundleArn === config.bundleName) : undefined;
-
     void (async () => {
       try {
-        // Resolve inline content and tools from config bundle fields
-        let resolvedInlineContent: string | undefined;
-        let resolvedTools: string[] | undefined;
-
-        if (config.inputSource === 'config-bundle' && selectedBundle) {
-          if (config.type === 'SYSTEM_PROMPT_RECOMMENDATION') {
-            // System prompt: single field → use its value as inline content
-            const fieldName = config.bundleFields[0];
-            const fieldValue = fieldName ? selectedBundle.stringFields[fieldName] : undefined;
-            if (!fieldValue) {
-              throw new Error(`Field "${fieldName}" not found or empty in the selected config bundle.`);
-            }
-            resolvedInlineContent = fieldValue;
-          } else {
-            // Tool description: multiple fields → each field becomes toolName:description
-            resolvedTools = config.bundleFields.map(fieldName => {
-              const value = selectedBundle.stringFields[fieldName];
-              if (!value) {
-                throw new Error(`Field "${fieldName}" not found or empty in the selected config bundle.`);
-              }
-              return `${fieldName}:${value}`;
-            });
-          }
-        } else if (config.inputSource === 'config-bundle') {
-          throw new Error('Selected config bundle not found.');
-        }
-
         const result = await runRecommendationCommand({
           type: config.type,
           agent: config.agent,
           evaluators: config.evaluators,
-          inputSource: config.inputSource === 'config-bundle' ? 'inline' : config.inputSource,
-          inlineContent:
-            config.inputSource === 'inline'
-              ? config.content
-              : config.inputSource === 'config-bundle'
-                ? resolvedInlineContent
-                : undefined,
+          inputSource: config.inputSource,
+          inlineContent: config.inputSource === 'inline' ? config.content : undefined,
           promptFile: config.inputSource === 'file' ? config.content : undefined,
-          tools:
-            resolvedTools ??
-            (config.tools
-              ? config.tools
-                  .split(/,(?=[a-zA-Z0-9_\-.]+:)/)
-                  .map(t => t.trim())
-                  .filter(Boolean)
-              : undefined),
+          bundleName: config.inputSource === 'config-bundle' ? config.bundleName : undefined,
+          bundleVersion: config.inputSource === 'config-bundle' ? config.bundleVersion : undefined,
+          systemPromptJsonPath:
+            config.inputSource === 'config-bundle' && config.systemPromptJsonPath
+              ? config.systemPromptJsonPath
+              : undefined,
+          toolDescJsonPaths:
+            config.inputSource === 'config-bundle' && config.toolDescJsonPaths.length > 0
+              ? config.toolDescJsonPaths
+              : undefined,
+          tools: config.tools
+            ? config.tools
+                .split(/,(?=[a-zA-Z0-9_\-.]+:)/)
+                .map(t => t.trim())
+                .filter(Boolean)
+            : undefined,
           traceSource: config.traceSource,
           lookbackDays: config.days,
           sessionIds: config.sessionIds.length > 0 ? config.sessionIds : undefined,
           onProgress: (status, _message) => {
             if (cancelled) return;
-            const hasFetchStep = config.type === 'TOOL_DESCRIPTION_RECOMMENDATION' && config.traceSource === 'sessions';
+            const hasFetchStep = config.traceSource === 'sessions';
             const offset = hasFetchStep ? 1 : 0;
 
             setFlow(prev => {
@@ -257,7 +229,7 @@ export function RecommendationFlow({ onExit }: RecommendationFlowProps) {
         }
 
         // Mark polling success, saving running
-        const hasFetchStep = config.type === 'TOOL_DESCRIPTION_RECOMMENDATION' && config.traceSource === 'sessions';
+        const hasFetchStep = config.traceSource === 'sessions';
         const offset = hasFetchStep ? 1 : 0;
 
         setFlow(prev => {
@@ -394,15 +366,46 @@ interface ResultsViewProps {
 }
 
 function ResultsView({ result, config, filePath, onRunAnother, onExit }: ResultsViewProps) {
+  const [applyStatus, setApplyStatus] = useState<{ applied: boolean; message: string } | null>(null);
+
+  const isConfigBundle = config.inputSource === 'config-bundle' && config.bundleName;
+  const hasNewVersion =
+    !!result.result?.systemPromptRecommendationResult?.configurationBundle ||
+    !!result.result?.toolDescriptionRecommendationResult?.configurationBundle;
+  const canApply = isConfigBundle && hasNewVersion && result.region && !applyStatus;
+
   const actions = [
+    ...(canApply ? [{ id: 'apply', title: 'Sync new bundle version to local config' }] : []),
     { id: 'another', title: 'Run another recommendation' },
     { id: 'back', title: 'Back' },
   ];
 
+  const handleApply = useCallback(async () => {
+    if (!result.result || !result.region) return;
+    try {
+      const applyResult = await applyRecommendationToBundle({
+        bundleArn: config.bundleName, // TUI stores ARN in bundleName
+        result: result.result,
+        region: result.region,
+      });
+      if (applyResult.success) {
+        setApplyStatus({
+          applied: true,
+          message: `New bundle version (${applyResult.newVersionId}) created with recommended changes. Local config updated.`,
+        });
+      } else {
+        setApplyStatus({ applied: false, message: applyResult.error ?? 'Unknown error' });
+      }
+    } catch (err) {
+      setApplyStatus({ applied: false, message: getErrorMessage(err) });
+    }
+  }, [result, config]);
+
   const nav = useListNavigation({
     items: actions,
     onSelect: item => {
-      if (item.id === 'another') onRunAnother();
+      if (item.id === 'apply') void handleApply();
+      else if (item.id === 'another') onRunAnother();
       else onExit();
     },
     onExit,
@@ -425,7 +428,7 @@ function ResultsView({ result, config, filePath, onRunAnother, onExit }: Results
 
           {sysResult && (
             <Box marginTop={1} flexDirection="column">
-              {sysResult.explanation && (
+              {sysResult.explanation?.trim() && (
                 <Text>
                   <Text bold>What changed:</Text> {sysResult.explanation}
                 </Text>
@@ -451,7 +454,7 @@ function ResultsView({ result, config, filePath, onRunAnother, onExit }: Results
               {toolResult.tools.map(tool => (
                 <Box key={tool.toolName} marginTop={1} marginLeft={2} flexDirection="column">
                   <Text bold>{tool.toolName}</Text>
-                  <Text dimColor>Explanation: {tool.explanation}</Text>
+                  {tool.explanation?.trim() && <Text dimColor>Explanation: {tool.explanation}</Text>}
                   <Text>{tool.recommendedToolDescription}</Text>
                 </Box>
               ))}
@@ -467,6 +470,16 @@ function ResultsView({ result, config, filePath, onRunAnother, onExit }: Results
           {filePath && (
             <Box marginTop={1}>
               <Text dimColor>Results saved to: {filePath}</Text>
+            </Box>
+          )}
+
+          {applyStatus && (
+            <Box marginTop={1}>
+              {applyStatus.applied ? (
+                <Text color="green">✓ {applyStatus.message}</Text>
+              ) : (
+                <Text color="red">Could not sync: {applyStatus.message}</Text>
+              )}
             </Box>
           )}
 
@@ -510,6 +523,30 @@ function buildAgentItems(deployedState: DeployedState): AgentItem[] {
   return agents;
 }
 
+/**
+ * Recursively collect all string-valued leaf fields from an object.
+ * Returns entries with their full dot-notation path and JSONPath equivalent.
+ *
+ * The recommendation API resolves JSONPath against the components map directly,
+ * using dot notation: `$.{componentArn}.configuration.{fieldName}`
+ */
+function collectStringFields(obj: unknown, prefix: string, jsonPathPrefix: string): ConfigBundleField[] {
+  const fields: ConfigBundleField[] = [];
+  if (obj === null || obj === undefined || typeof obj !== 'object') return fields;
+
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const jp = jsonPathPrefix ? `${jsonPathPrefix}.${key}` : key;
+    if (typeof value === 'string' && value.trim().length > 0) {
+      fields.push({ path, jsonPath: jp, value });
+    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      fields.push(...collectStringFields(value, path, jp));
+    }
+  }
+
+  return fields;
+}
+
 function buildConfigBundleItems(
   deployedState: DeployedState,
   projectBundles: { name: string; components?: Record<string, { configuration?: Record<string, unknown> }> }[]
@@ -524,26 +561,15 @@ function buildConfigBundleItems(
       if (seen.has(name)) continue;
       seen.add(name);
 
-      // Collect all string-valued configuration fields across components
-      const stringFields: Record<string, string> = {};
       const projBundle = projectBundles.find(pb => pb.name === name);
-      if (projBundle?.components) {
-        for (const comp of Object.values(projBundle.components)) {
-          if (!comp?.configuration) continue;
-          for (const [key, value] of Object.entries(comp.configuration)) {
-            if (typeof value === 'string' && value.trim().length > 0) {
-              stringFields[key] = value;
-            }
-          }
-        }
-      }
+      const fields = projBundle?.components ? collectStringFields(projBundle.components, '', '$') : [];
 
       bundles.push({
         name,
         bundleId: state.bundleId,
         bundleArn: state.bundleArn,
         versionId: state.versionId,
-        stringFields,
+        fields,
       });
     }
   }

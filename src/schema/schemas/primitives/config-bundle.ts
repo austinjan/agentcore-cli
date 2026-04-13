@@ -26,7 +26,7 @@ export type ComponentConfiguration = z.infer<typeof ComponentConfigurationSchema
  * Map of component identifier (ARN or placeholder) to its configuration.
  *
  * Keys are typically resource ARNs (runtime ARN, gateway ARN) but may use
- * placeholder tokens like `{{agent:<agentName>}}` when the bundle is created
+ * placeholder tokens like `{{runtime:<runtimeName>}}` when the bundle is created
  * before deploy and ARNs are not yet available.
  */
 export const ComponentConfigurationMapSchema = z.record(z.string(), ComponentConfigurationSchema);
@@ -35,6 +35,8 @@ export type ComponentConfigurationMap = z.infer<typeof ComponentConfigurationMap
 
 export const ConfigBundleSchema = z.object({
   name: ConfigBundleNameSchema,
+  /** Discriminator required by the CDK package's schema validation. */
+  type: z.literal('ConfigurationBundle').default('ConfigurationBundle'),
   description: ConfigBundleDescriptionSchema,
   /** Component configurations keyed by component ARN or placeholder. */
   components: ComponentConfigurationMapSchema,

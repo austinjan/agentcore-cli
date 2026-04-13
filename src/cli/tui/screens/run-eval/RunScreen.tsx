@@ -7,10 +7,11 @@ import React, { useMemo } from 'react';
 interface RunScreenProps {
   onRunEval: () => void;
   onRunBatchEval: () => void;
+  onRunRecommendation: () => void;
   onExit: () => void;
 }
 
-export function RunScreen({ onRunEval, onRunBatchEval, onExit }: RunScreenProps) {
+export function RunScreen({ onRunEval, onRunBatchEval, onRunRecommendation, onExit }: RunScreenProps) {
   const items: SelectableItem[] = useMemo(
     () => [
       {
@@ -23,6 +24,11 @@ export function RunScreen({ onRunEval, onRunBatchEval, onExit }: RunScreenProps)
         title: 'Batch Evaluation',
         description: 'Run a batch evaluation against agent sessions via CloudWatch.',
       },
+      {
+        id: 'run-recommendation',
+        title: 'Recommendation',
+        description: 'Optimize system prompts or tool descriptions using agent traces.',
+      },
     ],
     []
   );
@@ -32,6 +38,7 @@ export function RunScreen({ onRunEval, onRunBatchEval, onExit }: RunScreenProps)
     onSelect: item => {
       if (item.id === 'run-eval') onRunEval();
       else if (item.id === 'run-batch-eval') onRunBatchEval();
+      else if (item.id === 'run-recommendation') onRunRecommendation();
     },
     onExit,
     isActive: true,

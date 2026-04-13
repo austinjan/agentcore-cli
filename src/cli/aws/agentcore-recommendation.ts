@@ -103,9 +103,15 @@ export interface RecommendationConfig {
 // Types — Result (tag-union per type)
 // ============================================================================
 
+export interface RecommendationResultConfigurationBundle {
+  bundleArn: string;
+  versionId: string;
+}
+
 export interface SystemPromptRecommendationResult {
   recommendedSystemPrompt?: string;
   explanation?: string;
+  configurationBundle?: RecommendationResultConfigurationBundle;
   errorCode?: string;
   errorMessage?: string;
 }
@@ -118,10 +124,7 @@ export interface ToolDescriptionRecommendationToolResult {
 
 export interface ToolDescriptionRecommendationResult {
   tools?: ToolDescriptionRecommendationToolResult[];
-  configurationBundle?: {
-    bundleArn: string;
-    versionId: string;
-  };
+  configurationBundle?: RecommendationResultConfigurationBundle;
   errorCode?: string;
   errorMessage?: string;
 }
@@ -275,7 +278,7 @@ async function signedRequest(options: {
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Recommendation API error (${response.status}): ${errorBody}`);
+    throw new Error(`Recommendation API error (${response.status}): ${errorBody} [requestId: ${requestId}]`);
   }
 
   if (response.status === 204) return { data: {}, status: 204, requestId };

@@ -31,6 +31,10 @@ export interface RecommendationWizardConfig {
   bundleName: string;
   bundleVersion: string;
   bundleFields: string[];
+  /** JSONPath for system prompt within the config bundle (set when user picks a field) */
+  systemPromptJsonPath: string;
+  /** Tool name → JSONPath pairs for tool descriptions within the config bundle */
+  toolDescJsonPaths: { toolName: string; toolDescriptionJsonPath: string }[];
 }
 
 export const RECOMMENDATION_STEP_LABELS: Record<RecommendationStep, string> = {
@@ -62,11 +66,21 @@ export interface EvaluatorItem {
   description: string;
 }
 
+/** A string field found at an arbitrary depth inside a config bundle's JSON. */
+export interface ConfigBundleField {
+  /** Dot-notation path from the bundle root, e.g. "components.myAgent.configuration.systemPrompt" */
+  path: string;
+  /** JSONPath expression for the API, e.g. "$.components.myAgent.configuration.systemPrompt" */
+  jsonPath: string;
+  /** The string value at this path */
+  value: string;
+}
+
 export interface ConfigBundleItem {
   name: string;
   bundleId: string;
   bundleArn: string;
   versionId: string;
-  /** All string-valued configuration fields across components, keyed by field name. */
-  stringFields: Record<string, string>;
+  /** All string-valued fields found recursively across the bundle's components. */
+  fields: ConfigBundleField[];
 }

@@ -24,8 +24,10 @@ export interface RunRecommendationCommandOptions {
   bundleName?: string;
   /** Config bundle version (when inputSource is 'config-bundle') */
   bundleVersion?: string;
-  /** JSON path to system prompt within the config bundle component (default: $.systemPrompt) */
+  /** JSONPath to the system prompt field within the config bundle (when inputSource is 'config-bundle') */
   systemPromptJsonPath?: string;
+  /** Tool name → JSONPath pairs for tool descriptions within the config bundle (when inputSource is 'config-bundle') */
+  toolDescJsonPaths?: { toolName: string; toolDescriptionJsonPath: string }[];
   /** Inline content (when inputSource is 'inline') */
   inlineContent?: string;
   /** File path (when inputSource is 'file') */
@@ -61,6 +63,8 @@ export interface RunRecommendationCommandResult {
   status?: string;
   /** The recommendation result from the API (populated on COMPLETED) */
   result?: RecommendationResult;
+  /** Resolved AWS region used for the recommendation */
+  region?: string;
   startedAt?: string;
   completedAt?: string;
   /** Path to the execution log file */

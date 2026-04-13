@@ -201,6 +201,7 @@ export async function runBatchEvaluationCommand(
     logger?.endStep('success');
 
     onProgress?.('running', `Batch evaluation started (ID: ${startResult.batchEvaluateId})`);
+    onProgress?.('running', 'This may take a few minutes...');
     options.onStarted?.({ batchEvaluateId: startResult.batchEvaluateId, region });
 
     // 4. Poll for completion

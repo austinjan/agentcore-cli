@@ -8,7 +8,11 @@ import type {
   BatchEvaluationResult,
   RunBatchEvaluationCommandResult,
 } from '../../operations/eval/run-batch-evaluation';
-import { runRecommendationCommand, saveRecommendationRun } from '../../operations/recommendation';
+import {
+  applyRecommendationToBundle,
+  runRecommendationCommand,
+  saveRecommendationRun,
+} from '../../operations/recommendation';
 import { COMMAND_DESCRIPTIONS } from '../../tui/copy';
 import { requireProject } from '../../tui/guards';
 import type { Command } from '@commander-js/extra-typings';
@@ -272,6 +276,14 @@ export const registerRun = (program: Command) => {
     .option('--bundle-name <name>', 'Read current content from a deployed config bundle')
     .option('--bundle-version <version>', 'Config bundle version (used with --bundle-name)')
     .option(
+      '--system-prompt-json-path <path>',
+      'JSONPath to the system prompt field within the config bundle (e.g. "$.myAgentArn.configuration.systemPrompt")'
+    )
+    .option(
+      '--tool-desc-json-path <pair...>',
+      'Tool name:JSONPath pairs for tool descriptions in a config bundle (e.g. --tool-desc-json-path "search:$.myAgentArn.configuration.searchDesc")'
+    )
+    .option(
       '--tools <pair...>',
       'Tool name:description pairs (repeatable, e.g. --tools "search:Searches the web" --tools "calc:Does math")'
     )
@@ -290,6 +302,8 @@ export const registerRun = (program: Command) => {
         inline?: string;
         bundleName?: string;
         bundleVersion?: string;
+        systemPromptJsonPath?: string;
+        toolDescJsonPath?: string[];
         tools?: string[];
         spansFile?: string;
         lookback: string;
@@ -351,6 +365,18 @@ export const registerRun = (program: Command) => {
               ? ('sessions' as const)
               : ('cloudwatch' as const);
 
+          // Parse --tool-desc-json-path pairs ("toolName:$.json.path") into structured format
+          const toolDescJsonPaths = cliOptions.toolDescJsonPath
+            ?.map(pair => {
+              const colonIdx = pair.indexOf(':');
+              if (colonIdx <= 0) return undefined;
+              return {
+                toolName: pair.slice(0, colonIdx),
+                toolDescriptionJsonPath: pair.slice(colonIdx + 1),
+              };
+            })
+            .filter((p): p is { toolName: string; toolDescriptionJsonPath: string } => p !== undefined);
+
           const result = await runRecommendationCommand({
             type: recType,
             agent,
@@ -359,6 +385,8 @@ export const registerRun = (program: Command) => {
             inlineContent: cliOptions.inline,
             bundleName: cliOptions.bundleName,
             bundleVersion: cliOptions.bundleVersion,
+            systemPromptJsonPath: cliOptions.systemPromptJsonPath,
+            toolDescJsonPaths: toolDescJsonPaths?.length ? toolDescJsonPaths : undefined,
             tools: cliOptions.tools,
             lookbackDays: parseInt(cliOptions.lookback, 10),
             sessionIds: cliOptions.sessionId,
@@ -367,6 +395,11 @@ export const registerRun = (program: Command) => {
             region: cliOptions.region,
             inputSource,
             traceSource,
+            onProgress: cliOptions.json
+              ? undefined
+              : (_status, message) => {
+                  console.log(message);
+                },
           });
 
           if (!result.success) {
@@ -407,7 +440,7 @@ export const registerRun = (program: Command) => {
               const toolResult = result.result.toolDescriptionRecommendationResult;
 
               if (sysResult) {
-                if (sysResult.explanation) {
+                if (sysResult.explanation?.trim()) {
                   console.log(`\nWhat changed: ${sysResult.explanation}`);
                 }
                 if (sysResult.recommendedSystemPrompt) {
@@ -417,7 +450,9 @@ export const registerRun = (program: Command) => {
               } else if (toolResult?.tools) {
                 for (const tool of toolResult.tools) {
                   console.log(`\nTool: ${tool.toolName}`);
-                  console.log(`Explanation: ${tool.explanation}`);
+                  if (tool.explanation?.trim()) {
+                    console.log(`Explanation: ${tool.explanation}`);
+                  }
                   console.log(`Recommended: ${tool.recommendedToolDescription}`);
                 }
               }
@@ -425,6 +460,27 @@ export const registerRun = (program: Command) => {
 
             if (savedFilePath) {
               console.log(`\nResults saved to: ${savedFilePath}`);
+            }
+
+            // Sync local config bundle after server-side recommendation apply
+            if (inputSource === 'config-bundle' && cliOptions.bundleName && result.result && result.region) {
+              try {
+                const applyResult = await applyRecommendationToBundle({
+                  bundleName: cliOptions.bundleName,
+                  result: result.result,
+                  region: result.region,
+                });
+                if (applyResult.success) {
+                  console.log(
+                    `\nA new config bundle version (${applyResult.newVersionId}) was created with the recommended changes.`
+                  );
+                  console.log(`Local config for "${cliOptions.bundleName}" has been updated to match.`);
+                } else {
+                  console.log(`\nCould not sync config bundle: ${applyResult.error}`);
+                }
+              } catch {
+                // Non-fatal — user can manually sync
+              }
             }
             console.log('');
           }

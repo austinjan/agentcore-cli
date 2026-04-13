@@ -7,7 +7,7 @@ const mockReadDeployedState = vi.fn().mockResolvedValue({
   targets: {
     default: {
       resources: {
-        agents: {
+        runtimes: {
           MyAgent: {
             runtimeId: 'rt-abc123',
             runtimeArn: 'arn:aws:bedrock:us-east-1:998846730471:agent-runtime/rt-abc123',
@@ -569,7 +569,8 @@ describe('runRecommendationCommand', () => {
     expect(serviceNames[0]).toBe('rt.DEFAULT');
   });
 
-  it('includes sessionIds in cloudwatch config when provided', async () => {
+  it('auto-fetches spans for system-prompt with sessions trace source', async () => {
+    mockFetchSessionSpans.mockResolvedValue({ spans: [{ sessionId: 'sess-1', spans: [] }] });
     mockStartRecommendation.mockResolvedValue({
       recommendationId: 'rec-sid',
       status: 'COMPLETED',
@@ -586,14 +587,16 @@ describe('runRecommendationCommand', () => {
       evaluators: ['Builtin.Toxicity'],
       inputSource: 'inline',
       inlineContent: 'test',
-      traceSource: 'cloudwatch',
-      sessionIds: ['sess-1', 'sess-2'],
+      traceSource: 'sessions',
+      sessionIds: ['sess-1'],
       pollIntervalMs: 0,
     });
 
+    expect(mockFetchSessionSpans).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-1' }));
     const callArgs = mockStartRecommendation.mock.calls[0]![0];
-    const cwConfig = callArgs.recommendationConfig.systemPromptRecommendationConfig.agentTraces.cloudwatchLogs;
-    expect(cwConfig.sessionIds).toEqual(['sess-1', 'sess-2']);
+    const traces = callArgs.recommendationConfig.systemPromptRecommendationConfig.agentTraces;
+    expect(traces.sessionSpans).toBeDefined();
+    expect(traces.cloudwatchLogs).toBeUndefined();
   });
 
   it('builds cloudwatch config with two log group ARNs', async () => {
@@ -664,8 +667,7 @@ describe('runRecommendationCommand', () => {
     expect(result.error).toContain('Insufficient trace data');
     expect(result.error).toContain('INSUFFICIENT_DATA');
     expect(result.error).toContain('Not enough traces');
-    expect(result.error).toContain('start-req-id');
-    expect(result.error).toContain('poll-req-id');
+    // Request IDs are logged to file only, not included in the error message
   });
 
   it('passes full ARN evaluator as-is', async () => {

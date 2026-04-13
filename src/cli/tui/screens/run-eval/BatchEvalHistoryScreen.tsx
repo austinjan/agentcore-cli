@@ -1,5 +1,5 @@
-import type { RecommendationRunRecord } from '../../../operations/recommendation/recommendation-storage';
-import { listAllRecommendations } from '../../../operations/recommendation/recommendation-storage';
+import type { BatchEvalRunRecord } from '../../../operations/eval/batch-eval-storage';
+import { listBatchEvalRuns } from '../../../operations/eval/batch-eval-storage';
 import { Panel, Screen } from '../../components';
 import { HELP_TEXT } from '../../constants';
 import { useListNavigation } from '../../hooks';
@@ -19,17 +19,17 @@ function formatShortDate(timestamp: string): string {
   return `${mon} ${day} ${h12}:${m} ${ampm}`;
 }
 
-function shortTypeName(type: string): string {
-  if (type === 'SYSTEM_PROMPT_RECOMMENDATION') return 'System Prompt';
-  if (type === 'TOOL_DESCRIPTION_RECOMMENDATION') return 'Tool Description';
-  return type;
-}
-
 function statusColor(status: string): string {
   if (status === 'COMPLETED' || status === 'SUCCEEDED') return 'green';
   if (status === 'FAILED') return 'red';
   if (status === 'IN_PROGRESS' || status === 'PENDING') return 'yellow';
   return 'gray';
+}
+
+function scoreColor(score: number): string {
+  if (score >= 0.8) return 'green';
+  if (score >= 0.5) return 'yellow';
+  return 'red';
 }
 
 const CHROME_LINES = 9;
@@ -38,14 +38,14 @@ const CHROME_LINES = 9;
 // List view
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RecommendationListView({
+function BatchEvalListView({
   records,
   onSelect,
   onExit,
   availableHeight,
 }: {
-  records: RecommendationRunRecord[];
-  onSelect: (record: RecommendationRunRecord) => void;
+  records: BatchEvalRunRecord[];
+  onSelect: (record: BatchEvalRunRecord) => void;
   onExit: () => void;
   availableHeight: number;
 }) {
@@ -68,9 +68,9 @@ function RecommendationListView({
   return (
     <Panel fullWidth>
       <Box flexDirection="column">
-        <Text bold>Recommendation History</Text>
+        <Text bold>Batch Evaluation History</Text>
         <Text dimColor>
-          {records.length} recommendation{records.length !== 1 ? 's' : ''}
+          {records.length} batch evaluation{records.length !== 1 ? 's' : ''}
         </Text>
         <Box marginTop={1} flexDirection="column">
           {visible.items.map((rec, vIdx) => {
@@ -78,18 +78,42 @@ function RecommendationListView({
             const selected = idx === nav.selectedIndex;
             const date = rec.startedAt ? formatShortDate(rec.startedAt) : 'unknown';
 
+            // Build a short score summary from evaluationResults or results
+            const summaries = rec.evaluationResults?.evaluatorSummaries;
+            let scoreText = '';
+            if (summaries && summaries.length > 0) {
+              scoreText = summaries
+                .map(s => {
+                  const avg = s.statistics?.averageScore;
+                  return avg != null ? avg.toFixed(2) : 'N/A';
+                })
+                .join(', ');
+            } else if (rec.results.length > 0) {
+              const byEval = new Map<string, number[]>();
+              for (const r of rec.results) {
+                if (r.score != null) {
+                  const scores = byEval.get(r.evaluatorId) ?? [];
+                  scores.push(r.score);
+                  byEval.set(r.evaluatorId, scores);
+                }
+              }
+              scoreText = [...byEval.entries()]
+                .map(([, scores]) => (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2))
+                .join(', ');
+            }
+
             return (
-              <Text key={rec.recommendationId} wrap="truncate-end">
-                <Text color={selected ? 'cyan' : undefined}>{selected ? '❯' : ' '} </Text>
+              <Text key={rec.batchEvaluateId} wrap="truncate-end">
+                <Text color={selected ? 'cyan' : undefined}>{selected ? '>' : ' '} </Text>
                 <Text dimColor>{date.padEnd(16)}</Text>
                 <Text color={statusColor(rec.status)}>{rec.status.padEnd(12)}</Text>
-                <Text>{shortTypeName(rec.type).padEnd(18)}</Text>
-                <Text dimColor>{rec.agent}</Text>
+                {scoreText && <Text>{scoreText.padEnd(10)}</Text>}
+                <Text dimColor>{rec.name}</Text>
               </Text>
             );
           })}
           {visible.startIdx + maxVisible < records.length && (
-            <Text dimColor> ↓ {records.length - visible.startIdx - maxVisible} more</Text>
+            <Text dimColor> {records.length - visible.startIdx - maxVisible} more</Text>
           )}
         </Box>
       </Box>
@@ -101,26 +125,40 @@ function RecommendationListView({
 // Detail view
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RecommendationDetailView({ record, onBack }: { record: RecommendationRunRecord; onBack: () => void }) {
+function BatchEvalDetailView({ record, onBack }: { record: BatchEvalRunRecord; onBack: () => void }) {
   useInput((input, key) => {
     if (key.escape || input === 'b') {
       onBack();
     }
   });
 
-  const sysResult = record.result?.systemPromptRecommendationResult;
-  const toolResult = record.result?.toolDescriptionRecommendationResult;
+  const evalRes = record.evaluationResults;
+  const summaries = evalRes?.evaluatorSummaries;
+
+  // Fall back to local grouping when API summaries aren't available
+  const byEvaluator = useMemo(() => {
+    if (summaries && summaries.length > 0) return null;
+    const map = new Map<string, { scores: number[]; errors: number }>();
+    for (const r of record.results) {
+      const entry = map.get(r.evaluatorId) ?? { scores: [], errors: 0 };
+      if (r.error) {
+        entry.errors++;
+      } else if (r.score != null) {
+        entry.scores.push(r.score);
+      }
+      map.set(r.evaluatorId, entry);
+    }
+    return map;
+  }, [record.results, summaries]);
 
   return (
     <Panel fullWidth>
       <Box flexDirection="column">
         <Text>
-          <Text bold>ID:</Text> {record.recommendationId}
+          <Text bold>ID:</Text> {record.batchEvaluateId}
         </Text>
         <Text>
-          <Text bold>Type:</Text> {shortTypeName(record.type)}
-          {'  '}
-          <Text bold>Agent:</Text> {record.agent}
+          <Text bold>Name:</Text> {record.name}
           {'  '}
           <Text bold>Status:</Text> <Text color={statusColor(record.status)}>{record.status}</Text>
         </Text>
@@ -138,44 +176,52 @@ function RecommendationDetailView({ record, onBack }: { record: RecommendationRu
           </Text>
         )}
 
-        {sysResult && (
+        {evalRes?.totalSessions != null && (
+          <Text>
+            <Text bold>Sessions:</Text> {evalRes.totalSessions} total
+            {evalRes.sessionsCompleted != null && <Text>, {evalRes.sessionsCompleted} completed</Text>}
+            {evalRes.sessionsFailed ? <Text color="red">, {evalRes.sessionsFailed} failed</Text> : null}
+          </Text>
+        )}
+
+        {summaries && summaries.length > 0 ? (
           <Box marginTop={1} flexDirection="column">
-            {sysResult.explanation && (
-              <Text>
-                <Text bold>What changed:</Text> {sysResult.explanation}
-              </Text>
-            )}
-            {sysResult.recommendedSystemPrompt && (
-              <Box marginTop={1} flexDirection="column">
-                <Text bold color="cyan">
-                  Recommended System Prompt:
+            <Text bold>Scores (0 worst — 1 best):</Text>
+            {summaries.map(s => {
+              const avg = s.statistics?.averageScore;
+              const avgStr = avg != null ? avg.toFixed(2) : 'N/A';
+              const color = avg != null ? scoreColor(avg) : undefined;
+              return (
+                <Text key={s.evaluatorId}>
+                  {'  '}
+                  <Text bold>{s.evaluatorId}</Text>
+                  {'  '}
+                  <Text color={color}>{avgStr}</Text>
+                  {s.totalFailed ? <Text color="red"> ({s.totalFailed} failed)</Text> : null}
+                  {s.totalEvaluated != null && <Text dimColor> [{s.totalEvaluated} evaluated]</Text>}
                 </Text>
-                <Box marginLeft={2} marginTop={1}>
-                  <Text>{sysResult.recommendedSystemPrompt}</Text>
-                </Box>
-              </Box>
-            )}
+              );
+            })}
           </Box>
-        )}
-
-        {toolResult?.tools && toolResult.tools.length > 0 && (
+        ) : byEvaluator && byEvaluator.size > 0 ? (
           <Box marginTop={1} flexDirection="column">
-            <Text bold color="cyan">
-              Recommended Tool Descriptions:
-            </Text>
-            {toolResult.tools.map(tool => (
-              <Box key={tool.toolName} marginTop={1} marginLeft={2} flexDirection="column">
-                <Text bold>{tool.toolName}</Text>
-                {tool.explanation && <Text dimColor>Explanation: {tool.explanation}</Text>}
-                <Text>{tool.recommendedToolDescription}</Text>
-              </Box>
-            ))}
+            <Text bold>Scores (0 worst — 1 best):</Text>
+            {[...byEvaluator.entries()].map(([evalId, { scores, errors }]) => {
+              const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+              return (
+                <Text key={evalId}>
+                  {'  '}
+                  <Text bold>{evalId}</Text>
+                  {'  '}
+                  <Text color={scoreColor(avg)}>{avg.toFixed(2)}</Text>
+                  {errors > 0 && <Text color="red"> ({errors} errors)</Text>}
+                </Text>
+              );
+            })}
           </Box>
-        )}
-
-        {!sysResult && !toolResult && (
+        ) : (
           <Box marginTop={1}>
-            <Text dimColor>No recommendation results available.</Text>
+            <Text dimColor>No evaluation results available.</Text>
           </Box>
         )}
 
@@ -191,28 +237,28 @@ function RecommendationDetailView({ record, onBack }: { record: RecommendationRu
 // Main screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface RecommendationHistoryScreenProps {
+interface BatchEvalHistoryScreenProps {
   onExit: () => void;
 }
 
-export function RecommendationHistoryScreen({ onExit }: RecommendationHistoryScreenProps) {
+export function BatchEvalHistoryScreen({ onExit }: BatchEvalHistoryScreenProps) {
   const { stdout } = useStdout();
   const terminalHeight = stdout?.rows ?? 24;
   const availableHeight = Math.max(6, terminalHeight - CHROME_LINES);
 
-  const [selectedRecord, setSelectedRecord] = useState<RecommendationRunRecord | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<BatchEvalRunRecord | null>(null);
 
   const [records, loaded, error] = useMemo(() => {
     try {
-      return [listAllRecommendations(), true, null] as const;
+      return [listBatchEvalRuns(), true, null] as const;
     } catch (err) {
-      return [[] as RecommendationRunRecord[], true, err instanceof Error ? err.message : String(err)] as const;
+      return [[] as BatchEvalRunRecord[], true, err instanceof Error ? err.message : String(err)] as const;
     }
   }, []);
 
   if (!loaded) {
     return (
-      <Screen title="Recommendation History" onExit={onExit}>
+      <Screen title="Batch Evaluation History" onExit={onExit}>
         <Text dimColor>Loading...</Text>
       </Screen>
     );
@@ -220,7 +266,7 @@ export function RecommendationHistoryScreen({ onExit }: RecommendationHistoryScr
 
   if (error) {
     return (
-      <Screen title="Recommendation History" onExit={onExit}>
+      <Screen title="Batch Evaluation History" onExit={onExit}>
         <Text color="red">{error}</Text>
       </Screen>
     );
@@ -228,10 +274,10 @@ export function RecommendationHistoryScreen({ onExit }: RecommendationHistoryScr
 
   if (records.length === 0) {
     return (
-      <Screen title="Recommendation History" onExit={onExit}>
+      <Screen title="Batch Evaluation History" onExit={onExit}>
         <Box flexDirection="column">
-          <Text dimColor>No recommendation runs found.</Text>
-          <Text dimColor>Run `agentcore run recommendation` to create one.</Text>
+          <Text dimColor>No batch evaluation runs found.</Text>
+          <Text dimColor>Run a batch evaluation from the TUI or CLI to see results here.</Text>
         </Box>
       </Screen>
     );
@@ -240,11 +286,11 @@ export function RecommendationHistoryScreen({ onExit }: RecommendationHistoryScr
   const helpText = selectedRecord ? 'Esc/B back to list' : HELP_TEXT.NAVIGATE_SELECT;
 
   return (
-    <Screen title="Recommendation History" onExit={onExit} helpText={helpText} exitEnabled={!selectedRecord}>
+    <Screen title="Batch Evaluation History" onExit={onExit} helpText={helpText} exitEnabled={!selectedRecord}>
       {selectedRecord ? (
-        <RecommendationDetailView record={selectedRecord} onBack={() => setSelectedRecord(null)} />
+        <BatchEvalDetailView record={selectedRecord} onBack={() => setSelectedRecord(null)} />
       ) : (
-        <RecommendationListView
+        <BatchEvalListView
           records={records}
           onSelect={setSelectedRecord}
           onExit={onExit}

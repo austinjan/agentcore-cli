@@ -32,7 +32,7 @@ export async function resolveBundleByName(
     if (bundle) {
       // Verify the deployed-state ID is still valid (bundles may have been recreated)
       try {
-        const verified = await getConfigurationBundle({ region, bundleId: bundle.bundleId, branchName: 'main' });
+        const verified = await getConfigurationBundle({ region, bundleId: bundle.bundleId });
         return {
           bundleId: bundle.bundleId,
           bundleArn: bundle.bundleArn,
@@ -53,7 +53,7 @@ export async function resolveBundleByName(
   }
 
   // Fetch the bundle to get the latest versionId (required by Recommendation API)
-  const bundle = await getConfigurationBundle({ region, bundleId: match.bundleId, branchName: 'main' });
+  const bundle = await getConfigurationBundle({ region, bundleId: match.bundleId });
 
   return {
     bundleId: match.bundleId,

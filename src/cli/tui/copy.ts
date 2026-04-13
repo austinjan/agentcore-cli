@@ -120,12 +120,4 @@ export const CLI_ONLY_EXAMPLES: Record<string, { description: string; examples: 
       'agentcore stop ab-test <name>',
     ],
   },
-  evals: {
-    description: 'View saved eval and batch eval results from past runs.',
-    examples: [
-      'agentcore evals history',
-      'agentcore evals history -r MyAgent --limit 5',
-      'agentcore evals history --json',
-    ],
-  },
 };

@@ -108,8 +108,11 @@ export class ConfigBundlePrimitive extends BasePrimitive<AddConfigBundleOptions,
       .description('Add a configuration bundle to the project')
       .option('--name <name>', 'Bundle name')
       .option('--description <text>', 'Bundle description')
-      .option('--components <json>', 'Components map as inline JSON')
-      .option('--components-file <path>', 'Path to components JSON file')
+      .option(
+        '--components <json>',
+        'Components map as inline JSON. Keys are ARNs or placeholders: {{runtime:<name>}}, {{gateway:<name>}}. Placeholders resolve to real ARNs at deploy time.'
+      )
+      .option('--components-file <path>', 'Path to components JSON file (same format as --components)')
       .option('--branch <name>', 'Branch name for versioning')
       .option('--commit-message <text>', 'Commit message for this version')
       .option('--json', 'Output as JSON')
@@ -217,6 +220,7 @@ export class ConfigBundlePrimitive extends BasePrimitive<AddConfigBundleOptions,
 
     const bundle: ConfigBundle = {
       name: options.name,
+      type: 'ConfigurationBundle',
       ...(options.description && { description: options.description }),
       components: options.components,
       branchName: options.branchName ?? 'main',

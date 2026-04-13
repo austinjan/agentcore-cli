@@ -3,12 +3,14 @@ import { listConfigurationBundleVersions } from '../../../aws/agentcore-config-b
 import { ErrorPrompt } from '../../components';
 import { useCreateABTest, useExistingABTestNames } from '../../hooks/useCreateABTest';
 import { AddSuccessScreen } from '../add/AddSuccessScreen';
+import { AddConfigBundleFlow } from '../config-bundle/AddConfigBundleFlow';
 import { AddABTestScreen } from './AddABTestScreen';
 import type { AddABTestConfig } from './types';
 import React, { useCallback, useEffect, useState } from 'react';
 
 type FlowState =
   | { name: 'create-wizard' }
+  | { name: 'create-bundle' }
   | { name: 'create-success'; testName: string }
   | { name: 'error'; message: string };
 
@@ -32,8 +34,10 @@ export function AddABTestFlow({ isInteractive = true, onExit, onBack, onDev, onD
   const [onlineEvalConfigs, setOnlineEvalConfigs] = useState<string[]>([]);
   const [region, setRegion] = useState('us-east-1');
 
+  const [loadEpoch, setLoadEpoch] = useState(0);
+
   useEffect(() => {
-    const load = async () => {
+    void (async () => {
       try {
         const configIO = new ConfigIO();
         const deployedState = await configIO.readDeployedState();
@@ -73,10 +77,8 @@ export function AddABTestFlow({ isInteractive = true, onExit, onBack, onDev, onD
       } catch {
         // No deployed state — lists will be empty
       }
-    };
-
-    void load();
-  }, []);
+    })();
+  }, [loadEpoch]);
 
   const fetchBundleVersions = useCallback(
     async (bundleId: string) => {
@@ -127,6 +129,21 @@ export function AddABTestFlow({ isInteractive = true, onExit, onBack, onDev, onD
     [createABTest]
   );
 
+  const handleCreateBundle = useCallback(() => {
+    setFlow({ name: 'create-bundle' });
+  }, []);
+
+  const handleBundleFlowDone = useCallback(() => {
+    setLoadEpoch(e => e + 1);
+    setFlow({ name: 'create-wizard' });
+  }, []);
+
+  if (flow.name === 'create-bundle') {
+    return (
+      <AddConfigBundleFlow isInteractive={isInteractive} onExit={handleBundleFlowDone} onBack={handleBundleFlowDone} />
+    );
+  }
+
   if (flow.name === 'create-wizard') {
     return (
       <AddABTestScreen
@@ -138,6 +155,7 @@ export function AddABTestFlow({ isInteractive = true, onExit, onBack, onDev, onD
         fetchBundleVersions={fetchBundleVersions}
         onComplete={handleCreateComplete}
         onExit={onBack}
+        onCreateBundle={handleCreateBundle}
       />
     );
   }

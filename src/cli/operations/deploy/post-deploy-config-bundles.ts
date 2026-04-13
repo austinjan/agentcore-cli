@@ -54,9 +54,13 @@ export async function setupConfigBundles(options: SetupConfigBundlesOptions): Pr
   const configBundles: Record<string, ConfigBundleDeployedState> = {};
 
   const specBundleNames = new Set(projectSpec.configBundles.map(b => b.name));
+  const projectName = projectSpec.name;
 
   // Create or update bundles from the spec
   for (const bundleSpec of projectSpec.configBundles) {
+    // Prepend project name to the API-side bundle name (like runtimes use projectName_agentName)
+    const apiBundleName = `${projectName}_${bundleSpec.name}`;
+
     try {
       // Try to update if we have an existing bundle ID
       const existingBundle = existingBundles?.[bundleSpec.name];
@@ -125,7 +129,7 @@ export async function setupConfigBundles(options: SetupConfigBundlesOptions): Pr
 
       if (!updated) {
         // Try to find by name via list (handles re-creation after state loss)
-        const existingByName = await findBundleByName(region, bundleSpec.name);
+        const existingByName = await findBundleByName(region, apiBundleName);
 
         if (existingByName) {
           // Fetch versions and pick the newest — avoids branch-not-found errors from getConfigurationBundle
@@ -187,7 +191,7 @@ export async function setupConfigBundles(options: SetupConfigBundlesOptions): Pr
           // Create new — omit branchName if not in spec so the API uses its default
           const result = await createConfigurationBundle({
             region,
-            bundleName: bundleSpec.name,
+            bundleName: apiBundleName,
             description: bundleSpec.description,
             components: bundleSpec.components as ComponentConfigurationMap,
             branchName: bundleSpec.branchName,

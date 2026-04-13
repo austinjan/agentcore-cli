@@ -103,20 +103,11 @@ export function RecommendationScreen({
   );
 
   const traceSourceItems: SelectableItem[] = useMemo(
-    () =>
-      isToolDesc
-        ? [
-            {
-              id: 'sessions',
-              title: 'Session IDs',
-              description: 'Select sessions — spans are auto-fetched from CloudWatch',
-            },
-          ]
-        : [
-            { id: 'cloudwatch', title: 'CloudWatch Logs', description: 'Discover traces from agent runtime logs' },
-            { id: 'sessions', title: 'Session IDs', description: 'Provide specific session IDs manually' },
-          ],
-    [isToolDesc]
+    () => [
+      { id: 'cloudwatch', title: 'CloudWatch Logs', description: 'Discover traces from agent runtime logs' },
+      { id: 'sessions', title: 'Session IDs', description: 'Provide specific session IDs manually' },
+    ],
+    []
   );
 
   // ── Session discovery ──────────────────────────────────────────────────────
@@ -268,22 +259,37 @@ export function RecommendationScreen({
     isActive: isBundleStep,
   });
 
-  // Build selectable items for string fields in the selected config bundle
+  // Build selectable items from recursively-discovered fields in the selected config bundle
+  const selectedBundle = useMemo(
+    () => configBundles.find(cb => cb.bundleArn === wizard.config.bundleName),
+    [configBundles, wizard.config.bundleName]
+  );
+
   const bundleFieldItems: SelectableItem[] = useMemo(() => {
-    const selectedBundle = configBundles.find(cb => cb.bundleArn === wizard.config.bundleName);
     if (!selectedBundle) return [];
-    return Object.entries(selectedBundle.stringFields).map(([key, value]) => ({
-      id: key,
-      title: key,
-      description: value.length > 80 ? value.slice(0, 80) + '…' : value,
-    }));
-  }, [configBundles, wizard.config.bundleName]);
+    return selectedBundle.fields.map(field => {
+      // Shorten display: strip the long component ARN key, keep the meaningful tail.
+      // "components.arn:aws:...:runtime/name.configuration.systemPrompt" → "configuration.systemPrompt"
+      const segments = field.path.split('.');
+      const configIdx = segments.indexOf('configuration');
+      const displayPath = configIdx >= 0 ? segments.slice(configIdx).join('.') : segments.slice(-2).join('.');
+      return {
+        id: field.path,
+        title: displayPath,
+        description: field.value.length > 80 ? field.value.slice(0, 80) + '…' : field.value,
+      };
+    });
+  }, [selectedBundle]);
 
   // Single-select for: system prompt (always), or tool desc with only 1 field (just press Enter)
   const useFieldSingleSelect = !isToolDesc || bundleFieldItems.length <= 1;
   const bundleFieldNav = useListNavigation({
     items: bundleFieldItems,
-    onSelect: item => wizard.setBundleFields([item.id]),
+    onSelect: item => {
+      const field = selectedBundle?.fields.find(f => f.path === item.id);
+      if (!field) return;
+      wizard.setBundleFields([item.id], { systemPromptJsonPath: field.jsonPath });
+    },
     onExit: () => wizard.goBack(),
     isActive: isBundleFieldStep && useFieldSingleSelect,
   });
@@ -292,7 +298,18 @@ export function RecommendationScreen({
   const bundleFieldMultiNav = useMultiSelectNavigation({
     items: bundleFieldItems,
     getId: item => item.id,
-    onConfirm: ids => wizard.setBundleFields(ids),
+    onConfirm: ids => {
+      const toolDescJsonPaths = ids
+        .map(id => {
+          const field = selectedBundle?.fields.find(f => f.path === id);
+          if (!field) return undefined;
+          // Use the last segment of the path as the tool name
+          const toolName = field.path.split('.').pop()!;
+          return { toolName, toolDescriptionJsonPath: field.jsonPath };
+        })
+        .filter((p): p is { toolName: string; toolDescriptionJsonPath: string } => p !== undefined);
+      wizard.setBundleFields(ids, { toolDescJsonPaths });
+    },
     onExit: () => wizard.goBack(),
     isActive: isBundleFieldStep && !useFieldSingleSelect,
     requireSelection: true,
@@ -378,7 +395,7 @@ export function RecommendationScreen({
       label: 'Traces',
       value:
         wizard.config.traceSource === 'sessions'
-          ? `${wizard.config.sessionIds.length} session${wizard.config.sessionIds.length !== 1 ? 's' : ''} selected${isToolDesc ? ' (auto-fetch)' : ''}`
+          ? `${wizard.config.sessionIds.length} session${wizard.config.sessionIds.length !== 1 ? 's' : ''} selected (auto-fetch)`
           : `CloudWatch (${wizard.config.days}d)`,
     },
   ];
@@ -487,8 +504,8 @@ export function RecommendationScreen({
 
         {isBundleFieldStep && bundleFieldItems.length === 0 && (
           <Box flexDirection="column">
-            <Text bold>Select prompt field</Text>
-            <Text color="yellow">No string fields found in this config bundle&apos;s configuration.</Text>
+            <Text bold>Select field</Text>
+            <Text color="yellow">No text fields found in this config bundle&apos;s configuration.</Text>
             <Text dimColor>Press Esc to go back and choose a different bundle.</Text>
           </Box>
         )}
@@ -498,11 +515,7 @@ export function RecommendationScreen({
             title={
               isToolDesc ? 'Which field contains the tool description?' : 'Which field contains the system prompt?'
             }
-            description={
-              isToolDesc
-                ? 'Field name becomes tool name, value becomes description'
-                : 'Select the configuration field to use as the system prompt input'
-            }
+            description="Select the field — its JSON path will be sent to the API for server-side resolution"
             items={bundleFieldItems}
             selectedIndex={bundleFieldNav.selectedIndex}
             maxVisibleItems={10}
@@ -512,7 +525,7 @@ export function RecommendationScreen({
         {isBundleFieldStep && bundleFieldItems.length > 0 && !useFieldSingleSelect && (
           <WizardMultiSelect
             title="Which fields contain tool descriptions?"
-            description="Select fields — field name becomes tool name, value becomes description"
+            description="Select fields — the last path segment becomes the tool name"
             items={bundleFieldItems}
             cursorIndex={bundleFieldMultiNav.cursorIndex}
             selectedIds={bundleFieldMultiNav.selectedIds}
@@ -534,19 +547,11 @@ export function RecommendationScreen({
         )}
 
         {isTraceSourceStep && (
-          <Box flexDirection="column">
-            {isToolDesc && (
-              <Text dimColor>
-                Note: CloudWatch trace source is not supported for tool description recommendations. Spans will be
-                auto-fetched from CloudWatch for the selected sessions.
-              </Text>
-            )}
-            <WizardSelect
-              title="How do you want to source agent traces?"
-              items={traceSourceItems}
-              selectedIndex={traceSourceNav.selectedIndex}
-            />
-          </Box>
+          <WizardSelect
+            title="How do you want to source agent traces?"
+            items={traceSourceItems}
+            selectedIndex={traceSourceNav.selectedIndex}
+          />
         )}
 
         {isDaysStep && (

@@ -1,13 +1,12 @@
-import { ComponentConfigurationMapSchema, ConfigBundleNameSchema } from '../../../../schema';
+import { ConfigBundleNameSchema } from '../../../../schema';
 import type { SelectableItem } from '../../components';
 import { ConfirmReview, Panel, Screen, StepIndicator, TextInput, WizardSelect } from '../../components';
 import { HELP_TEXT } from '../../constants';
 import { useListNavigation } from '../../hooks';
 import { generateUniqueName } from '../../utils';
-import type { AddConfigBundleConfig, ComponentInputMethod } from './types';
-import { CONFIG_BUNDLE_STEP_LABELS, INPUT_METHOD_OPTIONS } from './types';
+import type { AddConfigBundleConfig, ComponentType, DeployedComponent } from './types';
+import { COMPONENT_TYPE_OPTIONS, CONFIG_BUNDLE_STEP_LABELS } from './types';
 import { useAddConfigBundleWizard } from './useAddConfigBundleWizard';
-import { existsSync, readFileSync } from 'fs';
 import { Box, Text } from 'ink';
 import React, { useMemo } from 'react';
 
@@ -15,53 +14,91 @@ interface AddConfigBundleScreenProps {
   onComplete: (config: AddConfigBundleConfig) => void;
   onExit: () => void;
   existingBundleNames: string[];
+  deployedComponents: DeployedComponent[];
 }
 
-function validateComponentsJson(value: string): string | true {
+function validateConfigJson(value: string): string | true {
   try {
     const parsed: unknown = JSON.parse(value);
-    ComponentConfigurationMapSchema.parse(parsed);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return 'Must be a JSON object with key-value pairs';
+    }
     return true;
   } catch (err) {
     if (err instanceof SyntaxError) {
       return 'Invalid JSON syntax';
     }
-    return 'Must be a map of component ARN to { configuration: { ... } }';
+    return 'Must be a valid JSON object';
   }
 }
 
-function validateComponentsFile(value: string): string | true {
-  if (!value.trim()) return 'File path is required';
-  if (!existsSync(value.trim())) return `File not found: ${value.trim()}`;
-  try {
-    const raw = readFileSync(value.trim(), 'utf-8');
-    return validateComponentsJson(raw);
-  } catch {
-    return 'Failed to read file';
-  }
-}
-
-export function AddConfigBundleScreen({ onComplete, onExit, existingBundleNames }: AddConfigBundleScreenProps) {
+export function AddConfigBundleScreen({
+  onComplete,
+  onExit,
+  existingBundleNames,
+  deployedComponents,
+}: AddConfigBundleScreenProps) {
   const wizard = useAddConfigBundleWizard();
 
-  const inputMethodItems: SelectableItem[] = useMemo(
-    () => INPUT_METHOD_OPTIONS.map(opt => ({ id: opt.id, title: opt.title, description: opt.description })),
+  const componentTypeItems: SelectableItem[] = useMemo(
+    () => COMPONENT_TYPE_OPTIONS.map(opt => ({ id: opt.id, title: opt.title, description: opt.description })),
+    []
+  );
+
+  // Filter deployed components by selected type
+  const availableComponents: SelectableItem[] = useMemo(() => {
+    const filtered = deployedComponents.filter(c => c.type === wizard.config.currentComponentType);
+    // Exclude already-added ARNs
+    const existingArns = new Set(Object.keys(wizard.config.components));
+    return filtered
+      .filter(c => !existingArns.has(c.arn))
+      .map(c => ({
+        id: c.arn,
+        title: c.name,
+        description: c.isPlaceholder ? '(not yet deployed — ARN resolved on deploy)' : c.arn,
+      }));
+  }, [deployedComponents, wizard.config.currentComponentType, wizard.config.components]);
+
+  const addAnotherItems: SelectableItem[] = useMemo(
+    () => [
+      { id: 'no', title: 'Continue' },
+      { id: 'yes', title: 'Add another component' },
+    ],
     []
   );
 
   const isNameStep = wizard.step === 'name';
   const isDescriptionStep = wizard.step === 'description';
-  const isInputMethodStep = wizard.step === 'inputMethod';
-  const isComponentsStep = wizard.step === 'components';
+  const isComponentTypeStep = wizard.step === 'componentType';
+  const isComponentSelectStep = wizard.step === 'componentSelect';
+  const isConfigurationStep = wizard.step === 'configuration';
+  const isAddAnotherStep = wizard.step === 'addAnother';
   const isBranchNameStep = wizard.step === 'branchName';
   const isCommitMessageStep = wizard.step === 'commitMessage';
   const isConfirmStep = wizard.step === 'confirm';
 
-  const inputMethodNav = useListNavigation({
-    items: inputMethodItems,
-    onSelect: item => wizard.setInputMethod(item.id as ComponentInputMethod),
+  const componentTypeNav = useListNavigation({
+    items: componentTypeItems,
+    onSelect: item => wizard.setComponentType(item.id as ComponentType),
     onExit: () => wizard.goBack(),
-    isActive: isInputMethodStep,
+    isActive: isComponentTypeStep,
+  });
+
+  const componentSelectNav = useListNavigation({
+    items: availableComponents,
+    onSelect: item => wizard.setSelectedComponent(item.id),
+    onExit: () => wizard.goBack(),
+    isActive: isComponentSelectStep,
+  });
+
+  const addAnotherNav = useListNavigation({
+    items: addAnotherItems,
+    onSelect: item => {
+      if (item.id === 'yes') wizard.addAnotherComponent();
+      else wizard.doneAddingComponents();
+    },
+    onExit: () => wizard.goBack(),
+    isActive: isAddAnotherStep,
   });
 
   useListNavigation({
@@ -71,22 +108,18 @@ export function AddConfigBundleScreen({ onComplete, onExit, existingBundleNames 
     isActive: isConfirmStep,
   });
 
-  const helpText = isInputMethodStep
-    ? HELP_TEXT.NAVIGATE_SELECT
-    : isConfirmStep
-      ? HELP_TEXT.CONFIRM_CANCEL
-      : HELP_TEXT.TEXT_INPUT;
+  const helpText =
+    isComponentTypeStep || isComponentSelectStep || isAddAnotherStep
+      ? HELP_TEXT.NAVIGATE_SELECT
+      : isConfirmStep
+        ? HELP_TEXT.CONFIRM_CANCEL
+        : HELP_TEXT.TEXT_INPUT;
 
   const headerContent = (
     <StepIndicator steps={wizard.steps} currentStep={wizard.step} labels={CONFIG_BUNDLE_STEP_LABELS} />
   );
 
-  const componentsPreview =
-    wizard.config.inputMethod === 'file'
-      ? wizard.config.componentsRaw
-      : Object.keys(wizard.config.components).length > 0
-        ? `${Object.keys(wizard.config.components).length} component(s)`
-        : '';
+  const componentCount = Object.keys(wizard.config.components).length;
 
   return (
     <Screen
@@ -120,55 +153,81 @@ export function AddConfigBundleScreen({ onComplete, onExit, existingBundleNames 
           />
         )}
 
-        {isInputMethodStep && (
+        {isComponentTypeStep && (
           <WizardSelect
-            title="Component input method"
-            description="How to provide component configurations"
-            items={inputMethodItems}
-            selectedIndex={inputMethodNav.selectedIndex}
+            title="What do you want to configure?"
+            description={
+              componentCount > 0
+                ? `${componentCount} component(s) added. Select another type or go back to continue.`
+                : 'Select the type of resource to add to this bundle'
+            }
+            items={componentTypeItems}
+            selectedIndex={componentTypeNav.selectedIndex}
           />
         )}
 
-        {isComponentsStep && wizard.config.inputMethod === 'inline' && (
+        {isComponentSelectStep && availableComponents.length > 0 && (
+          <WizardSelect
+            title={`Select a deployed ${wizard.config.currentComponentType}`}
+            description="Choose from your deployed resources"
+            items={availableComponents}
+            selectedIndex={componentSelectNav.selectedIndex}
+          />
+        )}
+
+        {isComponentSelectStep && availableComponents.length === 0 && (
+          <Box flexDirection="column">
+            <Text color="yellow">
+              No deployed {wizard.config.currentComponentType === 'runtime' ? 'runtimes' : 'gateways'} found.
+            </Text>
+            <Text dimColor>Deploy your resources first with `agentcore deploy`, then try again.</Text>
+            <Text dimColor>Press Esc to go back.</Text>
+          </Box>
+        )}
+
+        {isConfigurationStep && (
           <>
             <Box flexDirection="column" marginBottom={1}>
-              <Text dimColor>Expected format: a JSON map of component ARN → configuration</Text>
-              <Text dimColor>Example:</Text>
-              <Text dimColor>
-                {'  '}&#123; &quot;arn:aws:bedrock-agentcore:REGION:ACCOUNT:agent-runtime/RUNTIME&quot;: &#123;
-                &quot;configuration&quot;: &#123; &quot;key&quot;: &quot;value&quot; &#125; &#125; &#125;
+              <Text>
+                <Text bold>Component:</Text> {wizard.config.currentComponentArn}
               </Text>
+              <Text dimColor>Enter the configuration as a JSON object (key-value pairs).</Text>
+              <Text dimColor>Example: {'{"systemPrompt": "You are a helpful assistant", "temperature": 0.7}'}</Text>
             </Box>
             <TextInput
-              key="components-inline"
-              prompt="Component configurations (JSON)"
-              placeholder='{"arn:aws:...": {"configuration": {"key": "value"}}}'
+              key={`config-${wizard.config.currentComponentArn}`}
+              prompt="Configuration (JSON)"
+              placeholder='{"key": "value"}'
               initialValue=""
               expandable
               onSubmit={value => {
-                const parsed = JSON.parse(value) as Record<string, { configuration: Record<string, unknown> }>;
-                wizard.setComponents(parsed, value);
+                const parsed = JSON.parse(value) as Record<string, unknown>;
+                wizard.setConfiguration(parsed);
               }}
               onCancel={() => wizard.goBack()}
-              customValidation={validateComponentsJson}
+              customValidation={validateConfigJson}
             />
           </>
         )}
 
-        {isComponentsStep && wizard.config.inputMethod === 'file' && (
-          <TextInput
-            key="components-file"
-            prompt="Path to components JSON file"
-            placeholder="./components.json"
-            initialValue=""
-            onSubmit={value => {
-              const raw = readFileSync(value.trim(), 'utf-8');
-              const parsed = JSON.parse(raw) as Record<string, { configuration: Record<string, unknown> }>;
-              wizard.setComponents(parsed, value.trim());
-            }}
-            onCancel={() => wizard.goBack()}
-            customValidation={validateComponentsFile}
-          />
+        {isAddAnotherStep && (
+          <>
+            <Box flexDirection="column" marginBottom={1}>
+              <Text color="green">
+                {componentCount} component{componentCount !== 1 ? 's' : ''} configured:
+              </Text>
+              {Object.keys(wizard.config.components).map(arn => (
+                <Text key={arn} dimColor>
+                  {'  '}• {arn}
+                </Text>
+              ))}
+            </Box>
+            <WizardSelect
+              title="Add another component?"
+              items={addAnotherItems}
+              selectedIndex={addAnotherNav.selectedIndex}
+            />
+          </>
         )}
 
         {isBranchNameStep && (
@@ -200,7 +259,11 @@ export function AddConfigBundleScreen({ onComplete, onExit, existingBundleNames 
             fields={[
               { label: 'Name', value: wizard.config.name },
               ...(wizard.config.description ? [{ label: 'Description', value: wizard.config.description }] : []),
-              { label: 'Components', value: componentsPreview },
+              { label: 'Components', value: `${componentCount} component(s)` },
+              ...Object.entries(wizard.config.components).map(([arn, comp]) => ({
+                label: `  ${arn.split('/').pop() ?? arn}`,
+                value: Object.keys(comp.configuration).join(', '),
+              })),
               { label: 'Branch', value: wizard.config.branchName || 'main' },
               { label: 'Message', value: wizard.config.commitMessage || `Create ${wizard.config.name}` },
             ]}

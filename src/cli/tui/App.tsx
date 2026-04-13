@@ -19,7 +19,7 @@ import { OnlineEvalDashboard } from './screens/online-eval';
 import { PackageScreen } from './screens/package';
 import { RecommendationFlow, RecommendationHistoryScreen, RecommendationsHubScreen } from './screens/recommendation';
 import { RemoveFlow } from './screens/remove';
-import { RunBatchEvalFlow, RunEvalFlow, RunScreen } from './screens/run-eval';
+import { BatchEvalHistoryScreen, RunBatchEvalFlow, RunEvalFlow, RunScreen } from './screens/run-eval';
 import { StatusScreen } from './screens/status/StatusScreen';
 import { UpdateScreen } from './screens/update';
 import { ValidateScreen } from './screens/validate';
@@ -42,9 +42,10 @@ type Route =
   | { name: 'remove' }
   | { name: 'run' }
   | { name: 'run-eval'; from?: 'run' | 'evals' }
-  | { name: 'run-batch-eval'; from?: 'run' }
+  | { name: 'run-batch-eval'; from?: 'run' | 'evals' }
+  | { name: 'batch-eval-history' }
   | { name: 'recommendations-hub' }
-  | { name: 'recommend'; from?: 'recommendations-hub' }
+  | { name: 'recommend'; from?: 'recommendations-hub' | 'run' }
   | { name: 'recommendation-history' }
   | { name: 'evals' }
   | { name: 'eval-runs' }
@@ -229,6 +230,7 @@ function AppContent() {
       <RunScreen
         onRunEval={() => setRoute({ name: 'run-eval', from: 'run' })}
         onRunBatchEval={() => setRoute({ name: 'run-batch-eval', from: 'run' })}
+        onRunRecommendation={() => setRoute({ name: 'recommend', from: 'run' })}
         onExit={() => setRoute({ name: 'help' })}
       />
     );
@@ -240,6 +242,8 @@ function AppContent() {
         onSelect={view => {
           if (view === 'run-eval') setRoute({ name: 'run-eval', from: 'evals' });
           if (view === 'runs') setRoute({ name: 'eval-runs' });
+          if (view === 'run-batch-eval') setRoute({ name: 'run-batch-eval', from: 'evals' });
+          if (view === 'batch-eval-history') setRoute({ name: 'batch-eval-history' });
           if (view === 'online-dashboard') setRoute({ name: 'online-evals' });
         }}
         onExit={() => setRoute({ name: 'help' })}
@@ -260,6 +264,10 @@ function AppContent() {
   if (route.name === 'run-batch-eval') {
     const backRoute = route.from ?? 'run';
     return <RunBatchEvalFlow onExit={() => setRoute({ name: backRoute } as Route)} />;
+  }
+
+  if (route.name === 'batch-eval-history') {
+    return <BatchEvalHistoryScreen onExit={() => setRoute({ name: 'evals' })} />;
   }
 
   if (route.name === 'recommendations-hub') {

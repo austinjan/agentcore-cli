@@ -41,11 +41,7 @@ function getAllSteps(
 
   steps.push('traceSource');
 
-  // For tool-desc, traceSource is always 'sessions' (cloudwatch not supported server-side).
-  // The effective traceSource for step logic:
-  const effectiveTraceSource = type === 'TOOL_DESCRIPTION_RECOMMENDATION' ? 'sessions' : traceSource;
-
-  if (effectiveTraceSource === 'sessions') {
+  if (traceSource === 'sessions') {
     // When using session IDs: ask lookback days first (for discovery), then select sessions
     steps.push('days');
     steps.push('sessions');
@@ -72,6 +68,8 @@ function getDefaultConfig(): RecommendationWizardConfig {
     bundleName: '',
     bundleVersion: '',
     bundleFields: [],
+    systemPromptJsonPath: '',
+    toolDescJsonPaths: [],
   };
 }
 
@@ -181,8 +179,19 @@ export function useRecommendationWizard() {
   );
 
   const setBundleFields = useCallback(
-    (bundleFields: string[]) => {
-      setConfig(c => ({ ...c, bundleFields }));
+    (
+      bundleFields: string[],
+      jsonPathInfo?: {
+        systemPromptJsonPath?: string;
+        toolDescJsonPaths?: { toolName: string; toolDescriptionJsonPath: string }[];
+      }
+    ) => {
+      setConfig(c => ({
+        ...c,
+        bundleFields,
+        ...(jsonPathInfo?.systemPromptJsonPath && { systemPromptJsonPath: jsonPathInfo.systemPromptJsonPath }),
+        ...(jsonPathInfo?.toolDescJsonPaths && { toolDescJsonPaths: jsonPathInfo.toolDescJsonPaths }),
+      }));
       advance('bundleField');
     },
     [advance]

@@ -2,7 +2,7 @@ import type { SelectableItem } from '../../components';
 import { TextInput, WizardSelect } from '../../components';
 import { useListNavigation } from '../../hooks';
 import { Box, Text } from 'ink';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 
 type VariantSubField = 'controlBundle' | 'controlVersion' | 'treatmentBundle' | 'treatmentVersion' | 'treatmentWeight';
 
@@ -33,6 +33,7 @@ interface VariantConfigFormProps {
   treatmentVersionLoadState: VersionLoadState;
   onComplete: (config: VariantConfig) => void;
   onCancel: () => void;
+  onCreateBundle?: () => void;
 }
 
 export function VariantConfigForm({
@@ -44,6 +45,7 @@ export function VariantConfigForm({
   treatmentVersionLoadState,
   onComplete,
   onCancel,
+  onCreateBundle,
 }: VariantConfigFormProps) {
   const [activeField, setActiveField] = useState<VariantSubField>('controlBundle');
   const [controlBundle, setControlBundle] = useState('');
@@ -51,6 +53,15 @@ export function VariantConfigForm({
   const [treatmentBundle, setTreatmentBundle] = useState('');
   const [treatmentVersion, setTreatmentVersion] = useState('');
   const [treatmentWeight, setTreatmentWeight] = useState('20');
+
+  const augmentedBundleItems: SelectableItem[] = useMemo(() => {
+    const items: SelectableItem[] = [];
+    if (onCreateBundle) {
+      items.push({ id: '__create_bundle__', title: 'Create new config bundle', description: 'Add a new bundle first' });
+    }
+    items.push(...bundleItems);
+    return items;
+  }, [bundleItems, onCreateBundle]);
 
   const advanceField = useCallback(() => {
     const idx = SUB_FIELDS.indexOf(activeField);
@@ -60,8 +71,12 @@ export function VariantConfigForm({
 
   // Navigation for each select sub-field
   const controlBundleNav = useListNavigation({
-    items: bundleItems,
+    items: augmentedBundleItems,
     onSelect: item => {
+      if (item.id === '__create_bundle__') {
+        onCreateBundle?.();
+        return;
+      }
       setControlBundle(item.id);
       fetchVersionItems(item.id);
       advanceField();
@@ -81,8 +96,12 @@ export function VariantConfigForm({
   });
 
   const treatmentBundleNav = useListNavigation({
-    items: bundleItems,
+    items: augmentedBundleItems,
     onSelect: item => {
+      if (item.id === '__create_bundle__') {
+        onCreateBundle?.();
+        return;
+      }
       setTreatmentBundle(item.id);
       fetchVersionItems(item.id);
       advanceField();
@@ -157,10 +176,10 @@ export function VariantConfigForm({
         </Text>
 
         {activeField === 'controlBundle' ? (
-          bundleItems.length > 0 ? (
+          augmentedBundleItems.length > 0 ? (
             <WizardSelect
               title="  Select control bundle"
-              items={bundleItems}
+              items={augmentedBundleItems}
               selectedIndex={controlBundleNav.selectedIndex}
             />
           ) : (
@@ -190,7 +209,7 @@ export function VariantConfigForm({
         {activeField === 'treatmentBundle' ? (
           <WizardSelect
             title="  Select treatment bundle"
-            items={bundleItems}
+            items={augmentedBundleItems}
             selectedIndex={treatmentBundleNav.selectedIndex}
           />
         ) : treatmentBundle ? (

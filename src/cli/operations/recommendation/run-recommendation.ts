@@ -107,13 +107,72 @@ export async function runRecommendationCommand(
     // 5. Extract account ID from agent runtime ARN
     const accountId = extractAccountIdFromArn(agentState.runtimeArn);
 
+    // 5b. Resolve config bundle ARN from deployed state (if using config bundle)
+    let bundleArn: string | undefined;
+    if (options.inputSource === 'config-bundle' && options.bundleName) {
+      if (options.bundleName.startsWith('arn:')) {
+        // Already an ARN (e.g. from TUI which stores the ARN directly)
+        bundleArn = options.bundleName;
+      } else {
+        // Human-readable name (e.g. from CLI --bundle-name flag) — resolve from deployed state
+        for (const targetName of Object.keys(deployedState.targets ?? {})) {
+          const target = deployedState.targets?.[targetName];
+          const bundle = target?.resources?.configBundles?.[options.bundleName];
+          if (bundle?.bundleArn) {
+            bundleArn = bundle.bundleArn;
+            break;
+          }
+        }
+        if (!bundleArn) {
+          return {
+            success: false,
+            error: `Config bundle "${options.bundleName}" not found in deployed state. Run \`agentcore deploy\` first.`,
+            logFilePath: logger?.logFilePath,
+          };
+        }
+      }
+      logger?.log(`Resolved bundle ARN: ${bundleArn}`);
+    }
+
+    // 5c. Resolve short-form systemPromptJsonPath (e.g. "systemPrompt") to full JSONPath
+    let resolvedSystemPromptJsonPath = options.systemPromptJsonPath;
+    if (
+      options.inputSource === 'config-bundle' &&
+      options.bundleName &&
+      resolvedSystemPromptJsonPath &&
+      !resolvedSystemPromptJsonPath.startsWith('$')
+    ) {
+      // User provided a short field name like "systemPrompt" — resolve from agentcore.json
+      const bundleName = options.bundleName.startsWith('arn:')
+        ? // Find bundle name from ARN by matching deployed state
+          Object.values(deployedState.targets)
+            .flatMap(t => Object.entries(t.resources?.configBundles ?? {}))
+            .find(([, b]) => b.bundleArn === options.bundleName)?.[0]
+        : options.bundleName;
+
+      if (bundleName) {
+        const projBundle = projectSpec.configBundles?.find(b => b.name === bundleName);
+        if (projBundle?.components) {
+          const subPath = resolvedSystemPromptJsonPath;
+          // Use the first component key, resolved to a real ARN
+          const firstComponentKey = Object.keys(projBundle.components)[0];
+          if (firstComponentKey) {
+            const resolvedKey = resolveComponentKeyForJsonPath(firstComponentKey, deployedState);
+            resolvedSystemPromptJsonPath = `$.${resolvedKey}.configuration.${subPath}`;
+            logger?.log(`Resolved short JSONPath "${subPath}" → "${resolvedSystemPromptJsonPath}"`);
+          }
+        }
+      }
+    }
+
     // 6. Build recommendationConfig based on type
     const recommendationConfig = await buildRecommendationConfig({
       type: options.type,
       inlineContent,
-      bundleName: options.bundleName,
+      bundleArn,
       bundleVersion: options.bundleVersion,
-      systemPromptJsonPath: options.systemPromptJsonPath,
+      systemPromptJsonPath: resolvedSystemPromptJsonPath,
+      toolDescJsonPaths: options.toolDescJsonPaths,
       inputSource: options.inputSource,
       tools: options.tools,
       traceSource: options.traceSource,
@@ -213,6 +272,7 @@ export async function runRecommendationCommand(
             recommendationId: startResult.recommendationId,
             status: currentStatus,
             result: pollResult.recommendationResult,
+            region,
             startedAt: pollResult.createdAt,
             completedAt: pollResult.completedAt,
             logFilePath: logger?.logFilePath,
@@ -226,19 +286,20 @@ export async function runRecommendationCommand(
         if (failureDetails) logger?.log(`Failure details: ${failureDetails}`, 'error');
         logger?.endStep('error', `Status: ${currentStatus}`);
         logger?.finalize(false);
+        // Log request IDs for debugging (only in log file, not shown in TUI)
         const requestIds = [
           startResult.requestId ? `Start: ${startResult.requestId}` : '',
           pollResult.requestId ? `Poll: ${pollResult.requestId}` : '',
         ]
           .filter(Boolean)
           .join(', ');
-        const requestIdSuffix = requestIds ? `\n\nRequest IDs (share with API team): ${requestIds}` : '';
+        if (requestIds) logger?.log(`Request IDs: ${requestIds}`, 'error');
 
         return {
           success: false,
           error: failureDetails
-            ? `Recommendation failed: ${failureDetails}${requestIdSuffix}`
-            : `Recommendation finished with status: ${currentStatus}${requestIdSuffix}`,
+            ? `Recommendation failed: ${failureDetails}`
+            : `Recommendation finished with status: ${currentStatus}`,
           recommendationId: startResult.recommendationId,
           status: currentStatus,
           logFilePath: logger?.logFilePath,
@@ -318,9 +379,10 @@ function extractAccountIdFromArn(arn: string): string {
 interface BuildConfigOptions {
   type: RecommendationType;
   inlineContent?: string;
-  bundleName?: string;
+  bundleArn?: string;
   bundleVersion?: string;
   systemPromptJsonPath?: string;
+  toolDescJsonPaths?: { toolName: string; toolDescriptionJsonPath: string }[];
   inputSource: string;
   tools?: string[];
   traceSource: string;
@@ -346,16 +408,14 @@ async function buildRecommendationConfig(opts: BuildConfigOptions): Promise<Reco
     agentTraces = {
       sessionSpans: Array.isArray(sessionSpans) ? sessionSpans : [sessionSpans],
     };
-  } else if (
-    opts.type === 'TOOL_DESCRIPTION_RECOMMENDATION' &&
-    opts.traceSource === 'sessions' &&
-    opts.sessionIds &&
-    opts.sessionIds.length > 0
-  ) {
-    // Tool-desc with session IDs — auto-fetch from both log groups and use inline sessionSpans.
-    // The server-side ToolDescRecWorkflowLambda does NOT support cloudwatchLogs, only sessionSpans.
+  } else if (opts.traceSource === 'sessions' && opts.sessionIds && opts.sessionIds.length > 0) {
+    // Session IDs selected — auto-fetch from both log groups and use inline sessionSpans.
+    // The CloudWatch trace config does not support filtering by multiple session IDs,
+    // so we fetch spans client-side and send them inline.
     opts.onProgress?.('fetching-spans', 'Fetching session spans from CloudWatch...');
-    opts.logger?.log('Auto-fetching spans for tool-desc recommendation (cloudwatchLogs not supported server-side)');
+    opts.logger?.log(
+      'Auto-fetching spans for selected sessions (CloudWatch config does not support session ID filtering)'
+    );
 
     const allSpans = [];
     for (const sessionId of opts.sessionIds) {
@@ -382,7 +442,7 @@ async function buildRecommendationConfig(opts: BuildConfigOptions): Promise<Reco
     opts.onProgress?.('fetching-spans', `Fetched ${allSpans.length} spans`);
     agentTraces = { sessionSpans: allSpans };
   } else {
-    // System prompt path (or tool-desc with cloudwatch fallback) — use cloudwatchLogs
+    // Lookback-based path — use cloudwatchLogs with time range
     const runtimeLogGroupArn = `arn:aws:logs:${opts.region}:${opts.accountId}:log-group:/aws/bedrock-agentcore/runtimes/${opts.runtimeId}-DEFAULT`;
     const spansLogGroupArn = `arn:aws:logs:${opts.region}:${opts.accountId}:log-group:aws/spans`;
 
@@ -397,7 +457,6 @@ async function buildRecommendationConfig(opts: BuildConfigOptions): Promise<Reco
         serviceNames: [serviceName],
         startTime: new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString(),
         endTime: new Date().toISOString(),
-        ...(opts.sessionIds && opts.sessionIds.length > 0 ? { sessionIds: opts.sessionIds } : {}),
       },
     };
   }
@@ -406,16 +465,37 @@ async function buildRecommendationConfig(opts: BuildConfigOptions): Promise<Reco
     evaluators: [{ evaluatorArn: opts.evaluatorIds[0]! }],
   };
 
+  // Validate required fields for config-bundle source (API requires all three)
+  if (opts.inputSource === 'config-bundle' && opts.bundleArn && !opts.bundleVersion) {
+    throw new Error('Config bundle version is required. Provide --bundle-version or deploy the bundle first.');
+  }
+
+  if (opts.inputSource === 'config-bundle' && opts.bundleArn) {
+    if (opts.type === 'SYSTEM_PROMPT_RECOMMENDATION' && !opts.systemPromptJsonPath) {
+      throw new Error(
+        'Config bundle requires --system-prompt-json-path to locate the system prompt field.\n' +
+          "Use the field name (e.g. --system-prompt-json-path 'systemPrompt') and it will be resolved from agentcore.json.\n" +
+          "Or provide the full JSONPath (e.g. '$.ARN.configuration.systemPrompt')."
+      );
+    }
+    if (opts.type === 'TOOL_DESCRIPTION_RECOMMENDATION' && !opts.toolDescJsonPaths?.length) {
+      throw new Error(
+        'Config bundle requires --tool-desc-json-path to locate tool description fields.\n' +
+          "Example: --tool-desc-json-path 'toolName:$.ARN.configuration.toolDescription'"
+      );
+    }
+  }
+
   if (opts.type === 'SYSTEM_PROMPT_RECOMMENDATION') {
     return {
       systemPromptRecommendationConfig: {
         systemPrompt:
-          opts.inputSource === 'config-bundle' && opts.bundleName
+          opts.inputSource === 'config-bundle' && opts.bundleArn
             ? {
                 configurationBundle: {
-                  bundleArn: opts.bundleName,
-                  versionId: opts.bundleVersion,
-                  systemPromptJsonPath: opts.systemPromptJsonPath ?? '$.components.*.configuration.systemPrompt',
+                  bundleArn: opts.bundleArn,
+                  versionId: opts.bundleVersion!,
+                  systemPromptJsonPath: opts.systemPromptJsonPath,
                 },
               }
             : { text: opts.inlineContent ?? '' },
@@ -425,7 +505,24 @@ async function buildRecommendationConfig(opts: BuildConfigOptions): Promise<Reco
     };
   }
 
-  // TOOL_DESCRIPTION_RECOMMENDATION — parse "toolName:description" pairs from tools array
+  // TOOL_DESCRIPTION_RECOMMENDATION
+  if (opts.inputSource === 'config-bundle' && opts.bundleArn && opts.toolDescJsonPaths?.length) {
+    // Config bundle source — pass bundle reference with JSON paths for server-side resolution
+    return {
+      toolDescriptionRecommendationConfig: {
+        toolDescription: {
+          configurationBundle: {
+            bundleArn: opts.bundleArn,
+            versionId: opts.bundleVersion!,
+            tools: opts.toolDescJsonPaths,
+          },
+        },
+        agentTraces,
+      },
+    };
+  }
+
+  // Inline/file source — parse "toolName:description" pairs from tools array
   const toolEntries = (opts.tools ?? []).map(t => {
     const colonIdx = t.indexOf(':');
     if (colonIdx > 0) {
@@ -470,6 +567,36 @@ function extractFailureDetails(pollResult: {
   }
 
   return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
+/**
+ * Resolve a component key (which may be a placeholder like {{runtime:name}})
+ * to its real ARN from deployed state. Returns the key unchanged if not a placeholder.
+ */
+function resolveComponentKeyForJsonPath(key: string, deployedState: DeployedState): string {
+  if (key.startsWith('arn:')) return key;
+
+  const rtMatch = /^\{\{runtime:(.+)\}\}$/.exec(key);
+  if (rtMatch) {
+    const rtName = rtMatch[1]!;
+    for (const target of Object.values(deployedState.targets)) {
+      const rt = target.resources?.runtimes?.[rtName];
+      if (rt) return rt.runtimeArn;
+    }
+  }
+
+  const gwMatch = /^\{\{gateway:(.+)\}\}$/.exec(key);
+  if (gwMatch) {
+    const gwName = gwMatch[1]!;
+    for (const target of Object.values(deployedState.targets)) {
+      const httpGw = target.resources?.httpGateways?.[gwName];
+      if (httpGw) return httpGw.gatewayArn;
+      const mcpGw = target.resources?.mcp?.gateways?.[gwName];
+      if (mcpGw) return mcpGw.gatewayArn;
+    }
+  }
+
+  return key;
 }
 
 function sleep(ms: number): Promise<void> {

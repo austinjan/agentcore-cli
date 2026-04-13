@@ -345,6 +345,7 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
               <Text dimColor>({timeStr})</Text>
             </Text>
             <StepProgress steps={flow.steps} />
+            <Text dimColor>This may take a few minutes...</Text>
             {flow.batchEvaluateId && <Text dimColor>Press Esc to stop the evaluation</Text>}
           </Box>
         </Panel>

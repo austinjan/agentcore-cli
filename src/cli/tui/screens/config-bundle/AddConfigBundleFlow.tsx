@@ -1,12 +1,14 @@
-import { ErrorPrompt } from '../../components';
+import { ConfigIO } from '../../../../lib';
+import { ErrorPrompt, GradientText, Screen } from '../../components';
 import { useCreateConfigBundle, useExistingConfigBundleNames } from '../../hooks/useCreateConfigBundle';
 import { AddSuccessScreen } from '../add/AddSuccessScreen';
 import { AddConfigBundleScreen } from './AddConfigBundleScreen';
-import type { AddConfigBundleConfig } from './types';
+import type { AddConfigBundleConfig, DeployedComponent } from './types';
 import React, { useCallback, useEffect, useState } from 'react';
 
 type FlowState =
-  | { name: 'create-wizard' }
+  | { name: 'loading' }
+  | { name: 'create-wizard'; deployedComponents: DeployedComponent[] }
   | { name: 'create-success'; bundleName: string }
   | { name: 'error'; message: string };
 
@@ -27,7 +29,72 @@ export function AddConfigBundleFlow({
 }: AddConfigBundleFlowProps) {
   const { createConfigBundle, reset: resetCreate } = useCreateConfigBundle();
   const { names: existingNames } = useExistingConfigBundleNames();
-  const [flow, setFlow] = useState<FlowState>({ name: 'create-wizard' });
+  const [flow, setFlow] = useState<FlowState>({ name: 'loading' });
+
+  // Load deployed runtimes/gateways and fill in undeployed ones from project spec
+  useEffect(() => {
+    void (async () => {
+      try {
+        const configIO = new ConfigIO();
+        const components: DeployedComponent[] = [];
+        const deployedArns = new Set<string>();
+
+        // 1. Collect deployed components (real ARNs)
+        try {
+          const deployedState = await configIO.readDeployedState();
+          for (const target of Object.values(deployedState.targets)) {
+            const runtimes = target.resources?.runtimes;
+            if (runtimes) {
+              for (const [name, state] of Object.entries(runtimes)) {
+                components.push({ name, arn: state.runtimeArn, type: 'runtime' });
+                deployedArns.add(name);
+              }
+            }
+            const httpGateways = target.resources?.httpGateways;
+            if (httpGateways) {
+              for (const [name, state] of Object.entries(httpGateways)) {
+                components.push({ name, arn: state.gatewayArn, type: 'gateway' });
+                deployedArns.add(name);
+              }
+            }
+          }
+        } catch {
+          // No deployed state yet — that's fine, we'll use project spec below
+        }
+
+        // 2. Add undeployed runtimes/gateways from project spec as placeholders
+        try {
+          const projectSpec = await configIO.readProjectSpec();
+          for (const rt of projectSpec.runtimes ?? []) {
+            if (!deployedArns.has(rt.name)) {
+              components.push({
+                name: rt.name,
+                arn: `{{runtime:${rt.name}}}`,
+                type: 'runtime',
+                isPlaceholder: true,
+              });
+            }
+          }
+          for (const gw of projectSpec.httpGateways ?? []) {
+            if (!deployedArns.has(gw.name)) {
+              components.push({
+                name: gw.name,
+                arn: `{{gateway:${gw.name}}}`,
+                type: 'gateway',
+                isPlaceholder: true,
+              });
+            }
+          }
+        } catch {
+          // If we can't read project spec, continue with what we have
+        }
+
+        setFlow({ name: 'create-wizard', deployedComponents: components });
+      } catch {
+        setFlow({ name: 'create-wizard', deployedComponents: [] });
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     if (!isInteractive && flow.name === 'create-success') {
@@ -45,18 +112,37 @@ export function AddConfigBundleFlow({
         commitMessage: config.commitMessage || `Create ${config.name}`,
       }).then(result => {
         if (result.ok) {
-          setFlow({ name: 'create-success', bundleName: result.bundleName });
+          setFlow(prev => {
+            if (prev.name === 'loading') return prev;
+            return { name: 'create-success', bundleName: result.bundleName };
+          });
           return;
         }
-        setFlow({ name: 'error', message: result.error });
+        setFlow(prev => {
+          if (prev.name === 'loading') return prev;
+          return { name: 'error', message: result.error };
+        });
       });
     },
     [createConfigBundle]
   );
 
+  if (flow.name === 'loading') {
+    return (
+      <Screen title="Add Configuration Bundle" onExit={onBack}>
+        <GradientText text="Loading deployed resources..." />
+      </Screen>
+    );
+  }
+
   if (flow.name === 'create-wizard') {
     return (
-      <AddConfigBundleScreen existingBundleNames={existingNames} onComplete={handleCreateComplete} onExit={onBack} />
+      <AddConfigBundleScreen
+        existingBundleNames={existingNames}
+        deployedComponents={flow.deployedComponents}
+        onComplete={handleCreateComplete}
+        onExit={onBack}
+      />
     );
   }
 
@@ -80,7 +166,10 @@ export function AddConfigBundleFlow({
       detail={flow.message}
       onBack={() => {
         resetCreate();
-        setFlow({ name: 'create-wizard' });
+        setFlow(prev => {
+          if (prev.name === 'loading') return prev;
+          return { name: 'create-wizard', deployedComponents: [] };
+        });
       }}
       onExit={onExit}
     />

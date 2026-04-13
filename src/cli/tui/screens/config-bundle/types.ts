@@ -7,36 +7,51 @@ import type { ComponentConfigurationMap } from '../../../../schema';
 export type AddConfigBundleStep =
   | 'name'
   | 'description'
-  | 'inputMethod'
-  | 'components'
+  | 'componentType'
+  | 'componentSelect'
+  | 'configuration'
+  | 'addAnother'
   | 'branchName'
   | 'commitMessage'
   | 'confirm';
 
-export type ComponentInputMethod = 'inline' | 'file';
+export type ComponentType = 'runtime' | 'gateway';
+
+export interface DeployedComponent {
+  name: string;
+  arn: string;
+  type: ComponentType;
+  /** True when the resource is not yet deployed — ARN is a placeholder resolved at deploy time. */
+  isPlaceholder?: boolean;
+}
 
 export interface AddConfigBundleConfig {
   name: string;
   description: string;
-  inputMethod: ComponentInputMethod;
   components: ComponentConfigurationMap;
   /** Raw text entered by user (JSON string or file path). */
   componentsRaw: string;
   branchName: string;
   commitMessage: string;
+  /** Currently selected component type in wizard. */
+  currentComponentType?: ComponentType;
+  /** Currently selected component ARN in wizard. */
+  currentComponentArn?: string;
 }
 
 export const CONFIG_BUNDLE_STEP_LABELS: Record<AddConfigBundleStep, string> = {
   name: 'Name',
   description: 'Description',
-  inputMethod: 'Input',
-  components: 'Components',
+  componentType: 'Type',
+  componentSelect: 'Component',
+  configuration: 'Config',
+  addAnother: 'More?',
   branchName: 'Branch',
   commitMessage: 'Message',
   confirm: 'Confirm',
 };
 
-export const INPUT_METHOD_OPTIONS = [
-  { id: 'inline', title: 'Inline JSON', description: 'Enter component configurations as JSON' },
-  { id: 'file', title: 'File path', description: 'Load from a JSON file on disk' },
+export const COMPONENT_TYPE_OPTIONS = [
+  { id: 'runtime', title: 'Agent Runtime', description: 'Configure an agent runtime' },
+  { id: 'gateway', title: 'HTTP Gateway', description: 'Configure an HTTP gateway' },
 ] as const;

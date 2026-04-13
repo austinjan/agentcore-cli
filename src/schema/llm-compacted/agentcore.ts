@@ -346,7 +346,7 @@ interface Policy {
 interface ConfigBundle {
   name: string; // @regex ^[a-zA-Z][a-zA-Z0-9_]{0,99}$ @max 100
   description?: string; // @max 500
-  /** Component configurations keyed by component ARN or placeholder (e.g. {{agent:<agentName>}}) */
+  /** Component configurations keyed by component ARN or placeholder (e.g. {{runtime:<runtimeName>}}) */
   components: Record<string, ComponentConfiguration>;
   branchName?: string; // @max 128 — optional branch name for versioning
   commitMessage?: string; // @max 500 — optional commit message
