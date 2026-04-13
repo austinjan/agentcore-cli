@@ -18,10 +18,6 @@ function formatTimestamp(epochSeconds: string): string {
     .replace(/\.\d+Z$/, 'Z');
 }
 
-function shortId(versionId: string): string {
-  return versionId.slice(0, 8);
-}
-
 interface DiffScreenProps {
   bundleId: string;
   bundleName: string;
@@ -65,7 +61,7 @@ export function DiffScreen({ bundleId, bundleName, fromVersionId, toVersionId, r
     const result: { text: string; color?: string }[] = [];
 
     result.push({
-      text: `Diff: ${shortId(fromVersion.versionId)} → ${shortId(toVersion.versionId)}`,
+      text: `Diff: ${fromVersion.versionId} → ${toVersion.versionId}`,
     });
     result.push({
       text: `From: ${fromVersion.lineageMetadata?.commitMessage ?? '(no message)'} (${formatTimestamp(fromVersion.versionCreatedAt)})`,

@@ -25,10 +25,6 @@ function formatTimestamp(ts: string): string {
     .replace(/\.\d+Z$/, 'Z');
 }
 
-function shortId(versionId: string): string {
-  return versionId.slice(0, 8);
-}
-
 async function resolveRegion(): Promise<string> {
   const { ConfigIO } = await import('../../../lib');
   const configIO = new ConfigIO();
@@ -170,14 +166,14 @@ export const registerConfigBundle = (program: Command) => {
                     return (
                       <Box key={v.versionId} flexDirection="column">
                         <Text>
-                          {connector} <Text color="green">{shortId(v.versionId)}</Text>{' '}
+                          {connector} <Text color="green">{v.versionId}</Text>{' '}
                           <Text dimColor>{formatTimestamp(v.versionCreatedAt)}</Text>{' '}
                           {message && <Text>&quot;{message}&quot;</Text>}
                         </Text>
                         <Text>
                           {isLast ? ' ' : '│'} <Text dimColor>by: {creator}</Text>
                           {meta?.parentVersionIds?.length ? (
-                            <Text dimColor> (parent: {meta.parentVersionIds.map(id => shortId(id)).join(', ')})</Text>
+                            <Text dimColor> (parent: {meta.parentVersionIds.join(', ')})</Text>
                           ) : null}
                         </Text>
                       </Box>
@@ -185,7 +181,7 @@ export const registerConfigBundle = (program: Command) => {
                   })}
                 </Box>
               ))}
-              <Text dimColor>Full version IDs: use --json for complete output</Text>
+              <Text dimColor>Use --json for complete output</Text>
             </Box>
           );
         } catch (error) {
@@ -220,7 +216,7 @@ export const registerConfigBundle = (program: Command) => {
         render(
           <Box flexDirection="column">
             <Text bold>
-              Diff: {shortId(result.fromVersion.versionId)} → {shortId(result.toVersion.versionId)}
+              Diff: {result.fromVersion.versionId} → {result.toVersion.versionId}
             </Text>
             <Text dimColor>
               From: {fromMeta?.commitMessage ?? '(no message)'} ({formatTimestamp(result.fromVersion.versionCreatedAt)})

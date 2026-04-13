@@ -19,10 +19,6 @@ function formatTimestamp(epochSeconds: string): string {
     .replace(/\.\d+Z$/, 'Z');
 }
 
-function shortId(versionId: string): string {
-  return versionId.slice(0, 8);
-}
-
 interface VersionHistoryScreenProps {
   bundle: BundleWithMeta;
   region: string;
@@ -130,7 +126,7 @@ export function VersionHistoryScreen({ bundle, region, onViewDiff, onExit }: Ver
         lines.push(`Created by: ${cb.name}${cb.arn ? ` (${cb.arn})` : ''}`);
       }
       if (detail.lineageMetadata?.parentVersionIds?.length) {
-        lines.push(`Parent: ${detail.lineageMetadata.parentVersionIds.map(id => shortId(id)).join(', ')}`);
+        lines.push(`Parent: ${detail.lineageMetadata.parentVersionIds.map(id => id).join(', ')}`);
       }
       lines.push(`Created: ${formatTimestamp(detail.versionCreatedAt)}`);
       lines.push('');
@@ -176,7 +172,7 @@ export function VersionHistoryScreen({ bundle, region, onViewDiff, onExit }: Ver
   if (mode === 'diff-select-from') {
     helpText = '↑↓ navigate · Enter select FROM version · Esc cancel';
   } else if (mode === 'diff-select-to') {
-    helpText = `↑↓ navigate · Enter select TO version · Esc back (from: ${shortId(diffFromId!)})`;
+    helpText = `↑↓ navigate · Enter select TO version · Esc back (from: ${diffFromId!})`;
   }
 
   // Mode-specific header
@@ -190,7 +186,7 @@ export function VersionHistoryScreen({ bundle, region, onViewDiff, onExit }: Ver
   } else if (mode === 'diff-select-to') {
     modeIndicator = (
       <Box marginBottom={1}>
-        <Text color="yellow">From: {shortId(diffFromId!)} — Now select the TO version:</Text>
+        <Text color="yellow">From: {diffFromId!} — Now select the TO version:</Text>
       </Box>
     );
   }
@@ -227,7 +223,7 @@ export function VersionHistoryScreen({ bundle, region, onViewDiff, onExit }: Ver
                     <Text color={isSelected ? 'cyan' : undefined}>{isSelected ? '❯' : ' '} </Text>
                     <Text>{connector} </Text>
                     <Text color="green" bold={isDiffFrom}>
-                      {shortId(v.versionId)}
+                      {v.versionId}
                     </Text>
                     <Text dimColor> {formatTimestamp(v.versionCreatedAt)}</Text>
                     {message ? <Text> &quot;{message}&quot;</Text> : null}
@@ -235,8 +231,7 @@ export function VersionHistoryScreen({ bundle, region, onViewDiff, onExit }: Ver
                   {meta?.parentVersionIds?.length ? (
                     <Text>
                       {'  '}
-                      {isLast ? ' ' : '│'}{' '}
-                      <Text dimColor>parent: {meta.parentVersionIds.map(id => shortId(id)).join(', ')}</Text>
+                      {isLast ? ' ' : '│'} <Text dimColor>parent: {meta.parentVersionIds.join(', ')}</Text>
                     </Text>
                   ) : null}
                 </Box>
