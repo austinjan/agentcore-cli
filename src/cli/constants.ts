@@ -12,7 +12,7 @@ export const PACKAGE_VERSION: string = packageJson.version;
  */
 export type DistroMode = 'PROD_DISTRO' | 'PRIVATE_DEV_DISTRO';
 
-export const DISTRO_MODE: DistroMode = 'PROD_DISTRO';
+export const DISTRO_MODE: DistroMode = 'PRIVATE_DEV_DISTRO';
 
 /**
  * Configuration for each distribution mode.
@@ -22,11 +22,13 @@ export const DISTRO_CONFIG = {
     packageName: '@aws/agentcore',
     registryUrl: 'https://registry.npmjs.org',
     installCommand: 'npm install -g @aws/agentcore@latest',
+    checkForUpdates: true,
   },
   PRIVATE_DEV_DISTRO: {
-    packageName: '@aws/agentcore',
+    packageName: '@aws/agentcore-dev',
     registryUrl: 'https://npm.pkg.github.com',
-    installCommand: 'npm install -g @aws/agentcore@latest --registry=https://npm.pkg.github.com',
+    installCommand: 'npm install -g @aws/agentcore-dev@latest --registry=https://npm.pkg.github.com',
+    checkForUpdates: false,
   },
 } as const;
 

@@ -22,7 +22,7 @@ import { registerTelemetry } from './commands/telemetry';
 import { registerTraces } from './commands/traces';
 import { registerUpdate } from './commands/update';
 import { registerValidate } from './commands/validate';
-import { PACKAGE_VERSION } from './constants';
+import { PACKAGE_VERSION, getDistroConfig } from './constants';
 import { getOrCreateInstallationId } from './global-config';
 import { ALL_PRIMITIVES } from './primitives';
 import { App } from './tui/App';
@@ -128,7 +128,7 @@ export function createProgram(): Command {
   const program = new Command();
 
   program
-    .name('agentcore')
+    .name('agentcore-dev')
     .description(COMMAND_DESCRIPTIONS.program)
     .version(PACKAGE_VERSION)
     .showHelpAfterError()
@@ -205,9 +205,10 @@ export const main = async (argv: string[]) => {
 
   const args = argv.slice(2);
 
-  // Fire off non-blocking update check (skip for `update` command)
+  // Fire off non-blocking update check (skip for `update` command and dev distro)
   const isUpdateCommand = args[0] === 'update';
-  const updateCheck = isUpdateCommand ? Promise.resolve(null) : checkForUpdate();
+  const skipUpdateCheck = isUpdateCommand || !getDistroConfig().checkForUpdates;
+  const updateCheck = skipUpdateCheck ? Promise.resolve(null) : checkForUpdate();
 
   // Show TUI for no arguments, commander handles --help via configureHelp()
   if (args.length === 0) {

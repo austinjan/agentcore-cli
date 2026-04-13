@@ -1,6 +1,6 @@
 {
-  "name": "@aws/agentcore",
-  "version": "0.8.0-evo-private-beta-20260410",
+  "name": "@aws/agentcore-dev",
+  "version": "0.8.0-dev",
   "description": "CLI for Amazon Bedrock AgentCore",
   "license": "Apache-2.0",
   "repository": {
@@ -30,7 +30,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "agentcore": "dist/cli/index.mjs"
+    "agentcore-dev": "dist/cli/index.mjs"
   },
   "exports": {
     ".": {
