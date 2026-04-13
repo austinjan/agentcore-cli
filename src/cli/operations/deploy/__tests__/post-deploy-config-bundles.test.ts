@@ -29,7 +29,7 @@ vi.mock('../../../aws/agentcore-config-bundles', () => ({
 const REGION = 'us-west-2';
 
 function makeProjectSpec(configBundles: Record<string, unknown>[]) {
-  return { configBundles } as any;
+  return { name: 'TestProject', configBundles } as any;
 }
 
 describe('setupConfigBundles', () => {
@@ -56,7 +56,7 @@ describe('setupConfigBundles', () => {
       expect(mockCreateConfigurationBundle).toHaveBeenCalledWith(
         expect.objectContaining({
           region: REGION,
-          bundleName: 'MyBundle',
+          bundleName: 'TestProject_MyBundle',
           components: { foo: { type: 'inline', value: 'bar' } },
           commitMessage: 'Create MyBundle',
         })
@@ -349,7 +349,7 @@ describe('setupConfigBundles', () => {
       });
 
       mockListConfigurationBundles.mockResolvedValue({
-        bundles: [{ bundleId: 'b-found', bundleName: 'MyBundle' }],
+        bundles: [{ bundleId: 'b-found', bundleName: 'TestProject_MyBundle' }],
       });
 
       mockListConfigurationBundleVersions.mockResolvedValue({
