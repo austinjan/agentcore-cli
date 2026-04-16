@@ -88,6 +88,9 @@ jobs:
             fi
           fi
 
+      - name: Update asset snapshots
+        run: npx vitest run --project unit --update -t "Assets Directory Snapshots"
+
       - name: Get current version
         id: current
         run: |
