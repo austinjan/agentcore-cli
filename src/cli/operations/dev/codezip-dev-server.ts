@@ -118,9 +118,11 @@ export class CodeZipDevServer extends DevServer {
     }
 
     if (!isPython) {
+      // TS entrypoint is already a file path like "main.ts" — pass it straight to tsx.
+      const entryFile = module.split(':')[0] ?? module;
       return {
         cmd: 'npx',
-        args: ['tsx', 'watch', (module.split(':')[0] ?? module).replace(/\./g, '/') + '.ts'],
+        args: ['tsx', 'watch', entryFile],
         cwd: directory,
         env,
       };

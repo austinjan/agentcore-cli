@@ -119,6 +119,30 @@ describe('CodeZipDevServer spawn config', () => {
     expect(env.MY_KEY).toBe('secret');
   });
 
+  it('TypeScript HTTP: uses npx tsx watch with the entry file', async () => {
+    const config: DevConfig = {
+      agentName: 'TsAgent',
+      module: 'main.ts',
+      directory: '/project/app',
+      hasConfig: true,
+      isPython: false,
+      buildType: 'CodeZip',
+      protocol: 'HTTP',
+    };
+
+    const server = new CodeZipDevServer(config, defaultOptions);
+    await server.start();
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'npx',
+      ['tsx', 'watch', 'main.ts'],
+      expect.objectContaining({ cwd: '/project/app' })
+    );
+    const env = mockSpawn.mock.calls[0]![2].env;
+    expect(env.PORT).toBe('8080');
+    expect(env.LOCAL_DEV).toBe('1');
+  });
+
   it('MCP: extracts file from module:function entrypoint', async () => {
     const config: DevConfig = {
       agentName: 'McpAgent',
