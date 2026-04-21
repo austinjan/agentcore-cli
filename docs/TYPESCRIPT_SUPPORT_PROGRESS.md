@@ -150,13 +150,15 @@ Under `src/assets/container/typescript/`.
 - [ ] **Snapshots** — `src/assets/__tests__/assets.snapshot.test.ts` already auto-discovers `typescript/*` files (lines
       106-120). Run `npm run test:update-snapshots` after Phase 3 templates land.
   - **Notes:**
-- [ ] **Create integ test** — duplicate the Python block in `integ-tests/create-with-agent.test.ts` for TypeScript.
+- [x] **Create integ test** — duplicate the Python block in `integ-tests/create-with-agent.test.ts` for TypeScript.
       Assert: `app/<name>/main.ts`, `app/<name>/package.json`, `app/<name>/node_modules/` (if install ran), and
       `agentcore.json` has `runtimeVersion: "NODE_22"` + `entrypoint: "main.ts"`.
-  - **Notes:**
-- [ ] **Dev-server unit test** — add a TS variant in `src/cli/operations/dev/__tests__/codezip-dev-server.test.ts`
+  - **Notes:** Added `describe('integration: create with TypeScript agent', ...)` block. Runs with `skipInstall=true` to
+    stay fast/offline-safe; asserts `main.ts`, `package.json`, `tsconfig.json`, `model/load.ts`, `mcp_client/client.ts`.
+- [x] **Dev-server unit test** — add a TS variant in `src/cli/operations/dev/__tests__/codezip-dev-server.test.ts`
       asserting spawn config is `{ cmd: 'npx', args: ['tsx', 'watch', 'main.ts'], ... }`.
-  - **Notes:**
+  - **Notes:** Added spec; also fixed a bug where the non-Python spawn path was rewriting `main.ts` → `main/ts.ts` via a
+    stale `.replace(/\./g, '/')` transformation. Entry file is now passed literally.
 - [ ] **TUI harness walkthrough** — mirror an existing Python walkthrough under `integ-tests/tui/` selecting TypeScript
       → Strands.
   - **Notes:**
@@ -164,9 +166,10 @@ Under `src/assets/container/typescript/`.
       build → `agentcore deploy` (account 325335451438, `AWS_PROFILE=deploy`) → `agentcore invoke --prompt "ping"` →
       teardown on exit and on failure. Gate behind the same env flag as other AWS integ tests.
   - **Notes:**
-- [ ] **Non-Strands rejection test** — confirm
+- [x] **Non-Strands rejection test** — confirm
       `agentcore add agent --language TypeScript --framework LangChain_LangGraph` fails fast.
-  - **Notes:**
+  - **Notes:** Covered by `src/cli/commands/add/__tests__/add-agent.test.ts` (TS+LangChain_LangGraph rejection) and
+    `src/cli/commands/add/__tests__/validate.test.ts` (TS+Strands accepted, TS+non-Strands rejected).
 
 ---
 
@@ -236,4 +239,5 @@ Append a one-line entry per commit as you go. Newest at the bottom. Format: `<sh
 - `076a4aa` — Phase 4: add TS container template (Dockerfile + dockerignore).
 - `f015ce7` — Phase 4: log 003f672 + 076a4aa in progress tracker.
 - `5c2af7d` — Phase 5: Node setup helper + create-flow wiring + unit tests.
+- `c22147d` — Phase 6: TS dev-server spec + create integ block; fix spawn entrypoint rewrite bug.
 - _(next commit goes here)_
