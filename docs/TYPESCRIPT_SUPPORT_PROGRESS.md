@@ -224,4 +224,6 @@ Append a one-line entry per commit as you go. Newest at the bottom. Format: `<sh
 - `a487f19` — Phase 2: drop Python-only guard in isDevSupported so TS agents reach the dev server.
 - `6f1aeed` — Phase 2: log a487f19 in progress tracker.
 - `f6ed2e9` — Phase 3: author TS/Strands HTTP template assets + align stale tests + extend .prettierignore.
+- `003f672` — Phase 3: log 6f1aeed + f6ed2e9 in progress tracker.
+- `076a4aa` — Phase 4: add TS container template (Dockerfile + dockerignore).
 - _(next commit goes here)_
