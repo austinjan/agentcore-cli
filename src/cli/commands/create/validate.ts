@@ -153,7 +153,7 @@ export function validateCreateOptions(options: CreateOptions, cwd?: string): Val
     // Validate language
     const langResult = TargetLanguageSchema.safeParse(options.language);
     if (!langResult.success) {
-      return { valid: false, error: `Invalid language: ${options.language}. Use Python` };
+      return { valid: false, error: `Invalid language: ${options.language}. Use Python or TypeScript` };
     }
 
     // Validate framework
@@ -176,9 +176,12 @@ export function validateCreateOptions(options: CreateOptions, cwd?: string): Val
       return { valid: false, error: `Invalid model provider: ${options.modelProvider}` };
     }
 
-    // Validate language is supported
-    if (options.language === 'TypeScript') {
-      return { valid: false, error: 'TypeScript is not yet supported. Currently supported: Python' };
+    // TypeScript is Strands-only for now
+    if (options.language === 'TypeScript' && fwResult.data !== 'Strands') {
+      return {
+        valid: false,
+        error: `Framework ${options.framework} is not yet available for TypeScript. Only Strands is supported.`,
+      };
     }
 
     // Validate framework/model compatibility
