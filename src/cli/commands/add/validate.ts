@@ -236,11 +236,14 @@ export function validateAddAgentOptions(options: AddAgentOptions): ValidationRes
       return { valid: false, error: '--code-location is required for BYO path' };
     }
   } else {
-    if (options.language === 'TypeScript') {
-      return { valid: false, error: 'Create path only supports Python (TypeScript templates not yet available)' };
-    }
     if (options.language === 'Other') {
-      return { valid: false, error: 'Create path only supports Python' };
+      return { valid: false, error: 'Create path only supports Python or TypeScript' };
+    }
+    if (options.language === 'TypeScript' && options.framework && options.framework !== 'Strands') {
+      return {
+        valid: false,
+        error: `Framework ${options.framework} is not yet available for TypeScript. Only Strands is supported.`,
+      };
     }
 
     if (!options.memory) {

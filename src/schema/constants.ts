@@ -146,9 +146,24 @@ export const DEFAULT_PYTHON_VERSION: PythonRuntime = 'PYTHON_3_14';
 export const NodeRuntimeSchema = z.enum(['NODE_18', 'NODE_20', 'NODE_22']);
 export type NodeRuntime = z.infer<typeof NodeRuntimeSchema>;
 
+/** Default Node.js runtime version for new TypeScript agents */
+export const DEFAULT_NODE_VERSION: NodeRuntime = 'NODE_22';
+
 /** Combined runtime version schema supporting both Python and Node/TypeScript runtimes */
 export const RuntimeVersionSchema = z.union([PythonRuntimeSchema, NodeRuntimeSchema]);
 export type RuntimeVersion = z.infer<typeof RuntimeVersionSchema>;
+
+/** Default entrypoint filename for each target language (create path). */
+export const DEFAULT_ENTRYPOINT_BY_LANGUAGE: Record<'Python' | 'TypeScript', string> = {
+  Python: 'main.py',
+  TypeScript: 'main.ts',
+};
+
+/** Default runtime version for each target language (create path). */
+export const DEFAULT_RUNTIME_BY_LANGUAGE: Record<'Python' | 'TypeScript', RuntimeVersion> = {
+  Python: DEFAULT_PYTHON_VERSION,
+  TypeScript: DEFAULT_NODE_VERSION,
+};
 
 export const NetworkModeSchema = z.enum(['PUBLIC', 'VPC']);
 export type NetworkMode = z.infer<typeof NetworkModeSchema>;

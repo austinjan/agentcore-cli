@@ -126,11 +126,16 @@ export const SDK_OPTIONS = [
 ] as const;
 
 /**
- * Get SDK options filtered by protocol compatibility.
+ * Get SDK options filtered by protocol compatibility and target language.
+ * TypeScript currently only supports Strands.
  */
-export function getSDKOptionsForProtocol(protocol: ProtocolMode) {
+export function getSDKOptionsForProtocol(protocol: ProtocolMode, language?: TargetLanguage) {
   const supportedFrameworks = PROTOCOL_FRAMEWORK_MATRIX[protocol];
-  return SDK_OPTIONS.filter(option => supportedFrameworks.includes(option.id));
+  const byProtocol = SDK_OPTIONS.filter(option => supportedFrameworks.includes(option.id));
+  if (language === 'TypeScript') {
+    return byProtocol.filter(option => option.id === 'Strands');
+  }
+  return byProtocol;
 }
 
 export const MODEL_PROVIDER_OPTIONS = [

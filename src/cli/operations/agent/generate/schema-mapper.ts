@@ -9,7 +9,12 @@ import type {
   MemoryStrategyType,
   ModelProvider,
 } from '../../../../schema';
-import { DEFAULT_EPISODIC_REFLECTION_NAMESPACES, DEFAULT_STRATEGY_NAMESPACES } from '../../../../schema';
+import {
+  DEFAULT_ENTRYPOINT_BY_LANGUAGE,
+  DEFAULT_EPISODIC_REFLECTION_NAMESPACES,
+  DEFAULT_RUNTIME_BY_LANGUAGE,
+  DEFAULT_STRATEGY_NAMESPACES,
+} from '../../../../schema';
 import { GatewayPrimitive } from '../../../primitives/GatewayPrimitive';
 import { buildAuthorizerConfigFromJwtConfig } from '../../../primitives/auth-utils';
 import {
@@ -116,9 +121,11 @@ export function mapGenerateConfigToAgent(config: GenerateConfig): AgentEnvSpec {
     name: config.projectName,
     build: config.buildType ?? 'CodeZip',
     ...(config.dockerfile && { dockerfile: config.dockerfile }),
-    entrypoint: DEFAULT_PYTHON_ENTRYPOINT as FilePath,
+    entrypoint: (config.language === 'TypeScript'
+      ? DEFAULT_ENTRYPOINT_BY_LANGUAGE.TypeScript
+      : DEFAULT_PYTHON_ENTRYPOINT) as FilePath,
     codeLocation: codeLocation as DirectoryPath,
-    runtimeVersion: DEFAULT_PYTHON_VERSION,
+    runtimeVersion: config.language === 'TypeScript' ? DEFAULT_RUNTIME_BY_LANGUAGE.TypeScript : DEFAULT_PYTHON_VERSION,
     networkMode,
     protocol,
     ...(networkMode === 'VPC' &&

@@ -154,7 +154,7 @@ export const AGENT_TYPE_OPTIONS = [
 
 export const LANGUAGE_OPTIONS = [
   { id: 'Python', title: 'Python' },
-  { id: 'TypeScript', title: 'TypeScript (coming soon)', disabled: true },
+  { id: 'TypeScript', title: 'TypeScript' },
   { id: 'Other', title: 'Other' },
 ] as const;
 

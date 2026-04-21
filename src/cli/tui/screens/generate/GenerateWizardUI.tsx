@@ -84,7 +84,7 @@ export function GenerateWizardUI({
       case 'protocol':
         return PROTOCOL_OPTIONS.map(o => ({ id: o.id, title: o.title, description: o.description }));
       case 'sdk':
-        return getSDKOptionsForProtocol(wizard.config.protocol).map(o => ({
+        return getSDKOptionsForProtocol(wizard.config.protocol, wizard.config.language).map(o => ({
           id: o.id,
           title: o.title,
           description: o.description,
