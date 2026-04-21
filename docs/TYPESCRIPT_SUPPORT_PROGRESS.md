@@ -55,12 +55,12 @@ Captured in commit `50a6cbd`. Do NOT re-do these.
 
 ## Phase 2 — Dev-server unblock (small, unblocking change)
 
-- [ ] Remove / relax `isDevSupported` Python-only guard at `src/cli/operations/dev/config.ts:35-57`.
-  - **Approach:** drop the `!isPythonAgent(agent)` branch entirely. Downstream (`codezip-dev-server.ts:120-126`) already
-    picks `npx tsx watch` when `isPython` is false, and `isPython` at `config.ts:141` keys off entrypoint extension — so
-    it will naturally be `false` for `main.ts`.
-  - **Verify:** unit test in `codezip-dev-server.test.ts` still green; add a TS case (see Phase 6).
-  - **Notes:**
+- [x] Remove / relax `isDevSupported` Python-only guard at `src/cli/operations/dev/config.ts:35-57`.
+  - **Approach:** dropped the `!isPythonAgent(agent)` branch entirely. Downstream (`codezip-dev-server.ts:120-126`)
+    already picks `npx tsx watch` when `isPython` is false, and `isPython` at `config.ts:141` keys off entrypoint
+    extension — so it is naturally `false` for `main.ts`.
+  - **Verify:** `npx tsc --noEmit` clean; `codezip-dev-server.test.ts` all 5 specs green.
+  - **Notes:** TS-specific unit test deferred to Phase 6.
 
 ---
 
