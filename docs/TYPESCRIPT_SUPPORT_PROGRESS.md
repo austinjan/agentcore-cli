@@ -215,4 +215,5 @@ Run from a clean scratch dir against the deploy profile. Record results inline.
 Append a one-line entry per commit as you go. Newest at the bottom. Format: `<sha> — <phase>: <summary>`.
 
 - `50a6cbd` — Phase 1: scaffold TypeScript language support (WIP checkpoint, schema + UI + validator + spec-mapper).
+- `3417f9a` — Phase 0: add progress tracker doc (verification sweep results baked in).
 - _(next commit goes here)_
