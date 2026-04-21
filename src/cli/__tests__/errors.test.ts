@@ -1,6 +1,7 @@
 import {
   AgentAlreadyExistsError,
   getErrorMessage,
+  isAccountMismatchError,
   isChangesetInProgressError,
   isExpiredTokenError,
   isNoCredentialsError,
@@ -202,6 +203,26 @@ describe('errors', () => {
       expect(isChangesetInProgressError(null)).toBe(false);
       expect(isChangesetInProgressError(undefined)).toBe(false);
       expect(isChangesetInProgressError({})).toBe(false);
+    });
+  });
+
+  describe('isAccountMismatchError', () => {
+    it('returns true for AccountMismatchError', () => {
+      expect(isAccountMismatchError({ name: 'AccountMismatchError' })).toBe(true);
+    });
+
+    it('returns false for other errors', () => {
+      expect(isAccountMismatchError({ name: 'AwsCredentialsError' })).toBe(false);
+      expect(isAccountMismatchError({ name: 'ExpiredTokenException' })).toBe(false);
+      expect(isAccountMismatchError(new Error('some other error'))).toBe(false);
+    });
+
+    it('returns false for edge cases', () => {
+      expect(isAccountMismatchError(null)).toBe(false);
+      expect(isAccountMismatchError(undefined)).toBe(false);
+      expect(isAccountMismatchError('string')).toBe(false);
+      expect(isAccountMismatchError(123)).toBe(false);
+      expect(isAccountMismatchError({})).toBe(false);
     });
   });
 });

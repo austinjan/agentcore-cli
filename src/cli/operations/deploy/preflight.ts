@@ -1,6 +1,6 @@
 import { ConfigIO, DOCKERFILE_NAME, getDockerfilePath, requireConfigRoot, resolveCodeLocation } from '../../../lib';
 import type { AgentCoreProjectSpec, AwsDeploymentTarget } from '../../../schema';
-import { validateAwsCredentials } from '../../aws/account';
+import { validateAccountMatch, validateAwsCredentials } from '../../aws/account';
 import { LocalCdkProject } from '../../cdk/local-cdk-project';
 import { CdkToolkitWrapper, createCdkToolkitWrapper, silentIoHost } from '../../cdk/toolkit-lib';
 import { checkBootstrapStatus, checkStacksStatus, formatCdkEnvironment } from '../../cloudformation';
@@ -114,6 +114,13 @@ export async function validateProject(): Promise<PreflightContext> {
   // Skip for teardown deploys — callers validate after teardown confirmation.
   if (!isTeardownDeploy) {
     await validateAwsCredentials();
+
+    // Validate that credentials match the target account.
+    // This catches the "wrong account" error early instead of at publish assets.
+    const target = awsTargets[0];
+    if (target) {
+      await validateAccountMatch(target.account);
+    }
   }
 
   return { projectSpec, awsTargets, cdkProject, isTeardownDeploy };

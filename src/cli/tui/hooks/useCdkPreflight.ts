@@ -1,6 +1,11 @@
 import { ConfigIO, SecureCredentials } from '../../../lib';
 import type { DeployedState } from '../../../schema';
-import { AwsCredentialsError, validateAwsCredentials } from '../../aws/account';
+import {
+  AccountMismatchError,
+  AwsCredentialsError,
+  validateAccountMatch,
+  validateAwsCredentials,
+} from '../../aws/account';
 import { type CdkToolkitWrapper, type SwitchableIoHost, createSwitchableIoHost } from '../../cdk/toolkit-lib';
 import { getErrorMessage, isExpiredTokenError, isNoCredentialsError } from '../../errors';
 import type { ExecLogger } from '../../logging';
@@ -283,10 +288,12 @@ export function useCdkPreflight(options: PreflightOptions): PreflightResult {
           if (isNoCredentialsError(err)) {
             setHasCredentialsError(true);
           }
-          // In interactive mode with credentials error, use short message (UI handles recovery)
+          // In interactive mode with credentials/account errors, use short message (UI handles recovery)
           // In non-interactive mode, show full message with fix instructions
           let userMessage: string;
           if (isInteractive && err instanceof AwsCredentialsError) {
+            userMessage = err.shortMessage;
+          } else if (isInteractive && err instanceof AccountMismatchError) {
             userMessage = err.shortMessage;
           } else {
             userMessage = getErrorMessage(err);
@@ -308,14 +315,25 @@ export function useCdkPreflight(options: PreflightOptions): PreflightResult {
         if (preflightContext.isTeardownDeploy) {
           try {
             await validateAwsCredentials();
+            // Also validate account match for teardown deploys
+            const target = preflightContext.awsTargets[0];
+            if (target) {
+              await validateAccountMatch(target.account);
+            }
           } catch (err) {
             const errorMsg = formatError(err);
             logger.endStep('error', errorMsg);
             if (isNoCredentialsError(err)) {
               setHasCredentialsError(true);
             }
-            const userMessage =
-              isInteractive && err instanceof AwsCredentialsError ? err.shortMessage : getErrorMessage(err);
+            let userMessage: string;
+            if (isInteractive && err instanceof AwsCredentialsError) {
+              userMessage = err.shortMessage;
+            } else if (isInteractive && err instanceof AccountMismatchError) {
+              userMessage = err.shortMessage;
+            } else {
+              userMessage = getErrorMessage(err);
+            }
             updateStep(STEP_VALIDATE, { status: 'error', error: userMessage });
             setPhase('error');
             isRunningRef.current = false;

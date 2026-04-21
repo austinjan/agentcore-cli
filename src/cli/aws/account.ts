@@ -90,3 +90,46 @@ export async function validateAwsCredentials(): Promise<void> {
     );
   }
 }
+
+/**
+ * Error thrown when AWS credentials are for a different account than the target.
+ * Supports both a short message (for interactive mode) and detailed message (for CLI mode).
+ */
+export class AccountMismatchError extends Error {
+  /** Short message suitable for interactive mode where UI handles recovery */
+  readonly shortMessage: string;
+  /** The account ID from the current AWS credentials */
+  readonly credentialsAccount: string;
+  /** The account ID specified in the deployment target */
+  readonly targetAccount: string;
+
+  constructor(credentialsAccount: string, targetAccount: string) {
+    const shortMessage = `AWS credentials are for account ${credentialsAccount}, but target requires account ${targetAccount}.`;
+    const detailedMessage =
+      `${shortMessage}\n\n` +
+      'To fix this:\n' +
+      `  1. Switch to credentials for account ${targetAccount}\n` +
+      `  2. Or update aws-targets.json to use account ${credentialsAccount}`;
+    super(detailedMessage);
+    this.name = 'AccountMismatchError';
+    this.shortMessage = shortMessage;
+    this.credentialsAccount = credentialsAccount;
+    this.targetAccount = targetAccount;
+  }
+}
+
+/**
+ * Validate that current AWS credentials match the target account.
+ * Throws AccountMismatchError if there's a mismatch.
+ * If no credentials are available, returns silently (let validateAwsCredentials handle that case).
+ */
+export async function validateAccountMatch(targetAccount: string): Promise<void> {
+  const credentialsAccount = await detectAccount();
+  if (!credentialsAccount) {
+    // No credentials - let validateAwsCredentials handle this
+    return;
+  }
+  if (credentialsAccount !== targetAccount) {
+    throw new AccountMismatchError(credentialsAccount, targetAccount);
+  }
+}

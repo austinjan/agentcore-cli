@@ -1,6 +1,6 @@
 import { ConfigIO, SecureCredentials } from '../../../lib';
 import type { AgentCoreMcpSpec, DeployedState } from '../../../schema';
-import { validateAwsCredentials } from '../../aws/account';
+import { validateAccountMatch, validateAwsCredentials } from '../../aws/account';
 import { createSwitchableIoHost } from '../../cdk/toolkit-lib';
 import {
   buildDeployedState,
@@ -110,6 +110,8 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
     if (context.isTeardownDeploy) {
       startStep('Validate AWS credentials');
       await validateAwsCredentials();
+      // Also validate account match for teardown deploys
+      await validateAccountMatch(target.account);
       endStep('success');
     }
 

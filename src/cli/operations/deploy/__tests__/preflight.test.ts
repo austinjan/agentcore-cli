@@ -14,9 +14,29 @@ const { mockValidate } = vi.hoisted(() => ({
   mockValidate: vi.fn(),
 }));
 
-const { mockValidateAwsCredentials } = vi.hoisted(() => ({
-  mockValidateAwsCredentials: vi.fn(),
-}));
+const { mockValidateAwsCredentials, mockValidateAccountMatch, MockAccountMismatchError } = vi.hoisted(() => {
+  // Create a mock AccountMismatchError class for testing
+  class MockAccountMismatchError extends Error {
+    readonly shortMessage: string;
+    readonly credentialsAccount: string;
+    readonly targetAccount: string;
+
+    constructor(credentialsAccount: string, targetAccount: string) {
+      const shortMessage = `AWS credentials are for account ${credentialsAccount}, but target requires account ${targetAccount}.`;
+      super(shortMessage);
+      this.name = 'AccountMismatchError';
+      this.shortMessage = shortMessage;
+      this.credentialsAccount = credentialsAccount;
+      this.targetAccount = targetAccount;
+    }
+  }
+
+  return {
+    mockValidateAwsCredentials: vi.fn(),
+    mockValidateAccountMatch: vi.fn(),
+    MockAccountMismatchError,
+  };
+});
 
 const { mockRequireConfigRoot } = vi.hoisted(() => ({
   mockRequireConfigRoot: vi.fn(),
@@ -44,6 +64,8 @@ vi.mock('../../../cdk/local-cdk-project.js', () => ({
 
 vi.mock('../../../aws/account.js', () => ({
   validateAwsCredentials: mockValidateAwsCredentials,
+  validateAccountMatch: mockValidateAccountMatch,
+  AccountMismatchError: MockAccountMismatchError,
 }));
 
 describe('validateProject', () => {
@@ -59,6 +81,7 @@ describe('validateProject', () => {
     });
     mockReadAWSDeploymentTargets.mockResolvedValue([]);
     mockValidateAwsCredentials.mockResolvedValue(undefined);
+    mockValidateAccountMatch.mockResolvedValue(undefined);
 
     const result = await validateProject();
 
@@ -93,6 +116,7 @@ describe('validateProject', () => {
     });
     mockReadAWSDeploymentTargets.mockResolvedValue([]);
     mockValidateAwsCredentials.mockResolvedValue(undefined);
+    mockValidateAccountMatch.mockResolvedValue(undefined);
 
     const result = await validateProject();
 
@@ -110,11 +134,61 @@ describe('validateProject', () => {
     });
     mockReadAWSDeploymentTargets.mockResolvedValue([]);
     mockValidateAwsCredentials.mockResolvedValue(undefined);
+    mockValidateAccountMatch.mockResolvedValue(undefined);
 
     const result = await validateProject();
 
     expect(result.projectSpec.name).toBe('test-project');
     expect(result.isTeardownDeploy).toBe(false);
+  });
+
+  it('throws AccountMismatchError when credentials are for different account', async () => {
+    mockRequireConfigRoot.mockReturnValue('/project/agentcore');
+    mockValidate.mockReturnValue(undefined);
+    mockReadProjectSpec.mockResolvedValue({
+      name: 'test-project',
+      runtimes: [{ name: 'test-agent' }],
+    });
+    mockReadAWSDeploymentTargets.mockResolvedValue([{ name: 'default', account: '222222222222', region: 'us-east-1' }]);
+    mockValidateAwsCredentials.mockResolvedValue(undefined);
+    mockValidateAccountMatch.mockRejectedValue(new MockAccountMismatchError('111111111111', '222222222222'));
+
+    await expect(validateProject()).rejects.toThrow(MockAccountMismatchError);
+  });
+
+  it('calls validateAccountMatch with target account', async () => {
+    mockRequireConfigRoot.mockReturnValue('/project/agentcore');
+    mockValidate.mockReturnValue(undefined);
+    mockReadProjectSpec.mockResolvedValue({
+      name: 'test-project',
+      runtimes: [{ name: 'test-agent' }],
+    });
+    mockReadAWSDeploymentTargets.mockResolvedValue([{ name: 'default', account: '123456789012', region: 'us-east-1' }]);
+    mockValidateAwsCredentials.mockResolvedValue(undefined);
+    mockValidateAccountMatch.mockResolvedValue(undefined);
+
+    await validateProject();
+
+    expect(mockValidateAccountMatch).toHaveBeenCalledWith('123456789012');
+  });
+
+  it('skips account validation for teardown deploys', async () => {
+    mockRequireConfigRoot.mockReturnValue('/project/agentcore');
+    mockValidate.mockReturnValue(undefined);
+    mockReadProjectSpec.mockResolvedValue({
+      name: 'test-project',
+      runtimes: [],
+      agentCoreGateways: [],
+    });
+    mockReadAWSDeploymentTargets.mockResolvedValue([{ name: 'default', account: '123456789012', region: 'us-east-1' }]);
+    mockReadDeployedState.mockResolvedValue({ targets: { default: {} } });
+
+    const result = await validateProject();
+
+    expect(result.isTeardownDeploy).toBe(true);
+    // Account validation should be skipped for teardown deploys
+    expect(mockValidateAwsCredentials).not.toHaveBeenCalled();
+    expect(mockValidateAccountMatch).not.toHaveBeenCalled();
   });
 });
 
