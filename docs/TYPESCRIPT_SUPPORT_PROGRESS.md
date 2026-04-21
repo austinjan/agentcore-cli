@@ -159,9 +159,12 @@ Under `src/assets/container/typescript/`.
       asserting spawn config is `{ cmd: 'npx', args: ['tsx', 'watch', 'main.ts'], ... }`.
   - **Notes:** Added spec; also fixed a bug where the non-Python spawn path was rewriting `main.ts` → `main/ts.ts` via a
     stale `.replace(/\./g, '/')` transformation. Entry file is now passed literally.
-- [ ] **TUI harness walkthrough** — mirror an existing Python walkthrough under `integ-tests/tui/` selecting TypeScript
+- [x] **TUI harness walkthrough** — mirror an existing Python walkthrough under `integ-tests/tui/` selecting TypeScript
       → Strands.
-  - **Notes:**
+  - **Notes:** Added `integ-tests/tui/create-typescript-strands.test.ts` mirroring the create-flow pattern from
+    `lifecycle-config.test.ts`. Skips advanced settings (selects "No"), confirms scaffold, then asserts
+    `runtimeVersion === 'NODE_22'` and `entrypoint === 'main.ts'` in the generated `agentcore.json`. Runs with
+    `AGENTCORE_SKIP_INSTALL=1` for speed.
 - [ ] **E2E container deploy test** — `integ-tests/deploy-typescript-strands-container.test.ts`: scaffold → container
       build → `agentcore deploy` (account 325335451438, `AWS_PROFILE=deploy`) → `agentcore invoke --prompt "ping"` →
       teardown on exit and on failure. Gate behind the same env flag as other AWS integ tests.
@@ -240,4 +243,6 @@ Append a one-line entry per commit as you go. Newest at the bottom. Format: `<sh
 - `f015ce7` — Phase 4: log 003f672 + 076a4aa in progress tracker.
 - `5c2af7d` — Phase 5: Node setup helper + create-flow wiring + unit tests.
 - `c22147d` — Phase 6: TS dev-server spec + create integ block; fix spawn entrypoint rewrite bug.
+- `ba49229` — Phase 6: log c22147d in progress tracker.
+- `7af265e` — Phase 6: add TUI walkthrough for create TypeScript + Strands.
 - _(next commit goes here)_
