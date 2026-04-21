@@ -2,7 +2,7 @@ import { APP_DIR, CONFIG_DIR, ConfigIO, findConfigRoot, setEnvVar, setSessionPro
 import type { DeployedState } from '../../../../schema';
 import { getErrorMessage } from '../../../errors';
 import { CreateLogger } from '../../../logging';
-import { initGitRepo, setupPythonProject, writeEnvFile, writeGitignore } from '../../../operations';
+import { initGitRepo, setupNodeProject, setupPythonProject, writeEnvFile, writeGitignore } from '../../../operations';
 import {
   mapGenerateConfigToRenderConfig,
   mapModelProviderToCredentials,
@@ -61,6 +61,9 @@ function getCreateSteps(projectName: string, agentConfig: AddAgentConfig | null)
     steps.push({ label: 'Add agent to project', status: 'pending' });
     if (agentConfig.language === 'Python' && agentConfig.agentType === 'create') {
       steps.push({ label: 'Set up Python environment', status: 'pending' });
+    }
+    if (agentConfig.language === 'TypeScript' && agentConfig.agentType === 'create') {
+      steps.push({ label: 'Set up Node environment', status: 'pending' });
     }
   }
 
@@ -446,6 +449,28 @@ export function useCreateFlow(cwd: string): CreateFlowState {
               updateStep(stepIndex, {
                 status: 'warn',
                 warn: 'Failed to set up Python environment. Run "uv sync" manually to see the error.',
+              });
+            }
+            stepIndex++;
+          }
+
+          // Step: Set up Node environment (if TypeScript and create path)
+          if (addAgentConfig.language === 'TypeScript' && addAgentConfig.agentType === 'create') {
+            logger.startStep('Set up Node environment');
+            updateStep(stepIndex, { status: 'running' });
+            const agentDir = join(projectRoot, APP_DIR, addAgentConfig.name);
+            logger.logSubStep(`Agent directory: ${agentDir}`);
+            logger.logSubStep('Running npm install...');
+            const result = await setupNodeProject({ projectDir: agentDir });
+
+            if (result.status === 'success') {
+              logger.endStep('success');
+              updateStep(stepIndex, { status: 'success' });
+            } else {
+              logger.endStep('warn', 'Failed to set up Node environment');
+              updateStep(stepIndex, {
+                status: 'warn',
+                warn: 'Failed to set up Node environment. Run "npm install" manually to see the error.',
               });
             }
             stepIndex++;

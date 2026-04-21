@@ -125,14 +125,22 @@ Under `src/assets/container/typescript/`.
 
 ## Phase 5 — Node setup helper + create-flow wiring
 
-- [ ] Create `src/cli/operations/node/setup.ts` with `setupNodeProject({ projectDir })` that shells out to `npm install`
-      and returns `{ status: 'success' | 'error' | 'warn', ... }` (match `src/cli/operations/python/setup.ts` shape).
+- [x] Create `src/cli/operations/node/setup.ts` with `setupNodeProject({ projectDir })` that shells out to `npm install`
+      and returns `{ status: NodeSetupStatus, error? }` (matches `src/cli/operations/python/setup.ts` shape). Added
+      `src/cli/operations/node/index.ts` barrel and wired it into `src/cli/operations/index.ts`.
+  - **Notes:** Used `npm install` not `npm ci` because fresh scaffolds don't ship a lockfile; `package-lock.json` is
+    generated on first install. Respects `AGENTCORE_SKIP_INSTALL` like the Python helper.
+- [x] Wire into `src/cli/tui/screens/create/useCreateFlow.ts` — parallel branch to the existing Python setup step when
+      `language === 'TypeScript' && agentType === 'create'`; also added a matching `getCreateSteps` entry so the
+      progress UI shows the new step.
   - **Notes:**
-- [ ] Wire into `src/cli/tui/screens/create/useCreateFlow.ts` around line 431 — parallel branch to the existing Python
-      setup step when `language === 'TypeScript' && agentType === 'create'`.
-  - **Notes:**
-- [ ] Extend `checkCreateDependencies({ language })` in `src/cli/external-requirements/checks.ts` (called from
-      `src/cli/commands/create/action.ts`) to verify `node` + `npm` on PATH when `language === 'TypeScript'`.
+- [x] Extend `checkCreateDependencies({ language })` in `src/cli/external-requirements/checks.ts` — **no change
+      required**. The existing `npm` check runs unconditionally (always needed for CDK synth), and the `uv` check is
+      already gated to `language === 'Python'`.
+  - **Notes:** Phase 0's Node-version check also already runs unconditionally (`checkNodeVersion`), so TS projects are
+    covered with zero additional logic.
+- [x] Unit tests for the Node setup helper mirroring `python/setup.test.ts` — 8 specs added under
+      `src/cli/operations/node/__tests__/setup.test.ts`.
   - **Notes:**
 
 ---
