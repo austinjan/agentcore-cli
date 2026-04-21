@@ -216,4 +216,5 @@ Append a one-line entry per commit as you go. Newest at the bottom. Format: `<sh
 
 - `50a6cbd` — Phase 1: scaffold TypeScript language support (WIP checkpoint, schema + UI + validator + spec-mapper).
 - `3417f9a` — Phase 0: add progress tracker doc (verification sweep results baked in).
+- `a487f19` — Phase 2: drop Python-only guard in isDevSupported so TS agents reach the dev server.
 - _(next commit goes here)_
