@@ -113,12 +113,13 @@ Author under `src/assets/typescript/http/strands/`. Mirror Python shape at `src/
 
 Under `src/assets/container/typescript/`.
 
-- [ ] `Dockerfile` — base `public.ecr.aws/docker/library/node:22-slim`; deps layer first (`package.json` +
-      `package-lock.json` → `npm ci --omit=dev`), then source. Either `npx tsx main.ts` or a `tsc` build step +
-      `node dist/main.js`. Expose 8080.
-  - **Notes:**
-- [ ] `dockerignore.template` — `node_modules`, `dist`, `.env*`, `.git/`.
-  - **Notes:**
+- [x] `Dockerfile` — base `public.ecr.aws/docker/library/node:22-slim`; deps layer first (`package.json` +
+      `package-lock.json` → `npm ci --omit=dev` with fallback to `npm install` when no lockfile). Runs
+      `npx tsx main.ts`. Exposes 8080/8000/9000 to match the Python Dockerfile contract.
+  - **Notes:** Non-root `bedrock_agentcore` user mirrors Python container. Chose `tsx` over a `tsc` build step so dev
+    and container runtime share one entrypoint shape; revisit for production-size images if startup latency matters.
+- [x] `dockerignore.template` — `node_modules`, `dist`, `.env*`, `.git/`, `.agentcore/artifacts/`, `*.zip`.
+  - **Notes:** Mirrors the Python `dockerignore.template` with Node substitutions.
 
 ---
 

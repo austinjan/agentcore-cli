@@ -446,6 +446,8 @@ exports[`Assets Directory Snapshots > File listing > should match the expected f
   "cdk/tsconfig.json",
   "container/python/Dockerfile",
   "container/python/dockerignore.template",
+  "container/typescript/Dockerfile",
+  "container/typescript/dockerignore.template",
   "evaluators/python-lambda/execution-role-policy.json",
   "evaluators/python-lambda/lambda_function.py",
   "evaluators/python-lambda/pyproject.toml",
