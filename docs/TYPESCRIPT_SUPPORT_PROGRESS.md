@@ -75,33 +75,37 @@ Author under `src/assets/typescript/http/strands/`. Mirror Python shape at `src/
   `contentBlockDelta` + `textDelta`.
 - `bedrock-agentcore@0.2.2` — `BedrockAgentCoreApp` from `/runtime`, identity HOFs from `/identity`.
 
-- [ ] `base/gitignore.template` — `node_modules`, `dist`, `.env*`, `*.log`, `.venv`.
+- [x] `base/gitignore.template` — `node_modules`, `dist`, `.env*`, `*.log`.
   - **Notes:**
-- [ ] `base/package.json` (Handlebars) — name, deps pinned (`@strands-agents/sdk@1.0.0-rc.4`, `bedrock-agentcore@0.2.2`,
-      `tsx`, `typescript`, `@types/node`).
+- [x] `base/package.json` (Handlebars) — name, deps pinned (`@strands-agents/sdk@1.0.0-rc.4`, `bedrock-agentcore@0.2.2`,
+      `@modelcontextprotocol/sdk`, `tsx`, `typescript`, `@types/node`). ESM (`"type": "module"`).
   - **Notes:**
-- [ ] `base/tsconfig.json` — target ES2022, module NodeNext, strict, outDir `dist`.
+- [x] `base/tsconfig.json` — target ES2022, module NodeNext, strict, outDir `dist`.
   - **Notes:**
-- [ ] `base/main.ts` — `BedrockAgentCoreApp` with `invocationHandler.process` async generator; calls
-      `agent.stream(prompt)`; yields `{ data: string }`. Verify event shape against `dist/src/models/streaming.d.ts` in
-      the Strands SDK tarball.
+- [x] `base/main.ts` — `BedrockAgentCoreApp` with `invocationHandler.process` async generator; calls
+      `agent.stream(prompt)`; yields `{ data: string }`. Filters on `contentBlockDelta` + `textDelta`.
+  - **Notes:** Event shape still needs verification against the actual SDK tarball before release; templates currently
+    trust the handoff's description.
+- [x] `base/README.md` — short, mirrors Python README structure (Node dev loop, LOCAL_DEV env var).
   - **Notes:**
-- [ ] `base/README.md` — short, mirrors Python README structure.
-  - **Notes:**
-- [ ] `base/mcp_client/client.ts` — mirrors Python `mcp_client/client.py` (gateway + auth paths). Uses `McpClient` from
-      Strands with a `Transport` from `@modelcontextprotocol/sdk/shared/transport.js`.
-  - **Notes:**
-- [ ] `base/model/load.ts` — mirrors Python `model/load.py`; per-provider branches for Bedrock / Anthropic / OpenAI /
-      Gemini using Strands provider subpaths.
-  - **Notes:**
-- [ ] `capabilities/memory/session.ts` — mirrors Python `capabilities/memory/session.py`.
-  - **Notes:**
-- [ ] Confirm Handlebars variables consumed match Python templates: `name`, `agentName`, `modelProvider`, `hasGateway`,
+- [x] `base/mcp_client/client.ts` — mirrors Python `mcp_client/client.py` (gateway + auth paths). Uses `McpClient` from
+      Strands with `StreamableHTTPClientTransport` from `@modelcontextprotocol/sdk/client/streamableHttp.js`.
+  - **Notes:** AWS_IAM gateway auth is stubbed — TS `mcp-proxy-for-aws` package not yet confirmed; non-IAM paths work.
+- [x] `base/model/load.ts` — mirrors Python `model/load.py`; per-provider branches for Bedrock / Anthropic / OpenAI /
+      Gemini using Strands provider subpaths (`@strands-agents/sdk/models/{bedrock,anthropic,openai,google}`). Gemini
+      maps to `GoogleModel`.
+  - **Notes:** `withApiKey` HOF usage follows handoff's identity-surface description — verify against SDK before
+    release.
+- [x] `capabilities/memory/session.ts` — mirrors Python `capabilities/memory/session.py`; imports from
+      `bedrock-agentcore/memory/strands`.
+  - **Notes:** Python uses `bedrock_agentcore.memory.integrations.strands.*`; TS import path is the described
+    `bedrock-agentcore/memory/strands` surface — reconfirm once SDK is installed.
+- [x] Confirm Handlebars variables consumed match Python templates: `name`, `modelProvider`, `hasGateway`,
       `gatewayAuthTypes`, `gatewayProviders`, `hasMemory`, `memoryProviders`, `identityProviders`,
-      `sessionStorageMountPath`, `isVpc`.
-  - **Notes:**
-- [ ] Run `npm run test:update-snapshots` and **eyeball every generated snapshot** before committing.
-  - **Notes:**
+      `sessionStorageMountPath`, `isVpc`, `hasIdentity`.
+  - **Notes:** Same set as Python.
+- [x] Run `npm run test:update-snapshots` and eyeball generated snapshots.
+  - **Notes:** 8 new TS snapshots written; file-listing snapshot updated to include the new paths.
 
 ---
 
