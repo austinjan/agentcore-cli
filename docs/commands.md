@@ -51,6 +51,13 @@ agentcore create \
 # Skip agent creation
 agentcore create --name MyProject --no-agent
 
+# TypeScript (Strands-only)
+agentcore create \
+  --name MyTsProject \
+  --language TypeScript \
+  --framework Strands \
+  --model-provider Bedrock
+
 # Preview without creating
 agentcore create --name MyProject --defaults --dry-run
 
@@ -71,7 +78,7 @@ agentcore create \
 | `--defaults`               | Use defaults (Python, Strands, Bedrock, no memory)                                                             |
 | `--no-agent`               | Skip agent creation                                                                                            |
 | `--type <type>`            | `create` (default) or `import`                                                                                 |
-| `--language <lang>`        | `Python` (default)                                                                                             |
+| `--language <lang>`        | `Python` (default) or `TypeScript` (Strands-only; see [Frameworks](frameworks.md#supported-languages))         |
 | `--framework <fw>`         | `Strands`, `LangChain_LangGraph`, `GoogleADK`, `OpenAIAgents`                                                  |
 | `--model-provider <p>`     | `Bedrock`, `Anthropic`, `OpenAI`, `Gemini`                                                                     |
 | `--build <type>`           | `CodeZip` (default) or `Container` (see [Container Builds](container-builds.md))                               |

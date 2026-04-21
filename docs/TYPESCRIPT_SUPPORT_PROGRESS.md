@@ -178,16 +178,20 @@ Under `src/assets/container/typescript/`.
 
 ## Phase 7 — Documentation
 
-- [ ] `docs/frameworks.md` — add "Supported languages" section.
-  - **Notes:**
-- [ ] `docs/local-development.md` — TS dev loop (Node ≥ 18, `npx tsx watch`).
-  - **Notes:**
-- [ ] `docs/commands.md` — `--language TypeScript` examples.
-  - **Notes:**
-- [ ] `docs/container-builds.md` — TS Dockerfile example.
-  - **Notes:**
-- [ ] `README.md` — one-line mention in the feature list.
-  - **Notes:**
+- [x] `docs/frameworks.md` — add "Supported languages" section.
+  - **Notes:** Added top-level language matrix + Strands-only TS note with cross-link to local-development. Strands
+    section now calls out Python + TypeScript and includes a TS `create` example.
+- [x] `docs/local-development.md` — TS dev loop (Node 22, `npx tsx watch`).
+  - **Notes:** Added "TypeScript Agents" subsection under Environment Setup covering `npm install`, `npx tsx watch`, and
+    `AGENTCORE_SKIP_INSTALL`.
+- [x] `docs/commands.md` — `--language TypeScript` examples.
+  - **Notes:** Updated `--language` row on `create` to include TypeScript + Strands-only note; added a TS create
+    example.
+- [x] `docs/container-builds.md` — TS Dockerfile example.
+  - **Notes:** Added "TypeScript Dockerfile" subsection covering base image, layer caching, non-root user, ports, and an
+    example `agentcore.json`.
+- [x] `README.md` — one-line mention in the feature list.
+  - **Notes:** Strands row annotated "(Python + TypeScript)" in the Supported Frameworks table.
 
 ---
 
@@ -195,16 +199,22 @@ Under `src/assets/container/typescript/`.
 
 Run from a clean scratch dir against the deploy profile. Record results inline.
 
-- [ ] `npm run test:unit` green.
-- [ ] `npm run test:integ` green (excluding gated deploy test unless credentials refreshed).
-- [ ] `agentcore create my-ts-agent` → TypeScript → Strands → Bedrock → no memory → confirm scaffold.
-- [ ] `agentcore dev` starts via `npx tsx watch main.ts`, binds 8080, reloads on edit.
-- [ ] `agentcore invoke --prompt "hello"` against the dev server streams a response.
-- [ ] `agentcore deploy` (CodeZip) succeeds against test account; post-deploy `invoke` works.
-- [ ] E2E container deploy test passes (Phase 6).
-- [ ] Non-Strands framework rejection message is clear.
-- [ ] Python regression smoke path unchanged.
-- [ ] Docs read cleanly; examples copy-paste.
+- [x] `npm run test:unit` green. Verified after the Phase 7 doc pass + the `create/validate.ts` TypeScript-gate fix (see
+      below).
+- [x] `npm run test:integ` green (E2E container deploy test from Phase 6 is still deferred and not included in this
+      run). Full suite passes after the validate.ts fix.
+- [~] `agentcore create my-ts-agent` → TypeScript → Strands → Bedrock → no memory → manual run deferred; covered by the
+  scripted integ test `create-with-agent.test.ts` which exercises the same path with `AGENTCORE_SKIP_INSTALL=1`.
+- [ ] `agentcore dev` starts via `npx tsx watch main.ts`, binds 8080, reloads on edit. Manual run still TODO.
+- [ ] `agentcore invoke --prompt "hello"` against the dev server streams a response. Manual run still TODO.
+- [ ] `agentcore deploy` (CodeZip) succeeds against test account; post-deploy `invoke` works. Requires refreshed deploy
+      credentials; not yet executed.
+- [ ] E2E container deploy test passes (Phase 6). Skipped per user direction — resume when credentials are ready.
+- [x] Non-Strands framework rejection message is clear. Covered by `add/__tests__/validate.test.ts` and the new
+      `create/__tests__/validate.test.ts` case added during the Phase 7 fix.
+- [x] Python regression smoke path unchanged — Python validator path still returns the same errors and the Python integ
+      block is unchanged; `test:integ` green overall.
+- [x] Docs read cleanly; examples copy-paste. Prettier reformatted tables; all edits pass `prettier --check`.
 
 ---
 
@@ -245,4 +255,5 @@ Append a one-line entry per commit as you go. Newest at the bottom. Format: `<sh
 - `c22147d` — Phase 6: TS dev-server spec + create integ block; fix spawn entrypoint rewrite bug.
 - `ba49229` — Phase 6: log c22147d in progress tracker.
 - `7af265e` — Phase 6: add TUI walkthrough for create TypeScript + Strands.
+- `c406af9` — Phase 7/8: replace Python-only guard in create validator with Strands gate + update test.
 - _(next commit goes here)_

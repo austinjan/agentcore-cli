@@ -3,6 +3,17 @@
 AgentCore CLI supports multiple agent frameworks for template-based agent creation, plus a BYO (Bring Your Own) option
 for existing code.
 
+## Supported Languages
+
+| Language   | Supported Frameworks | Runtime      | Notes                                                                              |
+| ---------- | -------------------- | ------------ | ---------------------------------------------------------------------------------- |
+| Python     | All frameworks       | Python 3.12+ | Default language. Uses `uv` for dependency management.                             |
+| TypeScript | Strands only         | Node 22      | Uses `npm` + `tsx` for the dev loop. Other frameworks are not yet available in TS. |
+
+Pass `--language TypeScript` to `agentcore create` or `agentcore add agent` to scaffold a TypeScript project. The
+framework is restricted to `Strands`; other values are rejected. See
+[Local Development](local-development.md#typescript-agents) for the TS dev loop.
+
 ## Available Frameworks
 
 | Framework               | Supported Model Providers          |
@@ -27,8 +38,13 @@ AWS's native agent framework designed for Amazon Bedrock.
 
 **Model providers:** Bedrock, Anthropic, OpenAI, Gemini
 
+**Languages:** Python, TypeScript
+
 ```bash
 agentcore create --framework Strands --model-provider Bedrock
+
+# TypeScript variant
+agentcore create --framework Strands --model-provider Bedrock --language TypeScript
 ```
 
 ### LangChain / LangGraph

@@ -62,13 +62,13 @@ agentcore invoke
 
 ## Supported Frameworks
 
-| Framework           | Notes                         |
-| ------------------- | ----------------------------- |
-| Strands Agents      | AWS-native, streaming support |
-| LangChain/LangGraph | Graph-based workflows         |
-| CrewAI              | Multi-agent orchestration     |
-| Google ADK          | Gemini models only            |
-| OpenAI Agents       | OpenAI models only            |
+| Framework           | Notes                                               |
+| ------------------- | --------------------------------------------------- |
+| Strands Agents      | AWS-native, streaming support (Python + TypeScript) |
+| LangChain/LangGraph | Graph-based workflows                               |
+| CrewAI              | Multi-agent orchestration                           |
+| Google ADK          | Gemini models only                                  |
+| OpenAI Agents       | OpenAI models only                                  |
 
 ## Supported Model Providers
 
