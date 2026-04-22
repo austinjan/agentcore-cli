@@ -11,7 +11,8 @@ export interface CreateHarnessProjectOptions {
   cwd: string;
   modelProvider: HarnessModelProvider;
   modelId: string;
-  apiKeyArn?: string;
+  apiKey?: string;
+  apiKeyCredentialArn?: string;
   skipMemory?: boolean;
   containerUri?: string;
   dockerfilePath?: string;
@@ -55,7 +56,8 @@ export async function createProjectWithHarness(options: CreateHarnessProjectOpti
       name: options.name,
       modelProvider: options.modelProvider,
       modelId: options.modelId,
-      apiKeyArn: options.apiKeyArn,
+      apiKey: options.apiKey,
+      apiKeyCredentialArn: options.apiKeyCredentialArn,
       containerUri: options.containerUri,
       dockerfilePath: options.dockerfilePath,
       skipMemory: options.skipMemory,

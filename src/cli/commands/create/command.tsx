@@ -28,6 +28,7 @@ const AGENT_PATH_FLAGS = ['framework', 'language', 'build', 'protocol', 'type', 
 /** Flags that are harness-only */
 const HARNESS_ONLY_FLAGS = [
   'modelId',
+  'apiKey',
   'apiKeyArn',
   'maxIterations',
   'maxTokens',
@@ -133,6 +134,7 @@ async function handleCreateHarnessCLI(options: CreateOptions): Promise<void> {
       name: options.name,
       modelProvider: options.modelProvider,
       modelId: options.modelId,
+      apiKey: options.apiKey,
       apiKeyArn: options.apiKeyArn,
     },
     cwd
@@ -173,7 +175,8 @@ async function handleCreateHarnessCLI(options: CreateOptions): Promise<void> {
     cwd,
     modelProvider: provider,
     modelId,
-    apiKeyArn: options.apiKeyArn,
+    apiKey: options.apiKey,
+    apiKeyCredentialArn: options.apiKeyArn,
     containerUri: containerOption.containerUri,
     dockerfilePath: containerOption.dockerfilePath,
     skipMemory: options.harnessMemory === false,
@@ -205,6 +208,17 @@ async function handleCreateHarnessCLI(options: CreateOptions): Promise<void> {
 /** Handle CLI mode with progress output for the agent/runtime path */
 async function handleCreateAgentCLI(options: CreateOptions): Promise<void> {
   const cwd = options.outputDir ?? getWorkingDirectory();
+
+  if (options.apiKeyArn) {
+    const errorMsg =
+      '--api-key-arn is a harness-only flag. Drop --framework/--language/--protocol to use the harness path, or use --api-key for the agent path.';
+    if (options.json) {
+      console.log(JSON.stringify({ success: false, error: errorMsg }));
+    } else {
+      console.error(errorMsg);
+    }
+    process.exit(1);
+  }
 
   const validation = validateCreateOptions(options, cwd);
   if (!validation.valid) {
@@ -381,6 +395,7 @@ export const registerCreate = (program: Command) => {
           options.dryRun ??
           options.json ??
           options.modelId ??
+          options.apiKey ??
           options.apiKeyArn ??
           (options.harnessMemory === false ? true : null) ??
           options.maxIterations ??

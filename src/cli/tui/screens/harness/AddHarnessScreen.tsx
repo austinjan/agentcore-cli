@@ -4,6 +4,7 @@ import { HarnessNameSchema, HarnessTruncationStrategySchema } from '../../../../
 import { ARN_VALIDATION_MESSAGE, isValidArn } from '../../../commands/shared/arn-utils';
 import { computeManagedOAuthCredentialName } from '../../../primitives/credential-utils';
 import {
+  ApiKeySecretInput,
   ConfirmReview,
   Panel,
   Screen,
@@ -31,6 +32,17 @@ import {
 } from './types';
 import { useAddHarnessWizard } from './useAddHarnessWizard';
 import React, { useMemo } from 'react';
+
+function getHarnessProviderInfo(provider: HarnessModelProvider): { name: string; envVarName: string } {
+  switch (provider) {
+    case 'open_ai':
+      return { name: 'OpenAI', envVarName: 'OPENAI_API_KEY' };
+    case 'gemini':
+      return { name: 'Google Gemini', envVarName: 'GEMINI_API_KEY' };
+    case 'bedrock':
+      return { name: 'Amazon Bedrock', envVarName: '' };
+  }
+}
 
 interface AddHarnessScreenProps {
   existingHarnessNames: string[];
@@ -88,7 +100,7 @@ export function AddHarnessScreen({ existingHarnessNames, onComplete, onExit }: A
 
   const isNameStep = wizard.step === 'name';
   const isModelProviderStep = wizard.step === 'model-provider';
-  const isApiKeyArnStep = wizard.step === 'api-key-arn';
+  const isApiKeyStep = wizard.step === 'api-key';
   const isContainerStep = wizard.step === 'container';
   const isContainerUriStep = wizard.step === 'container-uri';
   const isContainerDockerfileStep = wizard.step === 'container-dockerfile';
@@ -209,8 +221,8 @@ export function AddHarnessScreen({ existingHarnessNames, onComplete, onExit }: A
       { label: 'Model ID', value: wizard.config.modelId },
     ];
 
-    if (wizard.config.apiKeyArn) {
-      fields.push({ label: 'API Key ARN', value: wizard.config.apiKeyArn });
+    if (wizard.config.apiKey) {
+      fields.push({ label: 'API Key', value: 'Provided (stored securely)' });
     }
 
     if (wizard.config.skipMemory !== undefined) {
@@ -339,14 +351,12 @@ export function AddHarnessScreen({ existingHarnessNames, onComplete, onExit }: A
           />
         )}
 
-        {isApiKeyArnStep && (
-          <TextInput
-            key="api-key-arn"
-            prompt="API Key ARN (Secrets Manager)"
-            initialValue=""
-            onSubmit={wizard.setApiKeyArn}
+        {isApiKeyStep && (
+          <ApiKeySecretInput
+            providerName={getHarnessProviderInfo(wizard.config.modelProvider).name}
+            envVarName={getHarnessProviderInfo(wizard.config.modelProvider).envVarName}
+            onSubmit={wizard.setApiKey}
             onCancel={() => wizard.goBack()}
-            customValidation={value => isValidArn(value) || ARN_VALIDATION_MESSAGE}
           />
         )}
 

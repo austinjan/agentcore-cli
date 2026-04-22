@@ -24,6 +24,14 @@ vi.mock('../../../lib', () => ({
   setEnvVar: vi.fn().mockResolvedValue(undefined),
 }));
 
+const mockResolveCredentialStrategy = vi.fn();
+
+vi.mock('../CredentialPrimitive', () => ({
+  CredentialPrimitive: class {
+    resolveCredentialStrategy = mockResolveCredentialStrategy;
+  },
+}));
+
 vi.mock('fs/promises', () => ({
   access: vi.fn().mockResolvedValue(undefined),
   writeFile: vi.fn().mockResolvedValue(undefined),
@@ -270,14 +278,15 @@ describe('HarnessPrimitive', () => {
       );
     });
 
-    it('includes API key ARN for non-Bedrock providers', async () => {
+    it('includes BYO apiKeyArn for non-Bedrock providers', async () => {
       mockReadProjectSpec.mockResolvedValue(JSON.parse(JSON.stringify(baseProject)));
 
       await primitive.add({
         name: 'testHarness',
         modelProvider: 'open_ai',
         modelId: 'gpt-4',
-        apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:openai-key',
+        apiKeyCredentialArn:
+          'arn:aws:bedrock-agentcore:us-east-1:123456789012:token-vault/default/apikeycredentialprovider/my-key',
       });
 
       expect(mockWriteHarnessSpec).toHaveBeenCalledWith(
@@ -286,8 +295,92 @@ describe('HarnessPrimitive', () => {
           model: {
             provider: 'open_ai',
             modelId: 'gpt-4',
-            apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:openai-key',
+            apiKeyArn:
+              'arn:aws:bedrock-agentcore:us-east-1:123456789012:token-vault/default/apikeycredentialprovider/my-key',
           },
+        })
+      );
+    });
+
+    it('creates credential and stores API key for non-Bedrock providers via apiKey flow', async () => {
+      mockReadProjectSpec.mockResolvedValue(JSON.parse(JSON.stringify(baseProject)));
+      mockResolveCredentialStrategy.mockResolvedValue({
+        reuse: false,
+        credentialName: 'TestProjectOpenAI',
+        envVarName: 'AGENTCORE_CREDENTIAL_TESTPROJECTOPENAI',
+        isAgentScoped: false,
+      });
+
+      await primitive.add({
+        name: 'testHarness',
+        modelProvider: 'open_ai',
+        modelId: 'gpt-4',
+        apiKey: 'sk-test-12345',
+      });
+
+      expect(mockResolveCredentialStrategy).toHaveBeenCalledWith(
+        'TestProject',
+        'testHarness',
+        'OpenAI',
+        'sk-test-12345',
+        '/tmp/test/agentcore',
+        expect.any(Array)
+      );
+
+      expect(mockWriteHarnessSpec).toHaveBeenCalledWith(
+        'testHarness',
+        expect.objectContaining({
+          model: {
+            provider: 'open_ai',
+            modelId: 'gpt-4',
+            apiKeyCredential: 'TestProjectOpenAI',
+          },
+        })
+      );
+
+      expect(mockWriteProjectSpec).toHaveBeenCalledWith(
+        expect.objectContaining({
+          credentials: [{ authorizerType: 'ApiKeyCredentialProvider', name: 'TestProjectOpenAI' }],
+        })
+      );
+
+      expect(setEnvVar).toHaveBeenCalledWith(
+        'AGENTCORE_CREDENTIAL_TESTPROJECTOPENAI',
+        'sk-test-12345',
+        '/tmp/test/agentcore'
+      );
+    });
+
+    it('reuses existing credential when strategy says reuse', async () => {
+      mockReadProjectSpec.mockResolvedValue(JSON.parse(JSON.stringify(baseProject)));
+      mockResolveCredentialStrategy.mockResolvedValue({
+        reuse: true,
+        credentialName: 'TestProjectOpenAI',
+        envVarName: 'AGENTCORE_CREDENTIAL_TESTPROJECTOPENAI',
+        isAgentScoped: false,
+      });
+
+      await primitive.add({
+        name: 'testHarness',
+        modelProvider: 'open_ai',
+        modelId: 'gpt-4',
+        apiKey: 'sk-test-12345',
+      });
+
+      expect(mockWriteHarnessSpec).toHaveBeenCalledWith(
+        'testHarness',
+        expect.objectContaining({
+          model: {
+            provider: 'open_ai',
+            modelId: 'gpt-4',
+            apiKeyCredential: 'TestProjectOpenAI',
+          },
+        })
+      );
+
+      expect(mockWriteProjectSpec).toHaveBeenCalledWith(
+        expect.objectContaining({
+          credentials: [],
         })
       );
     });

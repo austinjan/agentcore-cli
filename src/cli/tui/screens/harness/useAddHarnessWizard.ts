@@ -57,7 +57,7 @@ export function useAddHarnessWizard() {
     const steps: AddHarnessStep[] = ['name', 'model-provider'];
 
     if (config.modelProvider !== 'bedrock') {
-      steps.push('api-key-arn');
+      steps.push('api-key');
     }
 
     steps.push('container');
@@ -151,16 +151,16 @@ export function useAddHarnessWizard() {
   const setModelProvider = useCallback((modelProvider: HarnessModelProvider) => {
     setConfig(c => ({ ...c, modelProvider, modelId: DEFAULT_MODEL_IDS[modelProvider] }));
     if (modelProvider !== 'bedrock') {
-      setStep('api-key-arn');
+      setStep('api-key');
     } else {
       setStep('container');
     }
   }, []);
 
-  const setApiKeyArn = useCallback(
-    (apiKeyArn: string) => {
-      setConfig(c => ({ ...c, apiKeyArn }));
-      const next = nextStep('api-key-arn');
+  const setApiKey = useCallback(
+    (apiKey: string) => {
+      setConfig(c => ({ ...c, apiKey }));
+      const next = nextStep('api-key');
       if (next) setStep(next);
     },
     [nextStep]
@@ -396,7 +396,7 @@ export function useAddHarnessWizard() {
     goBack,
     setName,
     setModelProvider,
-    setApiKeyArn,
+    setApiKey,
     setContainerMode,
     setContainerUri,
     setDockerfilePath,

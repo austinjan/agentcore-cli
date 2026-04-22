@@ -494,7 +494,7 @@ export function useCreateFlow(cwd: string): CreateFlowState {
                 name: addHarnessConfig.name,
                 modelProvider: addHarnessConfig.modelProvider,
                 modelId: addHarnessConfig.modelId,
-                apiKeyArn: addHarnessConfig.apiKeyArn,
+                apiKey: addHarnessConfig.apiKey,
                 skipMemory: addHarnessConfig.skipMemory,
                 containerUri: addHarnessConfig.containerUri,
                 dockerfilePath: addHarnessConfig.dockerfilePath,

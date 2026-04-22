@@ -59,7 +59,7 @@ async function main() {
   // so we read them dynamically via specAny (same pattern as gateways above).
   // Harness paths in agentcore.json are relative to the project root (parent of agentcore/).
   const projectRoot = path.resolve(configRoot, '..');
-  const harnessConfigs: {
+  interface HarnessRawConfig {
     name: string;
     executionRoleArn?: string;
     memoryName?: string;
@@ -67,12 +67,14 @@ async function main() {
     hasDockerfile?: boolean;
     tools?: { type: string; name: string }[];
     apiKeyArn?: string;
-  }[] = [];
+    apiKeyCredential?: string;
+  }
+  const harnessRawConfigs: HarnessRawConfig[] = [];
   for (const entry of specAny.harnesses ?? []) {
     const harnessPath = path.resolve(projectRoot, entry.path, 'harness.json');
     try {
       const harnessSpec = JSON.parse(fs.readFileSync(harnessPath, 'utf-8'));
-      harnessConfigs.push({
+      harnessRawConfigs.push({
         name: entry.name,
         executionRoleArn: harnessSpec.executionRoleArn,
         memoryName: harnessSpec.memory?.name,
@@ -80,6 +82,7 @@ async function main() {
         hasDockerfile: !!harnessSpec.dockerfile,
         tools: harnessSpec.tools,
         apiKeyArn: harnessSpec.model?.apiKeyArn,
+        apiKeyCredential: harnessSpec.model?.apiKeyCredential,
       });
     } catch (err) {
       throw new Error(
@@ -102,6 +105,20 @@ async function main() {
     const credentials = targetResources?.credentials as
       | Record<string, { credentialProviderArn: string; clientSecretArn?: string }>
       | undefined;
+
+    // Resolve apiKeyCredential (credential name in agentcore.json) to the token-vault
+    // provider ARN from deployed state. This is what the harness execution role needs
+    // to grant bedrock-agentcore:GetResourceApiKey on.
+    const harnessConfigs = harnessRawConfigs.map(raw => {
+      if (raw.apiKeyArn) {
+        return raw;
+      }
+      if (raw.apiKeyCredential) {
+        const resolved = credentials?.[raw.apiKeyCredential]?.credentialProviderArn;
+        return { ...raw, apiKeyArn: resolved };
+      }
+      return raw;
+    });
 
     new AgentCoreStack(app, stackName, {
       spec,

@@ -332,4 +332,90 @@ describe('resolveCredentialStrategy', () => {
       expect(result.envVarName).toBe('AGENTCORE_CREDENTIAL_MYPROJECTGEMINI');
     });
   });
+
+  describe('cross-provider isolation', () => {
+    it('does NOT reuse an OpenAI credential for a Gemini harness even if keys match', async () => {
+      const existingCredentials: Credential[] = [
+        { name: 'MyProjectOpenAI', authorizerType: 'ApiKeyCredentialProvider' },
+      ];
+      mockGetEnvVar.mockResolvedValue('shared-key-value');
+
+      const result = await primitive.resolveCredentialStrategy(
+        projectName,
+        agentName,
+        'Gemini',
+        'shared-key-value',
+        configBaseDir,
+        existingCredentials
+      );
+
+      expect(result).toEqual({
+        reuse: false,
+        credentialName: 'MyProjectGemini',
+        envVarName: 'AGENTCORE_CREDENTIAL_MYPROJECTGEMINI',
+        isAgentScoped: false,
+      });
+    });
+
+    it('does NOT reuse a Gemini credential for an OpenAI harness even if keys match', async () => {
+      const existingCredentials: Credential[] = [
+        { name: 'MyProjectGemini', authorizerType: 'ApiKeyCredentialProvider' },
+      ];
+      mockGetEnvVar.mockResolvedValue('shared-key-value');
+
+      const result = await primitive.resolveCredentialStrategy(
+        projectName,
+        agentName,
+        'OpenAI',
+        'shared-key-value',
+        configBaseDir,
+        existingCredentials
+      );
+
+      expect(result.reuse).toBe(false);
+      expect(result.credentialName).toBe('MyProjectOpenAI');
+    });
+
+    it('skips OAuth credentials when looking for reuse', async () => {
+      const existingCredentials: Credential[] = [
+        { name: 'someOAuth', authorizerType: 'OAuthCredentialProvider' } as any,
+      ];
+      mockGetEnvVar.mockResolvedValue('key');
+
+      const result = await primitive.resolveCredentialStrategy(
+        projectName,
+        agentName,
+        'OpenAI',
+        'key',
+        configBaseDir,
+        existingCredentials
+      );
+
+      expect(result.reuse).toBe(false);
+      expect(mockGetEnvVar).not.toHaveBeenCalled();
+    });
+
+    it('still reuses same-provider credential with matching key', async () => {
+      const existingCredentials: Credential[] = [
+        { name: 'MyProjectOpenAI', authorizerType: 'ApiKeyCredentialProvider' },
+      ];
+      mockGetEnvVar.mockResolvedValue('the-same-key');
+
+      const result = await primitive.resolveCredentialStrategy(
+        projectName,
+        agentName,
+        'OpenAI',
+        'the-same-key',
+        configBaseDir,
+        existingCredentials
+      );
+
+      expect(result).toEqual({
+        reuse: true,
+        credentialName: 'MyProjectOpenAI',
+        envVarName: 'AGENTCORE_CREDENTIAL_MYPROJECTOPENAI',
+        isAgentScoped: false,
+      });
+    });
+  });
 });

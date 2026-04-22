@@ -13,6 +13,7 @@ import { DEFAULT_EPISODIC_REFLECTION_NAMESPACES, DEFAULT_STRATEGY_NAMESPACES } f
 import { GatewayPrimitive } from '../../../primitives/GatewayPrimitive';
 import { buildAuthorizerConfigFromJwtConfig } from '../../../primitives/auth-utils';
 import {
+  computeCredentialName,
   computeDefaultCredentialEnvVarName,
   computeManagedOAuthCredentialName,
 } from '../../../primitives/credential-utils';
@@ -38,15 +39,6 @@ export interface GenerateConfigMappingResult {
   agent: AgentEnvSpec;
   memories: Memory[];
   credentials: Credential[];
-}
-
-/**
- * Compute the credential name for a model provider.
- * Scoped to project (not agent) to avoid conflicts across projects.
- * Format: {projectName}{providerName}
- */
-function computeCredentialName(projectName: string, providerName: string): string {
-  return `${projectName}${providerName}`;
 }
 
 /**

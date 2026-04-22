@@ -337,6 +337,130 @@ describe('HarnessModelSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('accepts apiKeyCredential as credential name', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'open_ai',
+      modelId: 'gpt-4o',
+      apiKeyCredential: 'myprojectOpenAI',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.apiKeyCredential).toBe('myprojectOpenAI');
+    }
+  });
+
+  it('rejects having both apiKeyArn and apiKeyCredential', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'open_ai',
+      modelId: 'gpt-4o',
+      apiKeyArn: 'arn:aws:bedrock-agentcore:us-west-2:123:apikey/abc',
+      apiKeyCredential: 'myprojectOpenAI',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some(i => i.message.includes('mutually exclusive'))).toBe(true);
+    }
+  });
+
+  it('rejects Secrets Manager ARN in apiKeyArn', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'open_ai',
+      modelId: 'gpt-4o',
+      apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:openai-key',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some(i => i.message.includes('Secrets Manager ARNs are not accepted'))).toBe(true);
+    }
+  });
+
+  it('accepts token-vault credential provider ARN in apiKeyArn', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'open_ai',
+      modelId: 'gpt-4o',
+      apiKeyArn: 'arn:aws:bedrock-agentcore:us-east-1:123456789012:token-vault/default/apikeycredentialprovider/my-key',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects empty string apiKeyArn', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'open_ai',
+      modelId: 'gpt-4o',
+      apiKeyArn: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects empty string apiKeyCredential', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'open_ai',
+      modelId: 'gpt-4o',
+      apiKeyCredential: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects whitespace-only apiKeyArn after trim', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'open_ai',
+      modelId: 'gpt-4o',
+      apiKeyArn: '   ',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects Secrets Manager ARN with leading whitespace', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'open_ai',
+      modelId: 'gpt-4o',
+      apiKeyArn: '  arn:aws:secretsmanager:us-east-1:123456789012:secret:openai-key',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some(i => i.message.includes('Secrets Manager ARNs are not accepted'))).toBe(true);
+    }
+  });
+
+  it('rejects mixed-case Secrets Manager ARN', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'open_ai',
+      modelId: 'gpt-4o',
+      apiKeyArn: 'ARN:AWS:SecretsManager:us-east-1:123456789012:secret:openai-key',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some(i => i.message.includes('Secrets Manager ARNs are not accepted'))).toBe(true);
+    }
+  });
+
+  it('rejects open_ai provider with neither apiKeyArn nor apiKeyCredential', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'open_ai',
+      modelId: 'gpt-4o',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some(i => i.message.includes('requires either apiKeyCredential'))).toBe(true);
+    }
+  });
+
+  it('rejects gemini provider with neither apiKeyArn nor apiKeyCredential', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'gemini',
+      modelId: 'gemini-2.5-flash',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts bedrock provider with neither apiKeyArn nor apiKeyCredential', () => {
+    const result = HarnessModelSchema.safeParse({
+      provider: 'bedrock',
+      modelId: 'anthropic.claude-sonnet-4-5-20250514-v1:0',
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('HarnessSpecSchema', () => {

@@ -50,7 +50,7 @@ export async function mapHarnessSpecToCreateOptions(options: MapHarnessOptions):
   };
 
   // Model
-  result.model = mapModel(harnessSpec.model);
+  result.model = mapModel(harnessSpec.model, deployedResources);
 
   // System prompt (may read from disk or auto-discover system-prompt.md)
   if (harnessSpec.systemPrompt !== undefined) {
@@ -139,8 +139,9 @@ export async function mapHarnessSpecToCreateOptions(options: MapHarnessOptions):
 // Model Mapping
 // ============================================================================
 
-function mapModel(model: HarnessSpec['model']): HarnessModelConfiguration {
-  const { provider, modelId, apiKeyArn, temperature, topP, topK, maxTokens } = model;
+function mapModel(model: HarnessSpec['model'], deployedResources?: DeployedResourceState): HarnessModelConfiguration {
+  const { provider, modelId, temperature, topP, topK, maxTokens } = model;
+  const resolvedApiKeyArn = resolveApiKeyArn(model, deployedResources);
 
   switch (provider) {
     case 'bedrock':
@@ -156,7 +157,7 @@ function mapModel(model: HarnessSpec['model']): HarnessModelConfiguration {
       return {
         openAiModelConfig: {
           modelId,
-          ...(apiKeyArn && { apiKeyArn }),
+          ...(resolvedApiKeyArn && { apiKeyArn: resolvedApiKeyArn }),
           ...(temperature !== undefined && { temperature }),
           ...(topP !== undefined && { topP }),
           ...(maxTokens !== undefined && { maxTokens }),
@@ -166,7 +167,7 @@ function mapModel(model: HarnessSpec['model']): HarnessModelConfiguration {
       return {
         geminiModelConfig: {
           modelId,
-          ...(apiKeyArn && { apiKeyArn }),
+          ...(resolvedApiKeyArn && { apiKeyArn: resolvedApiKeyArn }),
           ...(temperature !== undefined && { temperature }),
           ...(topP !== undefined && { topP }),
           ...(topK !== undefined && { topK }),
@@ -174,6 +175,20 @@ function mapModel(model: HarnessSpec['model']): HarnessModelConfiguration {
         },
       };
   }
+}
+
+function resolveApiKeyArn(model: HarnessSpec['model'], deployedResources?: DeployedResourceState): string | undefined {
+  if (model.apiKeyArn) return model.apiKeyArn;
+  if (!model.apiKeyCredential) return undefined;
+
+  const credential = deployedResources?.credentials?.[model.apiKeyCredential];
+  if (!credential) {
+    throw new Error(
+      `Credential "${model.apiKeyCredential}" referenced by harness model is not in deployed state. ` +
+        'Ensure the credential is defined in agentcore.json and has been deployed.'
+    );
+  }
+  return credential.credentialProviderArn;
 }
 
 // ============================================================================

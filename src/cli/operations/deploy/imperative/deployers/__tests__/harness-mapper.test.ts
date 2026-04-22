@@ -62,15 +62,48 @@ describe('mapHarnessSpecToCreateOptions', () => {
       });
     });
 
-    it('maps open_ai provider with apiKeyArn', async () => {
+    it('maps open_ai provider with apiKeyCredential resolved from deployed state', async () => {
       const spec = minimalSpec({
         model: {
           provider: 'open_ai',
           modelId: 'gpt-4o',
-          apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:openai-key',
+          apiKeyCredential: 'myprojectOpenAI',
           temperature: 0.5,
           topP: 0.8,
           maxTokens: 2048,
+        },
+      });
+
+      const deployedResources: DeployedResourceState = {
+        credentials: {
+          myprojectOpenAI: {
+            credentialProviderArn:
+              'arn:aws:bedrock-agentcore:us-east-1:123456789012:token-vault/default/apikeycredentialprovider/myprojectOpenAI',
+          },
+        },
+      };
+
+      const result = await mapHarnessSpecToCreateOptions({ ...BASE_OPTIONS, harnessSpec: spec, deployedResources });
+
+      expect(result.model).toEqual({
+        openAiModelConfig: {
+          modelId: 'gpt-4o',
+          apiKeyArn:
+            'arn:aws:bedrock-agentcore:us-east-1:123456789012:token-vault/default/apikeycredentialprovider/myprojectOpenAI',
+          temperature: 0.5,
+          topP: 0.8,
+          maxTokens: 2048,
+        },
+      });
+    });
+
+    it('maps open_ai provider with BYO apiKeyArn passthrough', async () => {
+      const spec = minimalSpec({
+        model: {
+          provider: 'open_ai',
+          modelId: 'gpt-4o',
+          apiKeyArn:
+            'arn:aws:bedrock-agentcore:us-east-1:123456789012:token-vault/default/apikeycredentialprovider/my-key',
         },
       });
 
@@ -79,31 +112,53 @@ describe('mapHarnessSpecToCreateOptions', () => {
       expect(result.model).toEqual({
         openAiModelConfig: {
           modelId: 'gpt-4o',
-          apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:openai-key',
-          temperature: 0.5,
-          topP: 0.8,
-          maxTokens: 2048,
+          apiKeyArn:
+            'arn:aws:bedrock-agentcore:us-east-1:123456789012:token-vault/default/apikeycredentialprovider/my-key',
         },
       });
     });
 
-    it('maps gemini provider with topK', async () => {
+    it('throws when apiKeyCredential is not found in deployed state', async () => {
+      const spec = minimalSpec({
+        model: {
+          provider: 'open_ai',
+          modelId: 'gpt-4o',
+          apiKeyCredential: 'nonexistent',
+        },
+      });
+
+      await expect(mapHarnessSpecToCreateOptions({ ...BASE_OPTIONS, harnessSpec: spec })).rejects.toThrow(
+        'Credential "nonexistent" referenced by harness model is not in deployed state'
+      );
+    });
+
+    it('maps gemini provider with topK and apiKeyCredential', async () => {
       const spec = minimalSpec({
         model: {
           provider: 'gemini',
           modelId: 'gemini-1.5-pro',
-          apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:gemini-key',
+          apiKeyCredential: 'myprojectGemini',
           topK: 0.4,
           temperature: 0.3,
         },
       });
 
-      const result = await mapHarnessSpecToCreateOptions({ ...BASE_OPTIONS, harnessSpec: spec });
+      const deployedResources: DeployedResourceState = {
+        credentials: {
+          myprojectGemini: {
+            credentialProviderArn:
+              'arn:aws:bedrock-agentcore:us-east-1:123456789012:token-vault/default/apikeycredentialprovider/myprojectGemini',
+          },
+        },
+      };
+
+      const result = await mapHarnessSpecToCreateOptions({ ...BASE_OPTIONS, harnessSpec: spec, deployedResources });
 
       expect(result.model).toEqual({
         geminiModelConfig: {
           modelId: 'gemini-1.5-pro',
-          apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:gemini-key',
+          apiKeyArn:
+            'arn:aws:bedrock-agentcore:us-east-1:123456789012:token-vault/default/apikeycredentialprovider/myprojectGemini',
           topK: 0.4,
           temperature: 0.3,
         },

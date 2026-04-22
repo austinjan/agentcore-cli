@@ -1,14 +1,19 @@
-import { formatError, validateProject } from '../preflight.js';
+import { formatError, validateHarnessCredentialReferences, validateProject } from '../preflight.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { mockReadProjectSpec, mockReadAWSDeploymentTargets, mockReadDeployedState, mockConfigExists } = vi.hoisted(
-  () => ({
-    mockReadProjectSpec: vi.fn(),
-    mockReadAWSDeploymentTargets: vi.fn(),
-    mockReadDeployedState: vi.fn(),
-    mockConfigExists: vi.fn(),
-  })
-);
+const {
+  mockReadProjectSpec,
+  mockReadAWSDeploymentTargets,
+  mockReadDeployedState,
+  mockConfigExists,
+  mockReadHarnessSpec,
+} = vi.hoisted(() => ({
+  mockReadProjectSpec: vi.fn(),
+  mockReadAWSDeploymentTargets: vi.fn(),
+  mockReadDeployedState: vi.fn(),
+  mockConfigExists: vi.fn(),
+  mockReadHarnessSpec: vi.fn(),
+}));
 
 const { mockValidate } = vi.hoisted(() => ({
   mockValidate: vi.fn(),
@@ -31,6 +36,7 @@ vi.mock('../../../../lib/index.js', () => ({
     readAWSDeploymentTargets = mockReadAWSDeploymentTargets;
     resolveAWSDeploymentTargets = mockReadAWSDeploymentTargets;
     readDeployedState = mockReadDeployedState;
+    readHarnessSpec = mockReadHarnessSpec;
     configExists = mockConfigExists;
   },
   requireConfigRoot: mockRequireConfigRoot,
@@ -115,6 +121,84 @@ describe('validateProject', () => {
 
     expect(result.projectSpec.name).toBe('test-project');
     expect(result.isTeardownDeploy).toBe(false);
+  });
+});
+
+describe('validateHarnessCredentialReferences', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  function mockConfigIO() {
+    return { readHarnessSpec: mockReadHarnessSpec } as any;
+  }
+
+  it('passes when there are no harnesses', async () => {
+    const projectSpec = { credentials: [], harnesses: [] } as any;
+    await expect(validateHarnessCredentialReferences(projectSpec, mockConfigIO())).resolves.toBeUndefined();
+  });
+
+  it('passes when harness has no apiKeyCredential', async () => {
+    const projectSpec = { credentials: [], harnesses: [{ name: 'h1', path: 'app/h1' }] } as any;
+    mockReadHarnessSpec.mockResolvedValue({ name: 'h1', model: { provider: 'bedrock', modelId: 'claude' } });
+    await expect(validateHarnessCredentialReferences(projectSpec, mockConfigIO())).resolves.toBeUndefined();
+  });
+
+  it('throws when apiKeyCredential references a credential not in project', async () => {
+    const projectSpec = { credentials: [], harnesses: [{ name: 'h1', path: 'app/h1' }] } as any;
+    mockReadHarnessSpec.mockResolvedValue({
+      name: 'h1',
+      model: { provider: 'open_ai', modelId: 'gpt-4o', apiKeyCredential: 'missingCred' },
+    });
+    await expect(validateHarnessCredentialReferences(projectSpec, mockConfigIO())).rejects.toThrow(
+      /references credential "missingCred".*no credential with that name exists/
+    );
+  });
+
+  it('throws when apiKeyCredential references an OAuth credential', async () => {
+    const projectSpec = {
+      credentials: [{ name: 'oauthCred', authorizerType: 'OAuthCredentialProvider' }],
+      harnesses: [{ name: 'h1', path: 'app/h1' }],
+    } as any;
+    mockReadHarnessSpec.mockResolvedValue({
+      name: 'h1',
+      model: { provider: 'open_ai', modelId: 'gpt-4o', apiKeyCredential: 'oauthCred' },
+    });
+    await expect(validateHarnessCredentialReferences(projectSpec, mockConfigIO())).rejects.toThrow(
+      /authorizerType "OAuthCredentialProvider"/
+    );
+  });
+
+  it('passes when apiKeyCredential references a valid ApiKey credential', async () => {
+    const projectSpec = {
+      credentials: [{ name: 'goodCred', authorizerType: 'ApiKeyCredentialProvider' }],
+      harnesses: [{ name: 'h1', path: 'app/h1' }],
+    } as any;
+    mockReadHarnessSpec.mockResolvedValue({
+      name: 'h1',
+      model: { provider: 'open_ai', modelId: 'gpt-4o', apiKeyCredential: 'goodCred' },
+    });
+    await expect(validateHarnessCredentialReferences(projectSpec, mockConfigIO())).resolves.toBeUndefined();
+  });
+
+  it('collects multiple harness errors', async () => {
+    const projectSpec = {
+      credentials: [{ name: 'oauthCred', authorizerType: 'OAuthCredentialProvider' }],
+      harnesses: [
+        { name: 'h1', path: 'app/h1' },
+        { name: 'h2', path: 'app/h2' },
+      ],
+    } as any;
+    mockReadHarnessSpec
+      .mockResolvedValueOnce({
+        name: 'h1',
+        model: { provider: 'open_ai', modelId: 'gpt', apiKeyCredential: 'missing' },
+      })
+      .mockResolvedValueOnce({
+        name: 'h2',
+        model: { provider: 'gemini', modelId: 'gem', apiKeyCredential: 'oauthCred' },
+      });
+    await expect(validateHarnessCredentialReferences(projectSpec, mockConfigIO())).rejects.toThrow(
+      /h1.*missing[\s\S]*h2.*oauthCred/
+    );
   });
 });
 

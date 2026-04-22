@@ -15,3 +15,13 @@ export function computeDefaultCredentialEnvVarName(credentialName: string): stri
 export function computeManagedOAuthCredentialName(gatewayName: string): string {
   return `${gatewayName}-oauth`;
 }
+
+/**
+ * Compute the default credential name for a model provider.
+ * Project-scoped (not resource-scoped) to enable sharing across agents/harnesses
+ * that use the same API key. Format: {projectName}{providerName}.
+ * Must stay in sync with the lookup logic in CredentialPrimitive.resolveCredentialStrategy.
+ */
+export function computeCredentialName(projectName: string, providerName: string): string {
+  return `${projectName}${providerName}`;
+}

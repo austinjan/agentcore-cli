@@ -21,6 +21,8 @@ export {
   hasIdentityOAuthProviders,
   getMissingCredentials,
   getAllCredentials,
+  escalateSkippedCredentialsReferencedByHarnesses,
+  rollbackNewlyCreatedApiKeyProviders,
   type SetupApiKeyProvidersOptions,
   type SetupOAuth2ProvidersOptions,
   type PreDeployIdentityResult,
@@ -29,6 +31,8 @@ export {
   type OAuth2ProviderSetupResult,
   type MissingCredential,
 } from './pre-deploy-identity';
+
+export { validateHarnessCredentialReferences } from './preflight';
 
 // Teardown utilities (moved from destroy operations)
 export {

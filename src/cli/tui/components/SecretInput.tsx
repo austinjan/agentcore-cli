@@ -256,8 +256,8 @@ export interface ApiKeySecretInputProps {
   envVarName: string;
   /** Called when user submits an API key */
   onSubmit: (apiKey: string) => void;
-  /** Called when user skips */
-  onSkip: () => void;
+  /** Called when user skips. When omitted, the skip option is hidden and the user must enter a key. */
+  onSkip?: () => void;
   /** Called when user cancels */
   onCancel: () => void;
   /** Whether this component should receive input */

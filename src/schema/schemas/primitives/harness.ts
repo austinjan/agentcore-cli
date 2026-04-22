@@ -1,6 +1,5 @@
 import { NetworkModeSchema } from '../../constants';
-import { NetworkConfigSchema } from '../agent-env';
-import { LifecycleConfigurationSchema } from '../agent-env';
+import { LifecycleConfigurationSchema, NetworkConfigSchema } from '../agent-env';
 import { AuthorizerConfigSchema, RuntimeAuthorizerTypeSchema } from '../auth';
 import { uniqueBy } from '../zod-util';
 import { TagsSchema } from './tags';
@@ -30,7 +29,8 @@ export const HarnessModelSchema = z
   .object({
     provider: HarnessModelProviderSchema,
     modelId: z.string().min(1, 'Model ID is required'),
-    apiKeyArn: z.string().optional(),
+    apiKeyArn: z.string().trim().min(1).optional(),
+    apiKeyCredential: z.string().min(1).optional(),
     temperature: z.number().min(0).max(2).optional(),
     topP: z.number().min(0).max(1).optional(),
     topK: z.number().min(0).max(1).optional(),
@@ -42,6 +42,28 @@ export const HarnessModelSchema = z
         code: z.ZodIssueCode.custom,
         message: 'topK is only supported for the "gemini" provider',
         path: ['topK'],
+      });
+    }
+    if (model.apiKeyArn && model.apiKeyCredential) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'apiKeyArn and apiKeyCredential are mutually exclusive — use one or the other',
+        path: ['apiKeyArn'],
+      });
+    }
+    if (model.apiKeyArn && /^arn:aws:secretsmanager:/i.test(model.apiKeyArn)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Secrets Manager ARNs are not accepted for apiKeyArn. Use a token-vault credential provider ARN (arn:aws:bedrock-agentcore:...) or use apiKeyCredential with a credential name instead.',
+        path: ['apiKeyArn'],
+      });
+    }
+    if (model.provider !== 'bedrock' && !model.apiKeyArn && !model.apiKeyCredential) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Model provider "${model.provider}" requires either apiKeyCredential (credential name) or apiKeyArn (token-vault ARN).`,
+        path: ['apiKeyCredential'],
       });
     }
   });
@@ -200,6 +222,7 @@ export const AllowedToolSchema = z
   .string()
   .min(1)
   .max(64)
+  // eslint-disable-next-line security/detect-unsafe-regex
   .regex(/^(\*|@?[^/]+(\/[^/]+)?)$/, 'Must be "*" or a tool name pattern (max 64 chars)');
 
 // ============================================================================

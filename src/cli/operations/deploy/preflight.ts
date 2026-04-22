@@ -114,6 +114,9 @@ export async function validateProject(): Promise<PreflightContext> {
   // Validate Container agents have Dockerfiles
   validateContainerAgents(projectSpec, configRoot);
 
+  // Validate harness credential references are consistent with project credentials
+  await validateHarnessCredentialReferences(projectSpec, configIO);
+
   // Validate AWS credentials before proceeding with build/synth.
   // Skip for teardown deploys — callers validate after teardown confirmation.
   if (!isTeardownDeploy) {
@@ -160,6 +163,52 @@ function validateHarnessNames(projectSpec: AgentCoreProjectSpec): void {
         );
       }
     }
+  }
+}
+
+/**
+ * Validates that every harness.json `model.apiKeyCredential` name references a
+ * real credential in agentcore.json with authorizerType ApiKeyCredentialProvider.
+ * Fails early with a clear error so the user doesn't hit a confusing deploy-time
+ * failure (e.g., OAuth credential resolved into an OpenAI apiKeyArn slot).
+ */
+export async function validateHarnessCredentialReferences(
+  projectSpec: AgentCoreProjectSpec,
+  configIO: ConfigIO
+): Promise<void> {
+  const harnesses = projectSpec.harnesses ?? [];
+  if (harnesses.length === 0) return;
+
+  const credByName = new Map(projectSpec.credentials.map(c => [c.name, c]));
+  const errors: string[] = [];
+
+  for (const harnessEntry of harnesses) {
+    let harnessSpec;
+    try {
+      harnessSpec = await configIO.readHarnessSpec(harnessEntry.name);
+    } catch {
+      continue;
+    }
+
+    const credName = harnessSpec.model.apiKeyCredential;
+    if (!credName) continue;
+
+    const cred = credByName.get(credName);
+    if (!cred) {
+      errors.push(
+        `Harness "${harnessEntry.name}" references credential "${credName}" via model.apiKeyCredential, but no credential with that name exists in agentcore.json. Run \`agentcore add credential --name ${credName}\` or update the harness to reference an existing credential.`
+      );
+      continue;
+    }
+    if (cred.authorizerType !== 'ApiKeyCredentialProvider') {
+      errors.push(
+        `Harness "${harnessEntry.name}" references credential "${credName}" via model.apiKeyCredential, but that credential has authorizerType "${cred.authorizerType}". apiKeyCredential must reference a credential with authorizerType "ApiKeyCredentialProvider".`
+      );
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(errors.join('\n'));
   }
 }
 

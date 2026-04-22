@@ -5,6 +5,7 @@ export interface CreateHarnessCliOptions {
   name?: string;
   modelProvider?: string;
   modelId?: string;
+  apiKey?: string;
   apiKeyArn?: string;
   container?: string;
   noMemory?: boolean;
@@ -79,8 +80,23 @@ export function validateCreateHarnessOptions(options: CreateHarnessCliOptions, c
   };
   options.modelId ??= defaultModelIds[options.modelProvider] ?? 'global.anthropic.claude-sonnet-4-6';
 
-  if (options.modelProvider !== 'bedrock' && !options.apiKeyArn) {
-    return { valid: false, error: `--api-key-arn is required for ${options.modelProvider} provider` };
+  if (options.apiKey && options.apiKeyArn) {
+    return {
+      valid: false,
+      error: 'Use --api-key (primary) OR --api-key-arn (BYO token-vault ARN), not both.',
+    };
+  }
+
+  if (options.modelProvider !== 'bedrock' && !options.apiKey && !options.apiKeyArn) {
+    return { valid: false, error: `--api-key or --api-key-arn is required for ${options.modelProvider} provider` };
+  }
+
+  if (options.apiKeyArn && /^arn:aws:secretsmanager:/i.test(options.apiKeyArn.trim())) {
+    return {
+      valid: false,
+      error:
+        '--api-key-arn must be a token-vault credential provider ARN (arn:aws:bedrock-agentcore:...). Secrets Manager ARNs are not accepted. Use --api-key to create a managed credential from a raw API key.',
+    };
   }
 
   return { valid: true };

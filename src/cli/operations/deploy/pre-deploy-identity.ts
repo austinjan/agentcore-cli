@@ -13,7 +13,11 @@ import {
   updateApiKeyProvider,
   updateOAuth2Provider,
 } from '../identity';
-import { BedrockAgentCoreControlClient, GetTokenVaultCommand } from '@aws-sdk/client-bedrock-agentcore-control';
+import {
+  BedrockAgentCoreControlClient,
+  DeleteApiKeyCredentialProviderCommand,
+  GetTokenVaultCommand,
+} from '@aws-sdk/client-bedrock-agentcore-control';
 import { CreateKeyCommand, KMSClient } from '@aws-sdk/client-kms';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +35,64 @@ export interface PreDeployIdentityResult {
   results: ApiKeyProviderSetupResult[];
   hasErrors: boolean;
   kmsKeyArn?: string;
+  /**
+   * Names of credentials newly created during this setup (not pre-existing updates).
+   * Used by the deploy orchestrator to clean up orphaned providers if a subsequent
+   * CDK deploy fails.
+   */
+  newlyCreatedProviders?: string[];
+}
+
+/**
+ * Delete API key credential providers that were newly created during this deploy.
+ * Best-effort: logs failures but does not throw. Called on CDK deploy failure to
+ * avoid orphaning providers in the token vault.
+ */
+export async function rollbackNewlyCreatedApiKeyProviders(
+  region: string,
+  providerNames: string[]
+): Promise<{ deleted: string[]; failed: { name: string; error: string }[] }> {
+  const deleted: string[] = [];
+  const failed: { name: string; error: string }[] = [];
+  if (providerNames.length === 0) return { deleted, failed };
+
+  const credentials = getCredentialProvider();
+  const client = new BedrockAgentCoreControlClient({ region, credentials });
+
+  for (const name of providerNames) {
+    try {
+      await client.send(new DeleteApiKeyCredentialProviderCommand({ name }));
+      deleted.push(name);
+    } catch (err) {
+      failed.push({ name, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { deleted, failed };
+}
+
+/**
+ * Escalate a skipped credential to an error if any harness references it. Used after
+ * setupApiKeyProviders runs: a credential can be skipped (no key in .env.local),
+ * but if a harness depends on it, deploying would produce confusing downstream failures.
+ */
+export function escalateSkippedCredentialsReferencedByHarnesses(
+  result: PreDeployIdentityResult,
+  referencedCredentialNames: Set<string>
+): PreDeployIdentityResult {
+  const upgraded = result.results.map(r => {
+    if (r.status !== 'skipped' || !referencedCredentialNames.has(r.providerName)) return r;
+    const envVarName = computeDefaultCredentialEnvVarName(r.providerName);
+    return {
+      ...r,
+      status: 'error' as const,
+      error: `Credential "${r.providerName}" is referenced by a harness but ${envVarName} is missing from agentcore/.env.local. Add the API key and redeploy, or remove the apiKeyCredential reference from harness.json.`,
+    };
+  });
+  return {
+    ...result,
+    results: upgraded,
+    hasErrors: upgraded.some(r => r.status === 'error'),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,10 +153,13 @@ export async function setupApiKeyProviders(options: SetupApiKeyProvidersOptions)
     }
   }
 
+  const newlyCreatedProviders = results.filter(r => r.status === 'created').map(r => r.providerName);
+
   return {
     results,
     hasErrors: results.some(r => r.status === 'error'),
     kmsKeyArn,
+    newlyCreatedProviders,
   };
 }
 

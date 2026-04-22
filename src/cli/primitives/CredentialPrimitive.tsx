@@ -5,7 +5,7 @@ import { validateAddCredentialOptions } from '../commands/add/validate';
 import { getErrorMessage } from '../errors';
 import type { RemovalPreview, RemovalResult, SchemaChange } from '../operations/remove/types';
 import { BasePrimitive } from './BasePrimitive';
-import { computeDefaultCredentialEnvVarName } from './credential-utils';
+import { computeCredentialName, computeDefaultCredentialEnvVarName } from './credential-utils';
 import type { AddResult, AddScreenComponent, RemovableResource } from './types';
 import type { Command } from '@commander-js/extra-typings';
 
@@ -223,18 +223,22 @@ export class CredentialPrimitive extends BasePrimitive<AddCredentialOptions, Rem
       return { reuse: true, credentialName: '', envVarName: '', isAgentScoped: false };
     }
 
-    // Check ALL existing credentials for a matching API key
+    // Filter reuse candidates to same-provider ApiKey credentials. Reusing across
+    // providers would plug the wrong provider's ARN into the target provider's
+    // model config, which the runtime auth then silently fails on.
     for (const cred of existingCredentials) {
+      if (cred.authorizerType !== 'ApiKeyCredentialProvider') continue;
+      if (!cred.name.endsWith(modelProvider)) continue;
       const envVarName = CredentialPrimitive.computeDefaultCredentialEnvVarName(cred.name);
       const existingApiKey = await getEnvVar(envVarName, configBaseDir);
       if (existingApiKey === newApiKey) {
-        const isAgentScoped = cred.name !== `${projectName}${modelProvider}`;
+        const isAgentScoped = cred.name !== computeCredentialName(projectName, modelProvider);
         return { reuse: true, credentialName: cred.name, envVarName, isAgentScoped };
       }
     }
 
     // No matching key found - create new credential
-    const projectScopedName = `${projectName}${modelProvider}`;
+    const projectScopedName = computeCredentialName(projectName, modelProvider);
     const hasProjectScoped = existingCredentials.some(c => c.name === projectScopedName);
 
     if (!hasProjectScoped) {
@@ -244,7 +248,7 @@ export class CredentialPrimitive extends BasePrimitive<AddCredentialOptions, Rem
     }
 
     // Project-scoped exists with different key - create agent-scoped
-    const agentScopedName = `${projectName}${agentName}${modelProvider}`;
+    const agentScopedName = computeCredentialName(projectName, `${agentName}${modelProvider}`);
     const agentScopedEnvVarName = CredentialPrimitive.computeDefaultCredentialEnvVarName(agentScopedName);
     return { reuse: false, credentialName: agentScopedName, envVarName: agentScopedEnvVarName, isAgentScoped: true };
   }

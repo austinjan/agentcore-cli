@@ -49,7 +49,8 @@ describe('createProjectWithHarness', () => {
       cwd: testDir,
       modelProvider: 'open_ai',
       modelId: 'gpt-4',
-      apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:my-key',
+      apiKeyCredentialArn:
+        'arn:aws:bedrock-agentcore:us-east-1:123456789012:token-vault/default/apikeycredentialprovider/my-key',
       skipMemory: true,
       maxIterations: 10,
       maxTokens: 2000,

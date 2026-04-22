@@ -21,10 +21,12 @@ import {
   buildCdkProject,
   checkBootstrapNeeded,
   checkStackDeployability,
+  escalateSkippedCredentialsReferencedByHarnesses,
   getAllCredentials,
   hasIdentityApiProviders,
   hasIdentityOAuthProviders,
   performStackTeardown,
+  rollbackNewlyCreatedApiKeyProviders,
   setupApiKeyProviders,
   setupOAuth2Providers,
   setupTransactionSearch,
@@ -49,6 +51,29 @@ export interface ValidatedDeployOptions {
 
 const AGENT_NEXT_STEPS = ['agentcore invoke', 'agentcore status'];
 const MEMORY_ONLY_NEXT_STEPS = ['agentcore add agent', 'agentcore status'];
+
+/**
+ * Collect the set of credential names that harness.json files reference via
+ * `model.apiKeyCredential`. Used by the deploy flow to escalate skipped
+ * credentials that a harness actually depends on.
+ */
+async function collectHarnessCredentialReferences(
+  configIO: ConfigIO,
+  projectSpec: import('../../../schema').AgentCoreProjectSpec
+): Promise<Set<string>> {
+  const referenced = new Set<string>();
+  for (const harness of projectSpec.harnesses ?? []) {
+    try {
+      const spec = await configIO.readHarnessSpec(harness.name);
+      const ref = spec.model.apiKeyCredential;
+      if (ref) referenced.add(ref);
+    } catch {
+      // Skip harnesses with unreadable specs; the preflight validator will have
+      // already surfaced any schema/read issues earlier in the flow.
+    }
+  }
+  return referenced;
+}
 
 export async function handleDeploy(options: ValidatedDeployOptions): Promise<DeployResult> {
   let toolkitWrapper = null;
@@ -143,16 +168,24 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       { credentialProviderArn: string; clientSecretArn?: string; callbackUrl?: string }
     > = {};
 
+    const newlyCreatedApiKeyProviders: string[] = [];
     if (hasIdentityApiProviders(context.projectSpec)) {
       startStep('Creating credentials...');
 
-      const identityResult = await setupApiKeyProviders({
+      const setupResult = await setupApiKeyProviders({
         projectSpec: context.projectSpec,
         configBaseDir: configIO.getConfigRoot(),
         region: target.region,
         runtimeCredentials,
         enableKmsEncryption: true,
       });
+
+      // Escalate any skipped credentials that harnesses depend on: otherwise the
+      // user hits a confusing mapper-level "not in deployed state" failure later
+      // whose root cause is actually a missing env var.
+      const referencedByHarnesses = await collectHarnessCredentialReferences(configIO, context.projectSpec);
+      const identityResult = escalateSkippedCredentialsReferencedByHarnesses(setupResult, referencedByHarnesses);
+
       if (identityResult.hasErrors) {
         const errorResult = identityResult.results.find(r => r.status === 'error');
         const errorMsg =
@@ -162,6 +195,10 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
         return { success: false, error: errorMsg, logPath: logger.getRelativeLogPath() };
       }
       identityKmsKeyArn = identityResult.kmsKeyArn;
+
+      if (identityResult.newlyCreatedProviders) {
+        newlyCreatedApiKeyProviders.push(...identityResult.newlyCreatedProviders);
+      }
 
       // Collect API Key credential ARNs for deployed state
       for (const result of identityResult.results) {
@@ -335,7 +372,35 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       switchableIoHost.setVerbose(true);
     }
 
-    await toolkitWrapper.deploy();
+    try {
+      await toolkitWrapper.deploy();
+    } catch (deployErr) {
+      // If CDK deploy fails, clean up newly created token-vault credential providers
+      // so they don't orphan in AWS. Updates to pre-existing providers are left alone
+      // (the user still wants those on next retry).
+      if (newlyCreatedApiKeyProviders.length > 0) {
+        try {
+          const rollback = await rollbackNewlyCreatedApiKeyProviders(target.region, newlyCreatedApiKeyProviders);
+          if (rollback.deleted.length > 0) {
+            logger.log(
+              `Rolled back ${rollback.deleted.length} newly-created credential provider(s): ${rollback.deleted.join(', ')}`
+            );
+          }
+          if (rollback.failed.length > 0) {
+            logger.log(
+              `Failed to roll back ${rollback.failed.length} credential provider(s). Manual cleanup may be required.`,
+              'error'
+            );
+          }
+        } catch (rollbackErr) {
+          logger.log(
+            `Credential provider rollback failed: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
+            'error'
+          );
+        }
+      }
+      throw deployErr;
+    }
 
     // Disable verbose output
     if (switchableIoHost) {

@@ -6,7 +6,7 @@ export type ContainerMode = 'none' | 'uri' | 'dockerfile';
 export type AddHarnessStep =
   | 'name'
   | 'model-provider'
-  | 'api-key-arn'
+  | 'api-key'
   | 'container'
   | 'container-uri'
   | 'container-dockerfile'
@@ -34,7 +34,7 @@ export interface AddHarnessConfig {
   name: string;
   modelProvider: HarnessModelProvider;
   modelId: string;
-  apiKeyArn?: string;
+  apiKey?: string;
   skipMemory?: boolean;
   containerMode?: ContainerMode;
   containerUri?: string;
@@ -60,7 +60,7 @@ export interface AddHarnessConfig {
 export const HARNESS_STEP_LABELS: Record<AddHarnessStep, string> = {
   name: 'Name',
   'model-provider': 'Model provider',
-  'api-key-arn': 'API key ARN',
+  'api-key': 'API key',
   container: 'Custom environment',
   'container-uri': 'Container URI',
   'container-dockerfile': 'Dockerfile path',
@@ -96,12 +96,12 @@ export const MODEL_PROVIDER_OPTIONS = [
   {
     id: 'open_ai' as const,
     title: 'OpenAI',
-    description: `Default: ${DEFAULT_MODEL_IDS.open_ai} (requires API key ARN)`,
+    description: `Default: ${DEFAULT_MODEL_IDS.open_ai} (requires API key)`,
   },
   {
     id: 'gemini' as const,
     title: 'Google Gemini',
-    description: `Default: ${DEFAULT_MODEL_IDS.gemini} (requires API key ARN)`,
+    description: `Default: ${DEFAULT_MODEL_IDS.gemini} (requires API key)`,
   },
 ] as const;
 

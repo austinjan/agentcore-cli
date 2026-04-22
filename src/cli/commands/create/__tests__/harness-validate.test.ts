@@ -68,16 +68,16 @@ describe('validateCreateHarnessOptions', () => {
       testDir
     );
     expect(result.valid).toBe(false);
-    expect(result.error).toContain('--api-key-arn');
+    expect(result.error).toContain('--api-key');
   });
 
-  it('accepts non-bedrock provider with api-key-arn', () => {
+  it('accepts non-bedrock provider with api-key', () => {
     const result = validateCreateHarnessOptions(
       {
         name: 'myHarness4',
         modelProvider: 'open_ai',
         modelId: 'gpt-4',
-        apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:my-key',
+        apiKey: 'sk-test-key-12345',
       },
       testDir
     );
@@ -100,7 +100,7 @@ describe('validateCreateHarnessOptions', () => {
       name: 'myHarness6',
       modelProvider: 'OpenAI',
       modelId: 'gpt-4',
-      apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:my-key',
+      apiKey: 'sk-test-key-12345',
     };
     const result = validateCreateHarnessOptions(options, testDir);
     expect(result.valid).toBe(true);
@@ -112,7 +112,7 @@ describe('validateCreateHarnessOptions', () => {
       name: 'myHarness7',
       modelProvider: 'Gemini',
       modelId: 'gemini-pro',
-      apiKeyArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:my-key',
+      apiKey: 'sk-test-key-12345',
     };
     const result = validateCreateHarnessOptions(options, testDir);
     expect(result.valid).toBe(true);

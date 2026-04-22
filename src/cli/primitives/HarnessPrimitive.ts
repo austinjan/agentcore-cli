@@ -1,9 +1,10 @@
-import { APP_DIR, ConfigIO, findConfigRoot } from '../../lib';
+import { APP_DIR, ConfigIO, findConfigRoot, setEnvVar } from '../../lib';
 import type {
   HarnessModelProvider,
   HarnessSpec,
   MemoryStrategy,
   MemoryStrategyType,
+  ModelProvider,
   NetworkMode,
   RuntimeAuthorizerType,
 } from '../../schema';
@@ -14,18 +15,26 @@ import type { RemovalPreview, RemovalResult, SchemaChange } from '../operations/
 import { getTemplatePath } from '../templates/templateRoot';
 import { DEFAULT_MEMORY_EXPIRY_DAYS } from '../tui/screens/generate/defaults';
 import { BasePrimitive } from './BasePrimitive';
+import { CredentialPrimitive } from './CredentialPrimitive';
 import { buildAuthorizerConfigFromJwtConfig, createManagedOAuthCredential } from './auth-utils';
 import type { JwtConfigOptions } from './auth-utils';
+import { computeDefaultCredentialEnvVarName } from './credential-utils';
 import type { AddResult, AddScreenComponent, RemovableResource } from './types';
 import type { Command } from '@commander-js/extra-typings';
 import { access, copyFile, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'path';
 
+const HARNESS_TO_MODEL_PROVIDER: Record<Exclude<HarnessModelProvider, 'bedrock'>, ModelProvider> = {
+  open_ai: 'OpenAI',
+  gemini: 'Gemini',
+};
+
 export interface AddHarnessOptions {
   name: string;
   modelProvider: HarnessModelProvider;
   modelId: string;
-  apiKeyArn?: string;
+  apiKey?: string;
+  apiKeyCredentialArn?: string;
   systemPrompt?: string;
   skipMemory?: boolean;
   containerUri?: string;
@@ -59,6 +68,21 @@ export class HarnessPrimitive extends BasePrimitive<AddHarnessOptions, Removable
 
   async add(options: AddHarnessOptions): Promise<AddResult<{ harnessName: string }>> {
     try {
+      if (options.apiKey && options.apiKeyCredentialArn) {
+        return {
+          success: false,
+          error:
+            'Use --api-key (primary) OR --api-key-arn (BYO token-vault ARN), not both. Choose one credential source.',
+        };
+      }
+
+      if (options.modelProvider !== 'bedrock' && !options.apiKey && !options.apiKeyCredentialArn) {
+        return {
+          success: false,
+          error: `Model provider "${options.modelProvider}" requires a credential. Provide --api-key <key> (creates a managed credential) or --api-key-arn <token-vault-arn> (bring your own).`,
+        };
+      }
+
       const configBaseDir = options.configBaseDir ?? findConfigRoot();
       if (!configBaseDir) {
         return { success: false, error: 'No agentcore project found. Run `agentcore create` first.' };
@@ -113,12 +137,36 @@ export class HarnessPrimitive extends BasePrimitive<AddHarnessOptions, Removable
         }
       }
 
+      let apiKeyCredentialName: string | undefined;
+      if (options.apiKey && options.modelProvider !== 'bedrock') {
+        const credPrimitive = new CredentialPrimitive();
+        const modelProvider = HARNESS_TO_MODEL_PROVIDER[options.modelProvider];
+        const strategy = await credPrimitive.resolveCredentialStrategy(
+          project.name,
+          options.name,
+          modelProvider,
+          options.apiKey,
+          configBaseDir,
+          project.credentials
+        );
+        if (!strategy.reuse && strategy.credentialName) {
+          project.credentials.push({
+            authorizerType: 'ApiKeyCredentialProvider',
+            name: strategy.credentialName,
+          });
+        }
+        if (strategy.credentialName) {
+          apiKeyCredentialName = strategy.credentialName;
+        }
+      }
+
       const harnessSpec: HarnessSpec = {
         name: options.name,
         model: {
           provider: options.modelProvider,
           modelId: options.modelId,
-          ...(options.apiKeyArn && { apiKeyArn: options.apiKeyArn }),
+          ...(apiKeyCredentialName && { apiKeyCredential: apiKeyCredentialName }),
+          ...(options.apiKeyCredentialArn && { apiKeyArn: options.apiKeyCredentialArn }),
         },
         tools,
         skills: [],
@@ -147,23 +195,7 @@ export class HarnessPrimitive extends BasePrimitive<AddHarnessOptions, Removable
           : {}),
       };
 
-      await configIO.writeHarnessSpec(options.name, harnessSpec);
-
-      const pathResolver = configIO.getPathResolver();
-      const harnessDir = pathResolver.getHarnessDir(options.name);
-      const systemPromptPath = join(harnessDir, 'system-prompt.md');
-      const systemPromptContent = options.systemPrompt ?? 'You are a helpful assistant';
-      await writeFile(systemPromptPath, systemPromptContent, 'utf-8');
-
-      if (options.withInvokeScript) {
-        const templatePath = getTemplatePath('harness', 'invoke.py.template');
-        const invokeScriptPath = join(harnessDir, 'invoke.py');
-        let template = await readFile(templatePath, 'utf-8');
-        template = template.replace('{{HARNESS_ARN}}', '<your-harness-arn>');
-        template = template.replace('{{REGION}}', '<your-region>');
-        await writeFile(invokeScriptPath, template, 'utf-8');
-      }
-
+      // Build the final project spec in memory (don't write yet — agentcore.json is the commit point)
       if (memoryName) {
         const strategyTypes: MemoryStrategyType[] = ['SEMANTIC', 'USER_PREFERENCE', 'SUMMARIZATION', 'EPISODIC'];
         const strategies: MemoryStrategy[] = strategyTypes.map(type => ({
@@ -186,6 +218,31 @@ export class HarnessPrimitive extends BasePrimitive<AddHarnessOptions, Removable
           path: `app/${options.name}`,
         },
       ];
+
+      // Write in rollback-safe order: .env.local → harness.json → agentcore.json.
+      // agentcore.json is the commit point; if an earlier write fails the user re-runs
+      // `add` and hits "duplicate name" at checkDuplicate, which surfaces the partial state.
+      if (apiKeyCredentialName && options.apiKey) {
+        const envVarName = computeDefaultCredentialEnvVarName(apiKeyCredentialName);
+        await setEnvVar(envVarName, options.apiKey, configBaseDir);
+      }
+
+      await configIO.writeHarnessSpec(options.name, harnessSpec);
+
+      const pathResolver = configIO.getPathResolver();
+      const harnessDir = pathResolver.getHarnessDir(options.name);
+      const systemPromptPath = join(harnessDir, 'system-prompt.md');
+      const systemPromptContent = options.systemPrompt ?? 'You are a helpful assistant';
+      await writeFile(systemPromptPath, systemPromptContent, 'utf-8');
+
+      if (options.withInvokeScript) {
+        const templatePath = getTemplatePath('harness', 'invoke.py.template');
+        const invokeScriptPath = join(harnessDir, 'invoke.py');
+        let template = await readFile(templatePath, 'utf-8');
+        template = template.replace('{{HARNESS_ARN}}', '<your-harness-arn>');
+        template = template.replace('{{REGION}}', '<your-region>');
+        await writeFile(invokeScriptPath, template, 'utf-8');
+      }
 
       await this.writeProjectSpec(project, configIO);
 
@@ -301,7 +358,8 @@ export class HarnessPrimitive extends BasePrimitive<AddHarnessOptions, Removable
       .option('--name <name>', 'Harness name (start with letter, alphanumeric + underscores, max 48 chars)')
       .option('--model-provider <provider>', 'Model provider: bedrock, open_ai, gemini')
       .option('--model-id <id>', 'Model ID (e.g., anthropic.claude-3-5-sonnet-20240620-v1:0)')
-      .option('--api-key-arn <arn>', 'API key ARN for non-Bedrock providers')
+      .option('--api-key <key>', 'API key for non-Bedrock providers (stored securely in AgentCore Identity)')
+      .option('--api-key-arn <arn>', 'Token-vault credential provider ARN (advanced, for pre-existing credentials)')
       .option('--container <uri-or-path>', 'Container image URI or path to a Dockerfile')
       .option('--no-memory', 'Skip auto-creating memory')
       .option('--max-iterations <n>', 'Max iterations', parseInt)
@@ -329,6 +387,7 @@ export class HarnessPrimitive extends BasePrimitive<AddHarnessOptions, Removable
           name?: string;
           modelProvider?: string;
           modelId?: string;
+          apiKey?: string;
           apiKeyArn?: string;
           container?: string;
           memory?: boolean;
@@ -395,7 +454,8 @@ export class HarnessPrimitive extends BasePrimitive<AddHarnessOptions, Removable
                 name: cliOptions.name,
                 modelProvider: provider,
                 modelId,
-                apiKeyArn: cliOptions.apiKeyArn,
+                apiKey: cliOptions.apiKey,
+                apiKeyCredentialArn: cliOptions.apiKeyArn,
                 containerUri: containerOption.containerUri,
                 dockerfilePath: containerOption.dockerfilePath,
                 skipMemory: cliOptions.memory === false,
