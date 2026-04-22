@@ -14,8 +14,6 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 {{/if}}
 
-const app = new BedrockAgentCoreApp();
-
 // Define a collection of MCP clients
 {{#if hasGateway}}
 const mcpClients = getAllGatewayMcpClients();
@@ -157,22 +155,24 @@ function getOrCreateAgent(): Agent {
 }
 {{/if}}
 
-app.invocationHandler = {
-  async *process(payload: { prompt?: string }, context: { sessionId?: string; userId?: string }) {
+const app = new BedrockAgentCoreApp({
+  invocationHandler: {
+    async *process(payload: { prompt?: string }, context: { sessionId?: string; userId?: string }) {
 {{#if hasMemory}}
-    const sessionId = context.sessionId ?? 'default-session';
-    const userId = context.userId ?? 'default-user';
-    const agent = getOrCreateAgent(sessionId, userId);
+      const sessionId = context.sessionId ?? 'default-session';
+      const userId = context.userId ?? 'default-user';
+      const agent = getOrCreateAgent(sessionId, userId);
 {{else}}
-    const agent = getOrCreateAgent();
+      const agent = getOrCreateAgent();
 {{/if}}
 
-    for await (const event of agent.stream(payload.prompt ?? '')) {
-      if (event.type === 'contentBlockDelta' && event.delta?.type === 'textDelta') {
-        yield { data: event.delta.text };
+      for await (const event of agent.stream(payload.prompt ?? '')) {
+        if (event.type === 'contentBlockDelta' && event.delta?.type === 'textDelta') {
+          yield { data: event.delta.text };
+        }
       }
-    }
+    },
   },
-};
+});
 
 app.run();
