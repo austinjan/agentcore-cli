@@ -467,11 +467,19 @@ export function useCreateFlow(cwd: string): CreateFlowState {
               logger.endStep('success');
               updateStep(stepIndex, { status: 'success' });
             } else {
-              logger.endStep('warn', 'Failed to set up Node environment');
-              updateStep(stepIndex, {
-                status: 'warn',
-                warn: 'Failed to set up Node environment. Run "npm install" manually to see the error.',
-              });
+              const firstLine = (result.error ?? '').split('\n').find(l => l.trim().length > 0) ?? '';
+              const shortReason = firstLine.replace(/^npm (error|warn) /i, '').slice(0, 160);
+              const warnMsg =
+                result.status === 'npm_not_found'
+                  ? 'npm not found on PATH. Install Node.js 20+ from https://nodejs.org/ and rerun `npm install` in the agent directory.'
+                  : `npm install failed${shortReason ? `: ${shortReason}` : ''}. Run \`npm install\` in ${agentDir} to see the full error.`;
+              if (result.error) {
+                for (const line of result.error.split('\n')) {
+                  if (line.trim().length > 0) logger.logSubStep(line);
+                }
+              }
+              logger.endStep('warn', warnMsg);
+              updateStep(stepIndex, { status: 'warn', warn: warnMsg });
             }
             stepIndex++;
           }
