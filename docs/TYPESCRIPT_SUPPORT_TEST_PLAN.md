@@ -33,6 +33,34 @@ ada credentials update --account 325335451438 --provider isengard --role Admin -
 
 ---
 
+## Code map (where to look when something breaks)
+
+Each numbered section below lists the files it exercises so fixes can be made quickly. This map is the full picture —
+bookmark it.
+
+| Concern                              | Primary source                                                                                        | Tests                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `create` validator (TS/Strands gate) | `src/cli/commands/create/validate.ts`                                                                 | `src/cli/commands/create/__tests__/validate.test.ts`                                 |
+| `add agent` validator                | `src/cli/commands/add/validate.ts`                                                                    | `src/cli/commands/add/__tests__/validate.test.ts`                                    |
+| `--language TypeScript` CLI help     | `src/cli/commands/create/command.tsx`                                                                 | —                                                                                    |
+| Language/runtime defaults            | `src/schema/constants.ts`                                                                             | `src/schema/__tests__/constants.test.ts`                                             |
+| Spec shape (entrypoint/runtimeVer)   | `src/cli/operations/agent/generate/schema-mapper.ts`                                                  | `src/cli/operations/agent/generate/__tests__/schema-mapper.test.ts`                  |
+| TS template assets                   | `src/assets/typescript/http/strands/**`                                                               | `src/assets/__tests__/assets.snapshot.test.ts`                                       |
+| TS container Dockerfile              | `src/assets/container/typescript/**`                                                                  | `src/assets/__tests__/assets.snapshot.test.ts`                                       |
+| Node setup (npm install on scaffold) | `src/cli/operations/node/setup.ts`                                                                    | `src/cli/operations/node/__tests__/setup.test.ts`                                    |
+| Create-flow wiring (TUI)             | `src/cli/tui/screens/create/useCreateFlow.ts`                                                         | `integ-tests/tui/create-typescript-strands.test.ts`                                  |
+| TUI language/framework filtering     | `src/cli/tui/screens/agent/types.ts`, `src/cli/tui/screens/generate/types.ts`, `GenerateWizardUI.tsx` | —                                                                                    |
+| Dev-server gate                      | `src/cli/operations/dev/config.ts`                                                                    | `src/cli/operations/dev/__tests__/config.test.ts`                                    |
+| Dev-server spawn (tsx watch)         | `src/cli/operations/dev/codezip-dev-server.ts`                                                        | `src/cli/operations/dev/__tests__/codezip-dev-server.test.ts`                        |
+| Packaging dispatcher (Node branch)   | `src/lib/packaging/index.ts`, `src/lib/packaging/node.ts`                                             | `src/lib/packaging/__tests__/node.test.ts`                                           |
+| Create integ (scaffold smoke)        | —                                                                                                     | `integ-tests/create-with-agent.test.ts`                                              |
+| Non-Strands rejection                | —                                                                                                     | `src/cli/commands/add/__tests__/add-agent.test.ts`, `add/__tests__/validate.test.ts` |
+
+Companion docs: `docs/TYPESCRIPT_SUPPORT_PROGRESS.md` (what was built, commit-by-commit) and
+`docs/TYPESCRIPT_SUPPORT_HANDOFF.md` (prose background + SDK surface notes).
+
+---
+
 ## 0 — Prerequisites
 
 - [ ] Node 20 or later installed (`node --version`).
@@ -82,6 +110,14 @@ agentcore create --name TsBadFw2 --language TypeScript --framework GoogleADK --m
 
 - [ ] Same behavior — clear rejection naming the framework.
 
+**Fix pointers if 2.1 / 2.2 fail:**
+
+- TS-is-rejected or wrong error text → `src/cli/commands/create/validate.ts` (the Strands-only gate). Keep it in
+  lockstep with `src/cli/commands/add/validate.ts`.
+- Dry-run preview shows wrong entrypoint / runtime → `src/cli/operations/agent/generate/schema-mapper.ts` (the
+  language-branch for `entrypoint` and `runtimeVersion`) and the defaults in `src/schema/constants.ts`.
+- Tests: `src/cli/commands/create/__tests__/validate.test.ts` and `src/cli/commands/add/__tests__/validate.test.ts`.
+
 ### 2.3 Python regression unaffected
 
 ```bash
@@ -130,6 +166,19 @@ Open `agentcore/agentcore.json` and confirm:
 - [ ] `.git/` exists at the project root.
 - [ ] `agentcore/cdk/node_modules/` exists.
 
+**Fix pointers if Section 3 fails:**
+
+- Missing or wrong-shaped TS template files → `src/assets/typescript/http/strands/base/*` (the Handlebars templates:
+  `main.ts`, `package.json`, `tsconfig.json`, `mcp_client/client.ts`, `model/load.ts`, `gitignore.template`). Run
+  `npm run test:update-snapshots` after intentional template edits.
+- `agentcore.json` shows `main.py` / `PYTHON_*` for a TS scaffold → `src/cli/operations/agent/generate/schema-mapper.ts`
+  (the language-branch should return `main.ts` / `NODE_22`) and `src/schema/constants.ts`
+  (`DEFAULT_ENTRYPOINT_BY_LANGUAGE`, `DEFAULT_RUNTIME_BY_LANGUAGE`, `DEFAULT_NODE_VERSION`).
+- `node_modules/` missing → `src/cli/operations/node/setup.ts` (the `npm install` shell-out; respects
+  `AGENTCORE_SKIP_INSTALL`). Also `src/cli/tui/screens/create/useCreateFlow.ts` for the wiring that calls it.
+- Create integ smoke covers this exact path: `integ-tests/create-with-agent.test.ts` (the
+  `describe('integration: create with TypeScript agent', ...)` block).
+
 ---
 
 ## 4 — Local dev server (CodeZip)
@@ -168,6 +217,17 @@ and save.
 
 Stop the dev server (Ctrl+C).
 
+**Fix pointers if Section 4 fails:**
+
+- "TypeScript is not yet supported" error from `agentcore dev` → stale Python-only guard in
+  `src/cli/operations/dev/config.ts` (`isDevSupported`). TS must pass through; downstream branches on entrypoint
+  extension.
+- Dev server spawns `uvicorn` instead of `tsx` for TS, or mangles the entrypoint to `main/ts.ts` → non-Python branch of
+  `src/cli/operations/dev/codezip-dev-server.ts` (spawn args). Entry file must be passed literally — do not apply
+  Python-style module-path rewriting.
+- Hot reload not triggering → `tsx watch` args in the same file. Covered by the TS spec in
+  `src/cli/operations/dev/__tests__/codezip-dev-server.test.ts`.
+
 ---
 
 ## 5 — Non-Strands rejection on `add agent`
@@ -188,6 +248,14 @@ agentcore add agent --name TsGoodAgent --language TypeScript --framework Strands
 - [ ] `agentcore/agentcore.json` now lists two TS runtimes.
 
 (Remove the extra agent if you want a clean state for deploy: `agentcore remove agent --name TsGoodAgent -y`.)
+
+**Fix pointers if Section 5 fails:**
+
+- Non-Strands TS accepted (should reject) → `src/cli/commands/add/validate.ts` (search for the
+  `TypeScript && framework !== 'Strands'` branch).
+- Strands TS rejected (should accept) → same file; also confirm the TUI filter in `src/cli/tui/screens/agent/types.ts`
+  and `src/cli/tui/screens/generate/types.ts`.
+- Tests: `src/cli/commands/add/__tests__/validate.test.ts` and `src/cli/commands/add/__tests__/add-agent.test.ts`.
 
 ---
 
@@ -227,6 +295,16 @@ AWS_PROFILE=deploy agentcore remove all -y
 ```
 
 - [ ] All resources removed cleanly. `agentcore status` reports no deployed resources.
+
+**Fix pointers if Section 6 fails:**
+
+- CDK synth errors about `runtimeVersion` → the vended CDK project forwards `runtimeVersion` generically. Check the L3
+  construct package `@aws/agentcore-cdk` (separate repo `aws/agentcore-l3-cdk-constructs`). No TS-specific code should
+  be needed there; if it hardcodes `PYTHON_*`, that's the bug.
+- CodeZip packaging fails for TS → `src/lib/packaging/index.ts` (dispatcher, `isNodeRuntime` branch) and
+  `src/lib/packaging/node.ts`. Tests: `src/lib/packaging/__tests__/node.test.ts`.
+- Deployed runtime fails to start → check CloudWatch logs; most likely the entrypoint or runtimeVersion is wrong in
+  `agentcore.json` (see Section 3 fix pointers).
 
 ---
 
@@ -293,6 +371,14 @@ AWS_PROFILE=deploy agentcore remove all -y
 ```
 
 - [ ] Clean teardown.
+
+**Fix pointers if Section 7 fails:**
+
+- Wrong Dockerfile (base image, user, entrypoint, ports) → `src/assets/container/typescript/Dockerfile`.
+- `.dockerignore` missing entries → `src/assets/container/typescript/dockerignore.template`.
+- Image over 1 GB → trim `dockerignore.template` or revisit multi-stage build in the Dockerfile.
+- Snapshot drift → run `npm run test:update-snapshots` after intentional edits; snapshot lives at
+  `src/assets/__tests__/__snapshots__/assets.snapshot.test.ts.snap`.
 
 ---
 
