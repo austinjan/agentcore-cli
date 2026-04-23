@@ -177,6 +177,13 @@ export function validateAddAgentOptions(options: AddAgentOptions): ValidationRes
       return { valid: false, error: `Invalid language: ${options.language}` };
     }
 
+    if (options.language === 'TypeScript') {
+      return {
+        valid: false,
+        error: 'MCP protocol is not yet supported for TypeScript. Use --protocol HTTP or --language Python.',
+      };
+    }
+
     if (isByoPath && !options.codeLocation) {
       return { valid: false, error: '--code-location is required for BYO path' };
     }

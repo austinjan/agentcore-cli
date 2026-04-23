@@ -121,6 +121,12 @@ export function validateCreateOptions(options: CreateOptions, cwd?: string): Val
       if (!langResult.success) {
         return { valid: false, error: `Invalid language: ${options.language}` };
       }
+      if (options.language === 'TypeScript') {
+        return {
+          valid: false,
+          error: 'MCP protocol is not yet supported for TypeScript. Use --protocol HTTP or --language Python.',
+        };
+      }
     }
     return { valid: true };
   }
