@@ -5,6 +5,7 @@ WORKDIR /app
 ENV NODE_ENV=production \
     DOCKER_CONTAINER=1
 
+RUN userdel -r node 2>/dev/null || true
 RUN useradd -m -u 1000 bedrock_agentcore
 
 COPY package.json package-lock.json* ./
