@@ -116,6 +116,14 @@ export function validateAddAgentOptions(options: AddAgentOptions): ValidationRes
   }
   options.protocol = protocolResult.data;
 
+  // TypeScript only supports HTTP today; MCP and A2A templates have not been authored yet
+  if (protocolResult.data !== 'HTTP' && options.language === 'TypeScript') {
+    return {
+      valid: false,
+      error: `${protocolResult.data} protocol is not yet supported for TypeScript. Use --protocol HTTP or --language Python.`,
+    };
+  }
+
   const isByoPath = options.type === 'byo';
   const isImportPath = options.type === 'import';
 
@@ -175,13 +183,6 @@ export function validateAddAgentOptions(options: AddAgentOptions): ValidationRes
     const langResult = TargetLanguageSchema.safeParse(options.language);
     if (!langResult.success) {
       return { valid: false, error: `Invalid language: ${options.language}` };
-    }
-
-    if (options.language === 'TypeScript') {
-      return {
-        valid: false,
-        error: 'MCP protocol is not yet supported for TypeScript. Use --protocol HTTP or --language Python.',
-      };
     }
 
     if (isByoPath && !options.codeLocation) {
