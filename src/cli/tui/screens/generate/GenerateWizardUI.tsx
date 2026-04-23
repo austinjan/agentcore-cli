@@ -77,7 +77,6 @@ export function GenerateWizardUI({
         return LANGUAGE_OPTIONS.map(o => ({
           id: o.id,
           title: o.title,
-          disabled: 'disabled' in o ? o.disabled : undefined,
         }));
       case 'buildType':
         return BUILD_TYPE_OPTIONS.map(o => ({ id: o.id, title: o.title, description: o.description }));
