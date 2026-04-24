@@ -167,8 +167,12 @@ const app = new BedrockAgentCoreApp({
 {{/if}}
 
       for await (const event of agent.stream(payload.prompt ?? '')) {
-        if (event.type === 'contentBlockDelta' && event.delta?.type === 'textDelta') {
-          yield { data: event.delta.text };
+        if (
+          event.type === 'modelStreamUpdateEvent' &&
+          event.event?.type === 'modelContentBlockDeltaEvent' &&
+          event.event.delta?.type === 'textDelta'
+        ) {
+          yield { data: event.event.delta.text };
         }
       }
     },
