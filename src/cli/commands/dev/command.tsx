@@ -278,9 +278,7 @@ export const registerDev = (program: Command) => {
 
         const supportedAgents = getDevSupportedAgents(project);
         if (supportedAgents.length === 0) {
-          render(
-            <FatalError message="No agents support dev mode. Dev mode requires Python agents with an entrypoint." />
-          );
+          render(<FatalError message="No agents support dev mode. Dev mode requires an agent with an entrypoint." />);
           process.exit(1);
         }
 
