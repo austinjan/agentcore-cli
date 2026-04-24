@@ -296,7 +296,7 @@ export async function invokeAgentRuntimeStreaming(options: InvokeAgentRuntimeOpt
     agentRuntimeArn: options.runtimeArn,
     payload: new TextEncoder().encode(JSON.stringify({ prompt: options.payload })),
     contentType: 'application/json',
-    accept: 'application/json',
+    accept: 'application/json, text/event-stream',
     runtimeSessionId: options.sessionId,
     runtimeUserId: options.userId ?? DEFAULT_RUNTIME_USER_ID,
   });
@@ -391,7 +391,7 @@ export async function invokeAgentRuntime(options: InvokeAgentRuntimeOptions): Pr
     agentRuntimeArn: options.runtimeArn,
     payload: new TextEncoder().encode(JSON.stringify({ prompt: options.payload })),
     contentType: 'application/json',
-    accept: 'application/json',
+    accept: 'application/json, text/event-stream',
     runtimeSessionId: options.sessionId,
     runtimeUserId: options.userId ?? DEFAULT_RUNTIME_USER_ID,
   });
