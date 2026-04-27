@@ -32,6 +32,7 @@ import {
   PROTOCOL_OPTIONS,
   STEP_LABELS,
   getModelProviderOptionsForSdk,
+  getProtocolOptionsForLanguage,
   getSDKOptionsForProtocol,
 } from './types';
 import type { useGenerateWizard } from './useGenerateWizard';
@@ -81,11 +82,10 @@ export function GenerateWizardUI({
       case 'buildType':
         return BUILD_TYPE_OPTIONS.map(o => ({ id: o.id, title: o.title, description: o.description }));
       case 'protocol':
-        return PROTOCOL_OPTIONS.map(o => ({
+        return getProtocolOptionsForLanguage(wizard.config.language).map(o => ({
           id: o.id,
           title: o.title,
           description: o.description,
-          disabled: wizard.config.language === 'TypeScript' && o.id !== 'HTTP',
         }));
       case 'sdk':
         return getSDKOptionsForProtocol(wizard.config.protocol, wizard.config.language).map(o => ({

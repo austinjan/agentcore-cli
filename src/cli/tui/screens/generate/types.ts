@@ -118,6 +118,17 @@ export const PROTOCOL_OPTIONS = [
   { id: 'A2A', title: 'A2A', description: 'Agent-to-Agent protocol' },
 ] as const;
 
+/**
+ * Get protocol options filtered by target language.
+ * TypeScript only supports HTTP.
+ */
+export function getProtocolOptionsForLanguage(language?: TargetLanguage) {
+  if (language === 'TypeScript') {
+    return PROTOCOL_OPTIONS.filter(option => option.id === 'HTTP');
+  }
+  return [...PROTOCOL_OPTIONS];
+}
+
 export const SDK_OPTIONS = [
   { id: 'Strands', title: 'Strands Agents SDK', description: 'AWS native agent framework' },
   { id: 'LangChain_LangGraph', title: 'LangChain + LangGraph', description: 'Popular open-source frameworks' },

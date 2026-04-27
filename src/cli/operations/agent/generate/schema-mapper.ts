@@ -277,12 +277,15 @@ export async function mapGenerateConfigToRenderConfig(
     sdkFramework: config.sdk,
     targetLanguage: config.language,
     modelProvider: config.modelProvider,
-    hasMemory: isMcp ? false : config.memory !== 'none',
+    hasMemory: isMcp || config.language === 'TypeScript' ? false : config.memory !== 'none',
     hasIdentity: isMcp ? false : identityProviders.length > 0,
     hasGateway: gatewayProviders.length > 0,
     isVpc: config.networkMode === 'VPC',
     buildType: config.buildType,
-    memoryProviders: isMcp ? [] : mapMemoryOptionToMemoryProviders(config.memory, config.projectName),
+    memoryProviders:
+      isMcp || config.language === 'TypeScript'
+        ? []
+        : mapMemoryOptionToMemoryProviders(config.memory, config.projectName),
     identityProviders: isMcp ? [] : identityProviders,
     gatewayProviders,
     gatewayAuthTypes: [...new Set(gatewayProviders.map(g => g.authType))],

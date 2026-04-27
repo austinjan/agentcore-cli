@@ -6,9 +6,6 @@ import { getAllGatewayMcpClients } from './mcp_client/client.js';
 {{else}}
 import { getStreamableHttpMcpClient } from './mcp_client/client.js';
 {{/if}}
-{{#if hasMemory}}
-import { getMemorySessionManager } from './memory/session.js';
-{{/if}}
 {{#if sessionStorageMountPath}}
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
@@ -123,24 +120,6 @@ You have persistent storage at {{sessionStorageMountPath}}. Use file tools to re
 {{/if}}
 `;
 
-{{#if hasMemory}}
-const agentCache = new Map<string, Agent>();
-
-function getOrCreateAgent(sessionId: string, userId: string): Agent {
-  const key = `${sessionId}/${userId}`;
-  let agent = agentCache.get(key);
-  if (!agent) {
-    agent = new Agent({
-      model: loadModel(),
-      sessionManager: getMemorySessionManager(sessionId, userId),
-      systemPrompt: SYSTEM_PROMPT,
-      tools,
-    });
-    agentCache.set(key, agent);
-  }
-  return agent;
-}
-{{else}}
 let cachedAgent: Agent | null = null;
 
 function getOrCreateAgent(): Agent {
@@ -153,18 +132,11 @@ function getOrCreateAgent(): Agent {
   }
   return cachedAgent;
 }
-{{/if}}
 
 const app = new BedrockAgentCoreApp({
   invocationHandler: {
     async *process(payload: { prompt?: string }, context: { sessionId?: string; userId?: string }) {
-{{#if hasMemory}}
-      const sessionId = context.sessionId ?? 'default-session';
-      const userId = context.userId ?? 'default-user';
-      const agent = getOrCreateAgent(sessionId, userId);
-{{else}}
       const agent = getOrCreateAgent();
-{{/if}}
 
       for await (const event of agent.stream(payload.prompt ?? '')) {
         if (
