@@ -77,6 +77,7 @@ export function DeployScreen({
     numStacksWithChanges,
     deployNotes,
     postDeployWarnings,
+    postDeployHasError,
     isDiffLoading,
     requestDiff,
     hasError,
@@ -330,7 +331,13 @@ export function DeployScreen({
       {/* Show deploy status when deploying or complete */}
       {showDeployStatus && (
         <Box marginTop={1}>
-          <DeployStatus messages={deployMessages} isComplete={isComplete} hasError={hasError} />
+          <DeployStatus
+            messages={deployMessages}
+            isComplete={isComplete}
+            hasError={hasError}
+            hasPostDeployError={postDeployHasError}
+            postDeployWarnings={postDeployWarnings}
+          />
         </Box>
       )}
 

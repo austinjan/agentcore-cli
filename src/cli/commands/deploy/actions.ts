@@ -453,6 +453,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
     // Post-deploy: Enable online eval configs that have enableOnCreate (CFN deploys them as DISABLED).
     // Only enable configs that are newly deployed — skip configs that already existed before this
     // deploy run, so we don't re-enable configs a customer intentionally disabled.
+    const postDeployWarnings: string[] = [];
     const onlineEvalSpecs = context.projectSpec.onlineEvalConfigs ?? [];
     const deployedOnlineEvalConfigs = deployedState.targets?.[target.name]?.resources?.onlineEvalConfigs ?? {};
     const previouslyDeployedOnlineEvals = existingState?.targets?.[target.name]?.resources?.onlineEvalConfigs ?? {};
@@ -468,6 +469,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
         const errors = enableResult.results.filter(r => r.status === 'error');
         const errorMessages = errors.map(err => `"${err.configName}": ${err.error}`).join('; ');
         logger.log(`Online eval enable warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `Online eval "${err.configName}": ${err.error}`));
       }
     }
 
@@ -485,11 +487,15 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
         const errors = deleteResult.results.filter(r => r.status === 'error');
         const errorMessages = errors.map(err => `"${err.testName}": ${err.error}`).join('; ');
         logger.log(`AB test orphan cleanup warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `AB test "${err.testName}": ${err.error}`));
       }
 
       // Surface warnings (e.g., "AB test was stopped before deletion")
       for (const r of deleteResult.results) {
-        if (r.warning) logger.log(r.warning, 'warn');
+        if (r.warning) {
+          logger.log(r.warning, 'warn');
+          postDeployWarnings.push(r.warning);
+        }
       }
 
       // Update deployed state to remove deleted AB tests
@@ -532,7 +538,8 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       if (httpGatewayResult.hasErrors) {
         const errors = httpGatewayResult.results.filter(r => r.status === 'error');
         const errorMessages = errors.map(err => `"${err.gatewayName}": ${err.error}`).join('; ');
-        throw new Error(`HTTP gateway setup failed: ${errorMessages}`);
+        logger.log(`HTTP gateway setup warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `HTTP gateway "${err.gatewayName}": ${err.error}`));
       }
     }
 
@@ -563,7 +570,8 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       if (configBundleResult.hasErrors) {
         const errors = configBundleResult.results.filter(r => r.status === 'error');
         const errorMessages = errors.map(err => `"${err.bundleName}": ${err.error}`).join('; ');
-        throw new Error(`Config bundle setup failed: ${errorMessages}`);
+        logger.log(`Config bundle setup warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `Config bundle "${err.bundleName}": ${err.error}`));
       }
     }
 
@@ -592,7 +600,8 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       if (abTestResult.hasErrors) {
         const errors = abTestResult.results.filter(r => r.status === 'error');
         const errorMessages = errors.map(err => `"${err.testName}": ${err.error}`).join('; ');
-        throw new Error(`AB test setup failed: ${errorMessages}`);
+        logger.log(`AB test setup warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `AB test "${err.testName}": ${err.error}`));
       }
     }
 
@@ -629,6 +638,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       logPath: logger.getRelativeLogPath(),
       nextSteps,
       notes,
+      postDeployWarnings: postDeployWarnings.length > 0 ? postDeployWarnings : undefined,
     };
   } catch (err: unknown) {
     logger.log(getErrorMessage(err), 'error');

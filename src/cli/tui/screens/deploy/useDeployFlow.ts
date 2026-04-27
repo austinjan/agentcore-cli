@@ -92,6 +92,8 @@ interface DeployFlowState {
   deployNotes: string[];
   /** Warnings from post-deploy steps (config bundles, AB tests) */
   postDeployWarnings: string[];
+  /** True if any post-deploy sub-resource operation had errors */
+  postDeployHasError: boolean;
   /** Whether an on-demand diff is currently running */
   isDiffLoading: boolean;
   /** Request an on-demand diff (lazy: runs once, caches result) */
@@ -139,6 +141,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
   const [isDiffLoading, setIsDiffLoading] = useState(false);
   const [deployNotes, setDeployNotes] = useState<string[]>([]);
   const [postDeployWarnings, setPostDeployWarnings] = useState<string[]>([]);
+  const [postDeployHasError, setPostDeployHasError] = useState(false);
   const isDiffRunningRef = useRef(false);
   const [deployOutput, setDeployOutput] = useState<string | null>(null);
   const [deployMessages, setDeployMessages] = useState<DeployMessage[]>([]);
@@ -333,6 +336,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
           for (const err of errors) {
             logger.log(`Online eval enable "${err.configName}" error: ${err.error}`, 'warn');
           }
+          setPostDeployHasError(true);
           setPostDeployWarnings(prev => [
             ...prev,
             ...errors.map(err => `Online eval "${err.configName}": ${err.error}`),
@@ -341,6 +345,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         logger.log(`Online eval enable failed: ${message}`, 'warn');
+        setPostDeployHasError(true);
         setPostDeployWarnings(prev => [...prev, `Online eval enable failed: ${message}`]);
       }
     }
@@ -373,6 +378,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
           for (const err of errors) {
             logger.log(`Config bundle "${err.bundleName}" setup error: ${err.error}`, 'warn');
           }
+          setPostDeployHasError(true);
           setPostDeployWarnings(prev => [
             ...prev,
             ...errors.map(err => `Config bundle "${err.bundleName}": ${err.error}`),
@@ -381,6 +387,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         logger.log(`Config bundle setup failed: ${message}`, 'warn');
+        setPostDeployHasError(true);
         setPostDeployWarnings(prev => [...prev, `Config bundle setup failed: ${message}`]);
       }
     }
@@ -401,6 +408,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
           for (const err of errors) {
             logger.log(`AB test delete "${err.testName}" error: ${err.error}`, 'warn');
           }
+          setPostDeployHasError(true);
           setPostDeployWarnings(prev => [...prev, ...errors.map(err => `AB test "${err.testName}": ${err.error}`)]);
         }
 
@@ -427,6 +435,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         logger.log(`AB test orphan cleanup failed: ${message}`, 'warn');
+        setPostDeployHasError(true);
         setPostDeployWarnings(prev => [...prev, `AB test orphan cleanup failed: ${message}`]);
       }
     }
@@ -459,6 +468,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
           for (const err of errors) {
             logger.log(`HTTP gateway "${err.gatewayName}" setup error: ${err.error}`, 'warn');
           }
+          setPostDeployHasError(true);
           setPostDeployWarnings(prev => [
             ...prev,
             ...errors.map(err => `HTTP gateway "${err.gatewayName}": ${err.error}`),
@@ -467,6 +477,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         logger.log(`HTTP gateway setup failed: ${message}`, 'warn');
+        setPostDeployHasError(true);
         setPostDeployWarnings(prev => [...prev, `HTTP gateway setup failed: ${message}`]);
       }
     }
@@ -498,11 +509,13 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
           for (const err of errors) {
             logger.log(`AB test "${err.testName}" setup error: ${err.error}`, 'warn');
           }
+          setPostDeployHasError(true);
           setPostDeployWarnings(prev => [...prev, ...errors.map(err => `AB test "${err.testName}": ${err.error}`)]);
         }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         logger.log(`AB test setup failed: ${message}`, 'warn');
+        setPostDeployHasError(true);
         setPostDeployWarnings(prev => [...prev, `AB test setup failed: ${message}`]);
       }
     }
@@ -844,6 +857,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
     numStacksWithChanges,
     deployNotes,
     postDeployWarnings,
+    postDeployHasError,
     isDiffLoading,
     requestDiff,
     stackOutputs,

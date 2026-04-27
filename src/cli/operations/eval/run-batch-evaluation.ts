@@ -74,7 +74,7 @@ export interface RunBatchEvaluationCommandResult {
 // ============================================================================
 
 const DEFAULT_POLL_INTERVAL_MS = 10_000;
-const TERMINAL_STATUSES = new Set(['COMPLETED', 'FAILED', 'STOPPED', 'CANCELLED']);
+const TERMINAL_STATUSES = new Set(['COMPLETED', 'COMPLETED_WITH_ERRORS', 'FAILED', 'STOPPED', 'CANCELLED']);
 
 // ============================================================================
 // Implementation
