@@ -8,6 +8,7 @@ import {
   listConfigurationBundles,
 } from '../../../../cli/aws/agentcore-config-bundles';
 import { ConfigIO } from '../../../../lib';
+import { getBundleNameVariants } from '../../../operations/config-bundle/bundle-name-variants';
 import { useEffect, useRef, useState } from 'react';
 
 export interface BundleWithMeta {
@@ -118,7 +119,8 @@ export function useConfigBundleHub(): ConfigBundleHubState {
               // Stale deployed-state ID — try to resolve via list API
               try {
                 const allBundles = await listConfigurationBundles({ region: resolvedRegion, maxResults: 100 });
-                const match = allBundles.bundles.find(b => b.bundleName === bundleSpec.name);
+                const nameVariants = getBundleNameVariants(bundleSpec.name, projectSpec.name);
+                const match = allBundles.bundles.find(b => nameVariants.includes(b.bundleName));
                 if (match) {
                   effectiveBundleId = match.bundleId;
                   effectiveBundleArn = match.bundleArn;

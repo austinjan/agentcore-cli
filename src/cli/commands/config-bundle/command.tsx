@@ -1,4 +1,8 @@
-import { getConfigurationBundleVersion, listConfigurationBundleVersions } from '../../aws/agentcore-config-bundles';
+import {
+  getConfigurationBundleVersion,
+  listConfigurationBundleVersions,
+  updateConfigurationBundle,
+} from '../../aws/agentcore-config-bundles';
 import type {
   ConfigurationBundleVersionSummary,
   ListConfigurationBundleVersionsFilter,
@@ -253,6 +257,91 @@ export const registerConfigBundle = (program: Command) => {
         process.exit(1);
       }
     });
+
+  // --- create-branch ---
+  cmd
+    .command('create-branch')
+    .description('Create a new branch on an existing configuration bundle')
+    .requiredOption('--bundle <name>', 'Bundle name as defined in agentcore.json (e.g. "MyBundle")')
+    .requiredOption('--branch <name>', 'Name for the new branch')
+    .option('--from <versionId>', 'Parent version ID to branch from (defaults to latest version)')
+    .option('--commit-message <text>', 'Commit message for the branch point')
+    .option('--region <region>', 'AWS region override')
+    .option('--json', 'Output as JSON')
+    .action(
+      async (cliOptions: {
+        bundle: string;
+        branch: string;
+        from?: string;
+        commitMessage?: string;
+        region?: string;
+        json?: boolean;
+      }) => {
+        requireProject();
+        try {
+          const region = cliOptions.region ?? (await resolveRegion());
+          const resolved = await resolveBundleByName(cliOptions.bundle, region);
+
+          // Determine parent version
+          let parentVersionId = cliOptions.from;
+          if (!parentVersionId) {
+            const versions = await listConfigurationBundleVersions({
+              region,
+              bundleId: resolved.bundleId,
+              maxResults: 50,
+            });
+            if (versions.versions.length === 0) {
+              throw new Error(`No versions found for bundle "${cliOptions.bundle}".`);
+            }
+            // Sort descending by creation time to get the latest version
+            const sorted = [...versions.versions].sort(
+              (a, b) => new Date(b.versionCreatedAt).getTime() - new Date(a.versionCreatedAt).getTime()
+            );
+            parentVersionId = sorted[0]!.versionId;
+          }
+
+          // Get the parent version's components to carry forward
+          const parentVersion = await getConfigurationBundleVersion({
+            region,
+            bundleId: resolved.bundleId,
+            versionId: parentVersionId,
+          });
+
+          const result = await updateConfigurationBundle({
+            region,
+            bundleId: resolved.bundleId,
+            components: parentVersion.components,
+            parentVersionIds: [parentVersionId],
+            branchName: cliOptions.branch,
+            commitMessage: cliOptions.commitMessage ?? `Create branch ${cliOptions.branch}`,
+          });
+
+          if (cliOptions.json) {
+            console.log(JSON.stringify(result, null, 2));
+            return;
+          }
+
+          render(
+            <Box flexDirection="column">
+              <Text bold color="green">
+                Branch &quot;{cliOptions.branch}&quot; created on bundle &quot;{cliOptions.bundle}&quot;
+              </Text>
+              <Text>
+                Version: <Text color="green">{result.versionId}</Text>
+              </Text>
+              <Text dimColor>Parent: {parentVersionId}</Text>
+            </Box>
+          );
+        } catch (error) {
+          if (cliOptions.json) {
+            console.log(JSON.stringify({ success: false, error: getErrorMessage(error) }));
+          } else {
+            render(<Text color="red">Error: {getErrorMessage(error)}</Text>);
+          }
+          process.exit(1);
+        }
+      }
+    );
 
   return cmd;
 };

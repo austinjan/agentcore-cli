@@ -57,7 +57,7 @@ describe('setupConfigBundles', () => {
       expect(mockCreateConfigurationBundle).toHaveBeenCalledWith(
         expect.objectContaining({
           region: REGION,
-          bundleName: 'TestProject_MyBundle',
+          bundleName: 'TestProjectMyBundle',
           components: { foo: { type: 'inline', value: 'bar' } },
           commitMessage: 'Create MyBundle',
         })
@@ -350,7 +350,7 @@ describe('setupConfigBundles', () => {
       });
 
       mockListConfigurationBundles.mockResolvedValue({
-        bundles: [{ bundleId: 'b-found', bundleName: 'TestProject_MyBundle' }],
+        bundles: [{ bundleId: 'b-found', bundleName: 'TestProjectMyBundle' }],
       });
 
       mockListConfigurationBundleVersions.mockResolvedValue({

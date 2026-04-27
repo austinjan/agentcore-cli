@@ -6,6 +6,7 @@
  */
 import { ConfigIO } from '../../../lib';
 import { listConfigurationBundleVersions, listConfigurationBundles } from '../../aws/agentcore-config-bundles';
+import { getBundleNameVariants } from './bundle-name-variants';
 
 export interface ResolvedBundle {
   bundleId: string;
@@ -60,11 +61,15 @@ export async function resolveBundleByName(
     // Project spec may not be available
   }
 
-  const result = await listConfigurationBundles({ region, maxResults: 100 });
-  const prefixedName = projectName ? `${projectName}${bundleName}` : undefined;
-  const match = result.bundles.find(
-    b => b.bundleName === bundleName || (prefixedName && b.bundleName === prefixedName)
-  );
+  const nameVariants = getBundleNameVariants(bundleName, projectName);
+  let nextToken: string | undefined;
+  let match: { bundleId: string; bundleArn: string; bundleName: string } | undefined;
+  do {
+    const page = await listConfigurationBundles({ region, maxResults: 100, nextToken });
+    match = page.bundles.find(b => nameVariants.includes(b.bundleName));
+    nextToken = page.nextToken;
+  } while (!match && nextToken);
+
   if (!match) {
     throw new Error(`Configuration bundle "${bundleName}" not found. Has it been deployed?`);
   }
