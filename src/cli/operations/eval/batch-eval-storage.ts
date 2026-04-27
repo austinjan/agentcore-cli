@@ -8,7 +8,7 @@ const BATCH_EVAL_RESULTS_DIR = 'batch-eval-results';
 
 export interface BatchEvalRunRecord {
   name: string;
-  batchEvaluateId: string;
+  batchEvaluationId: string;
   status: string;
   startedAt?: string;
   completedAt?: string;
@@ -29,12 +29,12 @@ export function saveBatchEvalRun(result: RunBatchEvaluationCommandResult): strin
   const dir = getResultsDir();
   mkdirSync(dir, { recursive: true });
 
-  const id = result.batchEvaluateId ?? 'unknown';
+  const id = result.batchEvaluationId ?? 'unknown';
   const filePath = join(dir, `${id}.json`);
 
   const record: BatchEvalRunRecord = {
     name: result.name ?? 'unknown',
-    batchEvaluateId: id,
+    batchEvaluationId: id,
     status: result.status ?? 'unknown',
     startedAt: result.startedAt,
     completedAt: result.completedAt,
@@ -47,13 +47,13 @@ export function saveBatchEvalRun(result: RunBatchEvaluationCommandResult): strin
   return filePath;
 }
 
-export function loadBatchEvalRun(batchEvaluateId: string): BatchEvalRunRecord {
+export function loadBatchEvalRun(batchEvaluationId: string): BatchEvalRunRecord {
   const dir = getResultsDir();
-  const jsonName = batchEvaluateId.endsWith('.json') ? batchEvaluateId : `${batchEvaluateId}.json`;
+  const jsonName = batchEvaluationId.endsWith('.json') ? batchEvaluationId : `${batchEvaluationId}.json`;
   const filePath = join(dir, jsonName);
 
   if (!existsSync(filePath)) {
-    throw new Error(`Batch evaluation run "${batchEvaluateId}" not found at ${filePath}`);
+    throw new Error(`Batch evaluation run "${batchEvaluationId}" not found at ${filePath}`);
   }
 
   return JSON.parse(readFileSync(filePath, 'utf-8')) as BatchEvalRunRecord;

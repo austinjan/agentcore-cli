@@ -428,11 +428,6 @@ function ResultsView({ result, config, filePath, onRunAnother, onExit }: Results
 
           {sysResult && (
             <Box marginTop={1} flexDirection="column">
-              {sysResult.explanation?.trim() && (
-                <Text>
-                  <Text bold>What changed:</Text> {sysResult.explanation}
-                </Text>
-              )}
               {sysResult.recommendedSystemPrompt && (
                 <Box marginTop={1} flexDirection="column">
                   <Text bold color="cyan">
@@ -454,7 +449,6 @@ function ResultsView({ result, config, filePath, onRunAnother, onExit }: Results
               {toolResult.tools.map(tool => (
                 <Box key={tool.toolName} marginTop={1} marginLeft={2} flexDirection="column">
                   <Text bold>{tool.toolName}</Text>
-                  {tool.explanation?.trim() && <Text dimColor>Explanation: {tool.explanation}</Text>}
                   <Text>{tool.recommendedToolDescription}</Text>
                 </Box>
               ))}

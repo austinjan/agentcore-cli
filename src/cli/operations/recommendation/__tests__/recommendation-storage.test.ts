@@ -27,7 +27,6 @@ function makeResult(overrides: Partial<RunRecommendationCommandResult> = {}): Ru
     result: {
       systemPromptRecommendationResult: {
         recommendedSystemPrompt: 'You are an expert booking assistant.',
-        explanation: 'Made prompt more specific.',
       },
     },
     ...overrides,
@@ -72,7 +71,9 @@ describe('recommendation-storage', () => {
       expect(loaded.type).toBe('SYSTEM_PROMPT_RECOMMENDATION');
       expect(loaded.agent).toBe('booking-agent');
       expect(loaded.evaluators).toEqual(['Builtin.Helpfulness']);
-      expect(loaded.result?.systemPromptRecommendationResult?.explanation).toBe('Made prompt more specific.');
+      expect(loaded.result?.systemPromptRecommendationResult?.recommendedSystemPrompt).toBe(
+        'You are an expert booking assistant.'
+      );
     });
   });
 

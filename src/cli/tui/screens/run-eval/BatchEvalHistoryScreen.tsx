@@ -103,7 +103,7 @@ function BatchEvalListView({
             }
 
             return (
-              <Text key={rec.batchEvaluateId} wrap="truncate-end">
+              <Text key={rec.batchEvaluationId} wrap="truncate-end">
                 <Text color={selected ? 'cyan' : undefined}>{selected ? '>' : ' '} </Text>
                 <Text dimColor>{date.padEnd(16)}</Text>
                 <Text color={statusColor(rec.status)}>{rec.status.padEnd(12)}</Text>
@@ -155,7 +155,7 @@ function BatchEvalDetailView({ record, onBack }: { record: BatchEvalRunRecord; o
     <Panel fullWidth>
       <Box flexDirection="column">
         <Text>
-          <Text bold>ID:</Text> {record.batchEvaluateId}
+          <Text bold>ID:</Text> {record.batchEvaluationId}
         </Text>
         <Text>
           <Text bold>Name:</Text> {record.name}
@@ -176,11 +176,11 @@ function BatchEvalDetailView({ record, onBack }: { record: BatchEvalRunRecord; o
           </Text>
         )}
 
-        {evalRes?.totalSessions != null && (
+        {evalRes?.totalNumberOfSessions != null && (
           <Text>
-            <Text bold>Sessions:</Text> {evalRes.totalSessions} total
-            {evalRes.sessionsCompleted != null && <Text>, {evalRes.sessionsCompleted} completed</Text>}
-            {evalRes.sessionsFailed ? <Text color="red">, {evalRes.sessionsFailed} failed</Text> : null}
+            <Text bold>Sessions:</Text> {evalRes.totalNumberOfSessions} total
+            {evalRes.numberOfSessionsCompleted != null && <Text>, {evalRes.numberOfSessionsCompleted} completed</Text>}
+            {evalRes.numberOfSessionsFailed ? <Text color="red">, {evalRes.numberOfSessionsFailed} failed</Text> : null}
           </Text>
         )}
 

@@ -110,7 +110,6 @@ export interface RecommendationResultConfigurationBundle {
 
 export interface SystemPromptRecommendationResult {
   recommendedSystemPrompt?: string;
-  explanation?: string;
   configurationBundle?: RecommendationResultConfigurationBundle;
   errorCode?: string;
   errorMessage?: string;
@@ -119,7 +118,6 @@ export interface SystemPromptRecommendationResult {
 export interface ToolDescriptionRecommendationToolResult {
   toolName: string;
   recommendedToolDescription: string;
-  explanation: string;
 }
 
 export interface ToolDescriptionRecommendationResult {

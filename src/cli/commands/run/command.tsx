@@ -440,9 +440,6 @@ export const registerRun = (program: Command) => {
               const toolResult = result.result.toolDescriptionRecommendationResult;
 
               if (sysResult) {
-                if (sysResult.explanation?.trim()) {
-                  console.log(`\nWhat changed: ${sysResult.explanation}`);
-                }
                 if (sysResult.recommendedSystemPrompt) {
                   console.log('\n+++ Recommended System Prompt +++');
                   console.log(sysResult.recommendedSystemPrompt);
@@ -450,9 +447,6 @@ export const registerRun = (program: Command) => {
               } else if (toolResult?.tools) {
                 for (const tool of toolResult.tools) {
                   console.log(`\nTool: ${tool.toolName}`);
-                  if (tool.explanation?.trim()) {
-                    console.log(`Explanation: ${tool.explanation}`);
-                  }
                   console.log(`Recommended: ${tool.recommendedToolDescription}`);
                 }
               }
@@ -499,17 +493,17 @@ export const registerRun = (program: Command) => {
 };
 
 function formatBatchEvalOutput(result: RunBatchEvaluationCommandResult): void {
-  console.log(`\nBatch Evaluation: ${result.name ?? result.batchEvaluateId}`);
-  console.log(`ID: ${result.batchEvaluateId}`);
+  console.log(`\nBatch Evaluation: ${result.name ?? result.batchEvaluationId}`);
+  console.log(`ID: ${result.batchEvaluationId}`);
   console.log(`Status: ${result.status}`);
 
   // Show session stats from API if available
   const evalResults = result.evaluationResults;
   if (evalResults) {
     const parts: string[] = [];
-    if (evalResults.totalSessions != null) parts.push(`${evalResults.totalSessions} sessions`);
-    if (evalResults.sessionsCompleted != null) parts.push(`${evalResults.sessionsCompleted} completed`);
-    if (evalResults.sessionsFailed) parts.push(`${evalResults.sessionsFailed} failed`);
+    if (evalResults.totalNumberOfSessions != null) parts.push(`${evalResults.totalNumberOfSessions} sessions`);
+    if (evalResults.numberOfSessionsCompleted != null) parts.push(`${evalResults.numberOfSessionsCompleted} completed`);
+    if (evalResults.numberOfSessionsFailed) parts.push(`${evalResults.numberOfSessionsFailed} failed`);
     if (parts.length > 0) console.log(`Sessions: ${parts.join(', ')}`);
   }
 

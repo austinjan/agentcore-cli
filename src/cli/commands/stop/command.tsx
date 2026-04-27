@@ -22,14 +22,14 @@ export const registerStop = (program: Command) => {
 
         const result = await stopBatchEvaluation({
           region,
-          batchEvaluateId: cliOptions.id,
+          batchEvaluationId: cliOptions.id,
         });
 
         if (cliOptions.json) {
           console.log(JSON.stringify({ success: true, ...result }));
         } else {
           console.log(`\nBatch evaluation stopped successfully`);
-          console.log(`ID: ${result.batchEvaluateId}`);
+          console.log(`ID: ${result.batchEvaluationId}`);
           console.log(`Status: ${result.status}\n`);
         }
 

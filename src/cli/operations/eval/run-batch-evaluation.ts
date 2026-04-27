@@ -1,7 +1,7 @@
 /**
  * Orchestrates running a BatchEvaluation:
  *   1. Resolve agent from deployed state (for serviceNames / logGroupNames)
- *   2. Build evaluationConfig + sessionSource
+ *   2. Build evaluators + dataSourceConfig
  *   3. Call StartBatchEvaluation
  *   4. Poll GetBatchEvaluation until terminal status
  *   5. Return results
@@ -10,7 +10,7 @@ import { ConfigIO } from '../../../lib';
 import type { DeployedState } from '../../../schema';
 import { generateClientToken, getBatchEvaluation, startBatchEvaluation } from '../../aws/agentcore-batch-evaluation';
 import type {
-  CloudWatchSessionInput,
+  CloudWatchFilterConfig,
   EvaluationResults,
   GetBatchEvaluationResult,
   SessionMetadataEntry,
@@ -45,7 +45,7 @@ export interface RunBatchEvaluationOptions {
   /** Progress callback */
   onProgress?: (status: string, message: string) => void;
   /** Called once the batch evaluation has been created, with ID and region for cancellation */
-  onStarted?: (info: { batchEvaluateId: string; region: string }) => void;
+  onStarted?: (info: { batchEvaluationId: string; region: string }) => void;
 }
 
 export interface BatchEvaluationResult {
@@ -59,7 +59,7 @@ export interface BatchEvaluationResult {
 export interface RunBatchEvaluationCommandResult {
   success: boolean;
   error?: string;
-  batchEvaluateId?: string;
+  batchEvaluationId?: string;
   name?: string;
   status?: string;
   results: BatchEvaluationResult[];
@@ -153,22 +153,22 @@ export async function runBatchEvaluationCommand(
 
     onProgress?.('starting', `Starting batch evaluation "${evalName}"...`);
 
-    // Build optional session input for CloudWatch filtering
-    // API requires either sessionIds OR sessionFilterConfig, not both — sessionIds takes precedence
+    // Build optional filter config for CloudWatch filtering
+    // API requires either sessionIds OR timeRange, not both — sessionIds takes precedence
     // Merge explicit sessionIds with any sessionIds from sessionMetadata (deduplicated)
     const metadataSessionIds = options.sessionMetadata?.map(m => m.sessionId).filter(Boolean) ?? [];
     const explicitSessionIds = options.sessionIds ?? [];
     const effectiveSessionIds = [...new Set([...explicitSessionIds, ...metadataSessionIds])];
     const hasSessionIds = effectiveSessionIds.length > 0;
 
-    const sessionInput: CloudWatchSessionInput | undefined = (() => {
+    const filterConfig: CloudWatchFilterConfig | undefined = (() => {
       if (hasSessionIds) {
         return { sessionIds: effectiveSessionIds };
       }
       if (options.lookbackDays) {
         const endTime = new Date().toISOString();
         const startTime = new Date(Date.now() - options.lookbackDays * 24 * 60 * 60 * 1000).toISOString();
-        return { sessionFilterConfig: { startTime, endTime } };
+        return { timeRange: { startTime, endTime } };
       }
       return undefined;
     })();
@@ -176,18 +176,16 @@ export async function runBatchEvaluationCommand(
     const startPayload = {
       region,
       name: evalName,
-      evaluationConfig: {
-        evaluators: resolvedEvaluators.map(id => ({ evaluatorId: id })),
-      },
-      sessionSource: {
-        cloudWatchSource: {
+      evaluators: resolvedEvaluators.map(id => ({ evaluatorId: id })),
+      dataSourceConfig: {
+        cloudWatchLogs: {
           serviceNames: [serviceName],
           logGroupNames: [runtimeLogGroup],
-          ...(sessionInput ? { sessionInput } : {}),
+          ...(filterConfig ? { filterConfig } : {}),
         },
       },
       ...(options.sessionMetadata && options.sessionMetadata.length > 0
-        ? { sessionMetadata: options.sessionMetadata }
+        ? { evaluationMetadata: { sessionMetadata: options.sessionMetadata } }
         : {}),
       ...(options.executionRoleArn ? { executionRoleArn: options.executionRoleArn } : {}),
       clientToken: generateClientToken(),
@@ -200,14 +198,15 @@ export async function runBatchEvaluationCommand(
     logger?.log(`Response: ${JSON.stringify(startResult, null, 2)}`);
     logger?.endStep('success');
 
-    onProgress?.('running', `Batch evaluation started (ID: ${startResult.batchEvaluateId})`);
+    onProgress?.('running', `Batch evaluation started (ID: ${startResult.batchEvaluationId})`);
     onProgress?.('running', 'This may take a few minutes...');
-    options.onStarted?.({ batchEvaluateId: startResult.batchEvaluateId, region });
+    options.onStarted?.({ batchEvaluationId: startResult.batchEvaluationId, region });
 
     // 4. Poll for completion
     logger?.startStep('Poll for completion');
     let current: GetBatchEvaluationResult = {
-      batchEvaluateId: startResult.batchEvaluateId,
+      batchEvaluationId: startResult.batchEvaluationId,
+      batchEvaluationArn: startResult.batchEvaluationArn,
       name: startResult.name,
       status: startResult.status,
     };
@@ -217,15 +216,15 @@ export async function runBatchEvaluationCommand(
 
       current = await getBatchEvaluation({
         region,
-        batchEvaluateId: startResult.batchEvaluateId,
+        batchEvaluationId: startResult.batchEvaluationId,
       });
 
       onProgress?.('polling', `Status: ${current.status}`);
       logger?.log(`Poll status: ${current.status}`);
     }
 
-    if (current.status !== 'COMPLETED') {
-      const reasons = current.statusReasons?.join('; ') ?? '';
+    if (current.status !== 'COMPLETED' && current.status !== 'COMPLETED_WITH_ERRORS') {
+      const reasons = current.errorDetails?.join('; ') ?? '';
       const error = `Batch evaluation finished with status: ${current.status}${reasons ? ` — ${reasons}` : ''}`;
       logger?.log(error, 'error');
       logger?.log(`Full poll response:\n${JSON.stringify(current, null, 2)}`, 'error');
@@ -234,7 +233,7 @@ export async function runBatchEvaluationCommand(
       return {
         success: false,
         error,
-        batchEvaluateId: startResult.batchEvaluateId,
+        batchEvaluationId: startResult.batchEvaluationId,
         name: evalName,
         status: current.status,
         results: [],
@@ -248,7 +247,7 @@ export async function runBatchEvaluationCommand(
     logger?.startStep('Fetch results');
     let results: BatchEvaluationResult[] = [];
 
-    const cwDest = current.outputDataConfig?.cloudWatchDestination;
+    const cwDest = current.outputConfig?.cloudWatchConfig;
     if (cwDest) {
       try {
         results = await fetchResultsFromCloudWatch(region, cwDest.logGroupName, cwDest.logStreamName);
@@ -258,16 +257,6 @@ export async function runBatchEvaluationCommand(
       }
     }
 
-    // Fall back to inline results if CW fetch returned nothing
-    if (results.length === 0 && current.results?.length) {
-      results = current.results.map(r => ({
-        evaluatorId: r.evaluatorId,
-        score: r.score,
-        label: r.label,
-        explanation: r.explanation,
-        error: r.error,
-      }));
-    }
     logger?.endStep('success');
 
     logger?.log(`Results: ${JSON.stringify(results, null, 2)}`);
@@ -275,7 +264,7 @@ export async function runBatchEvaluationCommand(
 
     return {
       success: true,
-      batchEvaluateId: startResult.batchEvaluateId,
+      batchEvaluationId: startResult.batchEvaluationId,
       name: evalName,
       status: current.status,
       results,

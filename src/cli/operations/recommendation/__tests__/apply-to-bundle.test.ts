@@ -142,7 +142,7 @@ describe('applyRecommendationToBundle', () => {
 
     const result: RecommendationResult = {
       toolDescriptionRecommendationResult: {
-        tools: [{ toolName: 'search', recommendedToolDescription: 'new desc', explanation: 'improved' }],
+        tools: [{ toolName: 'search', recommendedToolDescription: 'new desc' }],
         configurationBundle: { bundleArn: BUNDLE_ARN, versionId: NEW_VERSION_ID },
       },
     };

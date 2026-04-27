@@ -75,7 +75,7 @@ type FlowState =
       config: BatchEvalConfig;
       steps: Step[];
       elapsed: number;
-      batchEvaluateId?: string;
+      batchEvaluationId?: string;
       region?: string;
     }
   | { name: 'results'; result: RunBatchEvaluationCommandResult; savedFilePath?: string }
@@ -96,10 +96,10 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
 
   // Handle Esc to stop a running batch evaluation
   useInput((_input, key) => {
-    if (flow.name !== 'running' || !flow.batchEvaluateId || !flow.region || stoppingRef.current) return;
+    if (flow.name !== 'running' || !flow.batchEvaluationId || !flow.region || stoppingRef.current) return;
     if (key.escape) {
       stoppingRef.current = true;
-      void stopBatchEvaluation({ region: flow.region, batchEvaluateId: flow.batchEvaluateId }).catch(() => {
+      void stopBatchEvaluation({ region: flow.region, batchEvaluationId: flow.batchEvaluationId }).catch(() => {
         // Best-effort — the poll loop will pick up the final status
       });
       setFlow(prev => {
@@ -238,7 +238,7 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
           onStarted: info => {
             setFlow(prev => {
               if (prev.name !== 'running') return prev;
-              return { ...prev, batchEvaluateId: info.batchEvaluateId, region: info.region };
+              return { ...prev, batchEvaluationId: info.batchEvaluationId, region: info.region };
             });
           },
         });
@@ -346,7 +346,7 @@ export function RunBatchEvalFlow({ onExit }: RunBatchEvalFlowProps) {
             </Text>
             <StepProgress steps={flow.steps} />
             <Text dimColor>This may take a few minutes...</Text>
-            {flow.batchEvaluateId && <Text dimColor>Press Esc to stop the evaluation</Text>}
+            {flow.batchEvaluationId && <Text dimColor>Press Esc to stop the evaluation</Text>}
           </Box>
         </Panel>
       </Screen>
@@ -867,7 +867,7 @@ function ResultsView({ result, savedFilePath, onRunAnother, onExit }: ResultsVie
         <Box flexDirection="column">
           <Text color="green">✓ Batch evaluation complete</Text>
           <Text>
-            <Text bold>ID:</Text> {result.batchEvaluateId}
+            <Text bold>ID:</Text> {result.batchEvaluationId}
             {'  '}
             <Text bold>Status:</Text> {result.status}
           </Text>
@@ -877,11 +877,15 @@ function ResultsView({ result, savedFilePath, onRunAnother, onExit }: ResultsVie
             </Text>
           )}
 
-          {evalRes?.totalSessions != null && (
+          {evalRes?.totalNumberOfSessions != null && (
             <Text>
-              <Text bold>Sessions:</Text> {evalRes.totalSessions} total
-              {evalRes.sessionsCompleted != null && <Text>, {evalRes.sessionsCompleted} completed</Text>}
-              {evalRes.sessionsFailed ? <Text color="red">, {evalRes.sessionsFailed} failed</Text> : null}
+              <Text bold>Sessions:</Text> {evalRes.totalNumberOfSessions} total
+              {evalRes.numberOfSessionsCompleted != null && (
+                <Text>, {evalRes.numberOfSessionsCompleted} completed</Text>
+              )}
+              {evalRes.numberOfSessionsFailed ? (
+                <Text color="red">, {evalRes.numberOfSessionsFailed} failed</Text>
+              ) : null}
             </Text>
           )}
 
