@@ -9,7 +9,12 @@
 import { isReservedProjectName } from '../constants';
 import { AgentEnvSpecSchema } from './agent-env';
 import { AgentCoreGatewaySchema, AgentCoreGatewayTargetSchema, AgentCoreMcpRuntimeToolSchema } from './mcp';
-import { EvaluationLevelSchema, EvaluatorConfigSchema, EvaluatorNameSchema } from './primitives/evaluator';
+import {
+  EvaluationLevelSchema,
+  EvaluatorConfigSchema,
+  EvaluatorNameSchema,
+  KmsKeyArnSchema,
+} from './primitives/evaluator';
 import {
   DEFAULT_EPISODIC_REFLECTION_NAMESPACES,
   DEFAULT_STRATEGY_NAMESPACES,
@@ -42,7 +47,13 @@ export type {
   ManagedCodeBasedConfig,
   RatingScale,
 } from './primitives/evaluator';
-export { BedrockModelIdSchema, isValidBedrockModelId, EvaluatorNameSchema } from './primitives/evaluator';
+export {
+  BedrockModelIdSchema,
+  isValidBedrockModelId,
+  EvaluatorNameSchema,
+  KMS_KEY_ARN_PATTERN,
+  isValidKmsKeyArn,
+} from './primitives/evaluator';
 export { PolicyEngineSchema };
 export type { Policy, PolicyEngine, ValidationMode } from './primitives/policy';
 export { PolicyEngineNameSchema, PolicyNameSchema, PolicySchema, ValidationModeSchema } from './primitives/policy';
@@ -200,6 +211,7 @@ export const EvaluatorSchema = z.object({
   level: EvaluationLevelSchema,
   description: z.string().optional(),
   config: EvaluatorConfigSchema,
+  kmsKeyArn: KmsKeyArnSchema.optional(),
   tags: TagsSchema.optional(),
 });
 
