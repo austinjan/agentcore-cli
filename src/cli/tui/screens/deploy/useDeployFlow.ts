@@ -133,6 +133,10 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
   const identityKmsKeyArn = preSynthesized?.identityKmsKeyArn ?? preflight.identityKmsKeyArn;
   const allCredentials = preSynthesized?.allCredentials ?? preflight.allCredentials;
 
+  const [preDeployDiffStep, setPreDeployDiffStep] = useState<Step>({
+    label: 'Computing diff changes...',
+    status: 'pending',
+  });
   const [publishAssetsStep, setPublishAssetsStep] = useState<Step>({ label: 'Publish assets', status: 'pending' });
   const [deployStep, setDeployStep] = useState<Step>({ label: 'Deploy to AWS', status: 'pending' });
   const [diffStep, setDiffStep] = useState<Step>({ label: 'Run CDK diff', status: 'pending' });
@@ -157,6 +161,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
   const streamOutputsRef = useRef<Record<string, string> | null>(null);
 
   const startDeploy = useCallback(() => {
+    setPreDeployDiffStep({ label: 'Computing diff changes...', status: 'pending' });
     setPublishAssetsStep({ label: 'Publish assets', status: 'pending' });
     setDeployStep({ label: 'Deploy to AWS', status: 'pending' });
     setDeployOutput(null);
@@ -544,6 +549,8 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
       if (!isDiffRunningRef.current) {
         isDiffRunningRef.current = true;
         setIsDiffLoading(true);
+        setPreDeployDiffStep(prev => ({ ...prev, status: 'running' }));
+        logger.startStep('Computing diff changes...');
         switchableIoHost?.setOnRawMessage((code, _level, message, data) => {
           logger.logDiff(code, message);
           if (code === 'CDK_TOOLKIT_I4002') {
@@ -562,6 +569,8 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
           switchableIoHost?.setOnRawMessage(null);
           isDiffRunningRef.current = false;
           setIsDiffLoading(false);
+          logger.endStep('success');
+          setPreDeployDiffStep(prev => ({ ...prev, status: 'success' }));
         }
       }
 
@@ -786,8 +795,10 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
     if (diffMode) {
       return skipPreflight ? [diffStep] : [...preflight.steps, diffStep];
     }
-    return skipPreflight ? [publishAssetsStep, deployStep] : [...preflight.steps, publishAssetsStep, deployStep];
-  }, [preflight.steps, publishAssetsStep, deployStep, diffStep, skipPreflight, diffMode]);
+    return skipPreflight
+      ? [preDeployDiffStep, publishAssetsStep, deployStep]
+      : [...preflight.steps, preDeployDiffStep, publishAssetsStep, deployStep];
+  }, [preflight.steps, preDeployDiffStep, publishAssetsStep, deployStep, diffStep, skipPreflight, diffMode]);
 
   const phase: DeployPhase = useMemo(() => {
     const activeStep = diffMode ? diffStep : deployStep;

@@ -2,6 +2,103 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0] - 2026-04-24
+
+### Added
+- feat: add telemetry schemas and client (#941) (7c37fa6)
+- feat: add GitHub Action for automated PR review via AgentCore Harness (#934) (a365bf5)
+
+### Fixed
+- fix: display session ID after CLI invoke completes (#957) (51e4a8e)
+- fix: lower eventExpiryDuration minimum from 7 to 3 days (closes #744) (#956) (8613657)
+- fix: use pull_request_target for fork PR support (#958) (933bac8)
+- fix: agentcore dev not working in windows (#951) (5271f55)
+- fix: add TTY detection before TUI fallbacks to prevent agent/CI hangs (#949) (c30ed54)
+- fix: allow code-based evaluators in online eval configs (#947) (3d2d671)
+- fix: buffer streaming text to avoid per-token log lines in GitHub Actions (#946) (cb1e81a)
+
+### Other Changes
+- test: add browser tests for agent inspector (#938) (7a4104d)
+
+## [0.10.0] - 2026-04-23
+
+### Added
+- feat: upgrade agent inspector to 0.2.1 (#937) (b49a06f)
+- feat: remove deployed/local from status legend (#936) (c0d5b7b)
+- feat: add GovCloud multi-partition support (#908) (098b104)
+- feat: support preview releases from feature branches (#905) (1a93f92)
+- feat: add AG-UI (AGUI) as fourth first-class protocol mode (#858) (52144dc)
+- feat: add session filesystem storage support (#893) (b97e337)
+
+### Fixed
+- fix: agentcore add component opens component wizard directly (#896) (74a35cb)
+- fix: propagate sessionId as A2A contextId in Inspector proxy (#892) (08d452e)
+
+### Documentation
+- docs: update vended AGENTS.md, README.md, and llm-context references (#898) (84a6dde)
+
+### Other Changes
+- fix(deploy): honor aws-targets.json region for all SDK and CDK calls (#925) (1903f7d)
+- fix(invoke): show full session ID and print resume command on exit (#904) (ce683c0)
+- chore: remove preview bump type from release workflow (#847) (13f16d3)
+- chore: remove single-commit-must-match-PR-title validation (#897) (4d7da2f)
+- fix(invoke): pass session ID to local invoke log files (#894) (e966cb6)
+
+## [0.9.1] - 2026-04-17
+
+## [0.9.0] - 2026-04-17
+
+### Fixed
+- fix: revert version to 0.8.2 (#885) (321ea06)
+- fix: agent-inspector frontend assets missing from build (#883) (08f826c)
+- fix: use caret range for @aws/agentcore-cdk in CDK template (#882) (e01f6f9)
+- fix: defer policy engine write and harden policy flow UX (#856) (c576d02)
+  
+### Added
+- feat: add agent inspector web UI for `agentcore dev` (#871) (6cc575c)
+
+### Documentation
+- docs: document executionRoleArn in runtime spec (#872) (abfd33b)
+
+## [0.8.2] - 2026-04-16
+
+### Added
+- feat: upgrade default Python runtime to PYTHON_3_14 (#837) (b139c05)
+
+### Other Changes
+- revert: roll back version bump to 0.8.1 (#877) (ef14108)
+- test: update asset snapshot for @aws/agentcore-cdk 0.1.0-alpha.19 (#875) (f781c60)
+- chore: bump version to 0.8.2 (#874) (865b5d5)
+
+## [0.8.1] - 2026-04-14
+
+### Added
+- feat: add auto-instrumentation to langchain agent template (#835) (31fb7d1)
+- feat: add e2e tests for import command (#828) (bb9de25)
+- feat: add --request-header-allowlist CLI flag for agentcore add agent (#825) (#830) (b433faf)
+
+### Fixed
+- fix: pin @aws/agentcore-cdk to exact version in CDK template (#852) (aff1097)
+- fix: only exclude root-level agentcore/ directory from packaging artifacts (#844) (c3921ec)
+- fix: add AWS_IAM as a valid authorizer type for gateway commands (#820) (f2964e3)
+- fix: add missing langchain instrumentor dependency to import flow (#836) (921a05f)
+- fix: unhide import command from TUI main menu (#834) (ee6b630)
+- fix: add missing AgentCore regions to match AWS documentation (#833) (3b60dbe)
+- fix: remove docker info check from container runtime detection (#829) (6729eb2)
+- fix: update E2E test regex to match new CUSTOM_JWT client-side error (#832) (4f178a5)
+- fix: fail fast when CUSTOM_JWT agent has no bearer token available (#817) (96de3d2)
+- fix: respect aws-targets.json region instead of overriding with AWS_REGION env var (#818) (bdcc954)
+- fix: use caret range for aws-cdk-lib in project template (#805) (6e19463)
+
+### Other Changes
+- fix(ci): bump @aws/agentcore-cdk to 0.1.0-alpha.18 and remove snapshot step from release (#850) (e885843)
+- fix(ci): move snapshot update after build step in release workflow (#849) (37665a3)
+- fix(ci): update snapshots after CDK version sync in release workflow (#848) (6f87f04)
+- fix(e2e): use uv run for import test Python scripts (#845) (5962711)
+- fix(ci): unpin boto3 in e2e workflow (#841) (e64e8e2)
+- chore: pin @aws/agentcore-cdk version and auto-sync on release (#811) (1e5c631)
+- chore: bump aws-cdk-lib peer dep to ^2.248.0 (#812) (16b3c8c)
+
 ## [0.8.0] - 2026-04-09
 
 ### Added

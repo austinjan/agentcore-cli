@@ -1,5 +1,6 @@
 import { ConfigIO, SecureCredentials } from '../../../lib';
 import type { AgentCoreMcpSpec, DeployedState } from '../../../schema';
+import { applyTargetRegionToEnv } from '../../aws';
 import { validateAwsCredentials } from '../../aws/account';
 import { createSwitchableIoHost } from '../../cdk/toolkit-lib';
 import {
@@ -12,6 +13,7 @@ import {
   parseOnlineEvalOutputs,
   parsePolicyEngineOutputs,
   parsePolicyOutputs,
+  parseRuntimeEndpointOutputs,
 } from '../../cloudformation';
 import { getErrorMessage } from '../../errors';
 import { ExecLogger } from '../../logging';
@@ -55,6 +57,7 @@ const MEMORY_ONLY_NEXT_STEPS = ['agentcore add agent', 'agentcore status'];
 
 export async function handleDeploy(options: ValidatedDeployOptions): Promise<DeployResult> {
   let toolkitWrapper = null;
+  let restoreEnv: (() => void) | null = null;
   const logger = new ExecLogger({ command: 'deploy' });
   const { onProgress } = options;
   let currentStepName = '';
@@ -86,6 +89,10 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
         logPath: logger.getRelativeLogPath(),
       };
     }
+    // Make the resolved target region authoritative for downstream SDK / CDK
+    // calls that don't receive an explicit region option.
+    // See https://github.com/aws/agentcore-cli/issues/924.
+    restoreEnv = applyTargetRegionToEnv(target.region);
     endStep('success');
 
     // Read project spec for gateway information (used later for deploy step name and outputs)
@@ -404,6 +411,17 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
     );
     const policies = parsePolicyOutputs(outputs, policySpecs);
 
+    // Parse runtime endpoint outputs
+    const endpointSpecs: { agentName: string; endpointName: string }[] = [];
+    for (const runtime of context.projectSpec.runtimes) {
+      if (runtime.endpoints) {
+        for (const endpointName of Object.keys(runtime.endpoints)) {
+          endpointSpecs.push({ agentName: runtime.name, endpointName });
+        }
+      }
+    }
+    const runtimeEndpoints = parseRuntimeEndpointOutputs(outputs, endpointSpecs);
+
     // Parse gateway outputs
     const gatewaySpecs =
       mcpSpec?.agentCoreGateways?.reduce(
@@ -429,6 +447,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       onlineEvalConfigs,
       policyEngines,
       policies,
+      runtimeEndpoints,
     });
     await configIO.writeDeployedState(deployedState);
 
@@ -648,6 +667,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
     if (toolkitWrapper) {
       await toolkitWrapper.dispose();
     }
+    restoreEnv?.();
   }
 }
 

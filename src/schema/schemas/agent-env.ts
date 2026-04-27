@@ -142,6 +142,23 @@ export const RequestHeaderAllowlistSchema = z
   )
   .max(MAX_HEADER_ALLOWLIST_SIZE, `Maximum ${MAX_HEADER_ALLOWLIST_SIZE} headers allowed`);
 
+/**
+ * Session storage configuration for filesystem persistence.
+ * Files written to mountPath persist across session stop/resume cycles.
+ */
+export const SessionStorageSchema = z.object({
+  /** Absolute mount path under /mnt with exactly one subdirectory level (e.g. /mnt/data). */
+  mountPath: z
+    .string()
+    .regex(/^\/mnt\/[^/]+$/, 'Must be a path under /mnt with exactly one subdirectory (e.g. /mnt/data)'),
+});
+export type SessionStorage = z.infer<typeof SessionStorageSchema>;
+
+export const FilesystemConfigurationSchema = z.object({
+  sessionStorage: SessionStorageSchema,
+});
+export type FilesystemConfiguration = z.infer<typeof FilesystemConfigurationSchema>;
+
 /** Minimum allowed value for lifecycle timeout fields (seconds). */
 export const LIFECYCLE_TIMEOUT_MIN = 60;
 /** Maximum allowed value for lifecycle timeout fields (seconds). */
@@ -171,6 +188,31 @@ export const LifecycleConfigurationSchema = z
   });
 export type LifecycleConfiguration = z.infer<typeof LifecycleConfigurationSchema>;
 
+// ============================================================================
+// Runtime Endpoint Schema
+// ============================================================================
+
+/**
+ * Endpoint name follows the AgentCore API regex for endpoint aliases.
+ */
+export const RuntimeEndpointNameSchema = z
+  .string()
+  .min(1, 'Endpoint name is required')
+  .max(48)
+  .regex(
+    /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/,
+    'Must begin with a letter and contain only alphanumeric characters and underscores (max 48 chars)'
+  );
+
+export const RuntimeEndpointSchema = z.object({
+  /** Version number this endpoint points to. Must be >= 1. */
+  version: z.number().int().min(1),
+  /** Optional human-readable description of this endpoint. */
+  description: z.string().max(200).optional(),
+});
+
+export type RuntimeEndpoint = z.infer<typeof RuntimeEndpointSchema>;
+
 /**
  * AgentEnvSpec - represents an AgentCore Runtime.
  * This is a top-level resource in the schema.
@@ -199,7 +241,7 @@ export const AgentEnvSpecSchema = z
     networkConfig: NetworkConfigSchema.optional(),
     /** Instrumentation settings for observability. Defaults to OTel enabled. */
     instrumentation: InstrumentationSchema.optional(),
-    /** Protocol for the runtime (HTTP, MCP, A2A). */
+    /** Protocol for the runtime (HTTP, MCP, A2A, AGUI). */
     protocol: ProtocolModeSchema.optional(),
     /** Allowed request headers forwarded to the runtime at invocation time. */
     requestHeaderAllowlist: RequestHeaderAllowlistSchema.optional(),
@@ -212,6 +254,10 @@ export const AgentEnvSpecSchema = z
     tags: TagsSchema.optional(),
     /** Lifecycle configuration for runtime sessions. */
     lifecycleConfiguration: LifecycleConfigurationSchema.optional(),
+    /** Filesystem configurations for session-scoped persistent storage. */
+    filesystemConfigurations: z.array(FilesystemConfigurationSchema).optional(),
+    /** Named endpoints (version aliases) for this runtime. Keys are endpoint names. */
+    endpoints: z.record(RuntimeEndpointNameSchema, RuntimeEndpointSchema).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.networkMode === 'VPC' && !data.networkConfig) {

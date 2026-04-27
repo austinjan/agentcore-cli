@@ -15,6 +15,7 @@ import { AddGatewayFlow, AddGatewayTargetFlow } from '../mcp';
 import { AddMemoryFlow } from '../memory/AddMemoryFlow';
 import { AddOnlineEvalFlow } from '../online-eval';
 import { AddPolicyFlow } from '../policy';
+import { AddRuntimeEndpointFlow } from '../runtime-endpoint';
 import type { AddResourceType } from './AddScreen';
 import { AddScreen } from './AddScreen';
 import { AddSuccessScreen } from './AddSuccessScreen';
@@ -34,6 +35,7 @@ type FlowState =
   | { name: 'policy-wizard' }
   | { name: 'config-bundle-wizard' }
   | { name: 'ab-test-wizard' }
+  | { name: 'runtime-endpoint-wizard' }
   | {
       name: 'agent-create-success';
       agentName: string;
@@ -161,12 +163,39 @@ interface AddFlowProps {
   onDev?: () => void;
   /** Called when user selects deploy from success screen */
   onDeploy?: () => void;
+  /** Skip the selection screen and go directly to a specific resource wizard */
+  initialResource?: AddResourceType;
+}
+
+function getInitialFlowState(resource?: AddResourceType): FlowState {
+  switch (resource) {
+    case 'agent':
+      return { name: 'agent-wizard' };
+    case 'gateway':
+      return { name: 'gateway-wizard' };
+    case 'gateway-target':
+      return { name: 'tool-wizard' };
+    case 'memory':
+      return { name: 'memory-wizard' };
+    case 'credential':
+      return { name: 'identity-wizard' };
+    case 'evaluator':
+      return { name: 'evaluator-wizard' };
+    case 'online-eval':
+      return { name: 'online-eval-wizard' };
+    case 'policy':
+      return { name: 'policy-wizard' };
+    case 'runtime-endpoint':
+      return { name: 'runtime-endpoint-wizard' };
+    default:
+      return { name: 'select' };
+  }
 }
 
 export function AddFlow(props: AddFlowProps) {
   const { addAgent, reset: resetAgent } = useAddAgent();
   const { agents, refresh: refreshAgents } = useAvailableAgents();
-  const [flow, setFlow] = useState<FlowState>({ name: 'select' });
+  const [flow, setFlow] = useState<FlowState>(() => getInitialFlowState(props.initialResource));
 
   // In non-interactive mode, exit after success (but not while loading)
   useEffect(() => {
@@ -210,6 +239,9 @@ export function AddFlow(props: AddFlowProps) {
         break;
       case 'ab-test':
         setFlow({ name: 'ab-test-wizard' });
+        break;
+      case 'runtime-endpoint':
+        setFlow({ name: 'runtime-endpoint-wizard' });
         break;
     }
   }, []);
@@ -461,6 +493,18 @@ export function AddFlow(props: AddFlowProps) {
   if (flow.name === 'ab-test-wizard') {
     return (
       <AddABTestFlow
+        isInteractive={props.isInteractive}
+        onExit={props.onExit}
+        onBack={() => setFlow({ name: 'select' })}
+        onDev={props.onDev}
+        onDeploy={props.onDeploy}
+      />
+    );
+  }
+
+  if (flow.name === 'runtime-endpoint-wizard') {
+    return (
+      <AddRuntimeEndpointFlow
         isInteractive={props.isInteractive}
         onExit={props.onExit}
         onBack={() => setFlow({ name: 'select' })}

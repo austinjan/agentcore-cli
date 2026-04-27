@@ -2,13 +2,14 @@ import type { SelectableItem } from '../../components';
 import { SelectScreen } from '../../components';
 
 const ADD_RESOURCES = [
-  { id: 'agent', title: 'Agent', description: 'Deploy an HTTP, MCP, or A2A agent' },
+  { id: 'agent', title: 'Agent', description: 'Deploy an HTTP, MCP, A2A, or AG-UI agent' },
   { id: 'memory', title: 'Memory', description: 'Persistent context storage' },
   { id: 'credential', title: 'Credential', description: 'API key credential providers' },
   { id: 'evaluator', title: 'Evaluator', description: 'Custom LLM-as-a-Judge evaluator' },
   { id: 'online-eval', title: 'Online Eval Config', description: 'Continuous evaluation pipeline' },
   { id: 'gateway', title: 'Gateway', description: 'Route and manage gateway targets' },
   { id: 'gateway-target', title: 'Gateway Target', description: 'Extend agent capabilities' },
+  { id: 'runtime-endpoint', title: 'Runtime Endpoint', description: 'Named endpoint for a runtime' },
   { id: 'policy', title: 'Policy', description: 'Cedar policies for gateway tools' },
   { id: 'config-bundle', title: 'Configuration Bundle', description: 'Versioned component configurations' },
   { id: 'ab-test', title: 'AB Test', description: 'Compare agent configurations with traffic splitting' },

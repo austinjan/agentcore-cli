@@ -12,6 +12,7 @@ import type { AddGatewayOptions as CLIAddGatewayOptions } from '../commands/add/
 import { validateAddGatewayOptions } from '../commands/add/validate';
 import { getErrorMessage } from '../errors';
 import type { RemovalPreview, RemovalResult, SchemaChange } from '../operations/remove/types';
+import { requireTTY } from '../tui/guards/tty';
 import type { AddGatewayConfig } from '../tui/screens/mcp/types';
 import { BasePrimitive } from './BasePrimitive';
 import { buildAuthorizerConfigFromJwtConfig, createManagedOAuthCredential } from './auth-utils';
@@ -162,7 +163,7 @@ export class GatewayPrimitive extends BasePrimitive<AddGatewayOptions, Removable
       .option('--name <name>', 'Gateway name [non-interactive]')
       .option('--description <desc>', 'Gateway description [non-interactive]')
       .option('--runtimes <runtimes>', 'Comma-separated runtime names to expose through this gateway [non-interactive]')
-      .option('--authorizer-type <type>', 'Authorizer type: NONE or CUSTOM_JWT [non-interactive]')
+      .option('--authorizer-type <type>', 'Authorizer type: NONE, AWS_IAM, or CUSTOM_JWT [non-interactive]')
       .option('--discovery-url <url>', 'OIDC discovery URL (for CUSTOM_JWT) [non-interactive]')
       .option('--allowed-audience <audience>', 'Comma-separated allowed audiences (for CUSTOM_JWT) [non-interactive]')
       .option('--allowed-clients <clients>', 'Comma-separated allowed client IDs (for CUSTOM_JWT) [non-interactive]')
@@ -271,6 +272,7 @@ export class GatewayPrimitive extends BasePrimitive<AddGatewayOptions, Removable
             );
             process.exit(result.success ? 0 : 1);
           } else {
+            requireTTY();
             const [{ render }, { default: React }, { RemoveFlow }] = await Promise.all([
               import('ink'),
               import('react'),

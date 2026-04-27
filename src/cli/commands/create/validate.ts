@@ -1,9 +1,11 @@
 import {
+  AgentNameSchema,
   BuildTypeSchema,
   ModelProviderSchema,
   ProjectNameSchema,
   ProtocolModeSchema,
   SDKFrameworkSchema,
+  SessionStorageSchema,
   TargetLanguageSchema,
   getSupportedFrameworksForProtocol,
   getSupportedModelProviders,
@@ -35,18 +37,20 @@ export function validateFolderNotExists(name: string, cwd: string): true | strin
 
 export function validateCreateOptions(options: CreateOptions, cwd?: string): ValidationResult {
   // Name is required for non-interactive mode
-  if (!options.name) {
+  if (!options.name && !(options.agent === false && options.projectName)) {
     return { valid: false, error: '--name is required' };
   }
 
-  // Validate name format
-  const nameResult = ProjectNameSchema.safeParse(options.name);
-  if (!nameResult.success) {
-    return { valid: false, error: nameResult.error.issues[0]?.message ?? 'Invalid project name' };
+  const projectName = options.projectName ?? options.name!;
+
+  // Validate project name format
+  const projectNameResult = ProjectNameSchema.safeParse(projectName);
+  if (!projectNameResult.success) {
+    return { valid: false, error: projectNameResult.error.issues[0]?.message ?? 'Invalid project name' };
   }
 
   // Check if directory already exists
-  const folderCheck = validateFolderNotExists(options.name, cwd ?? process.cwd());
+  const folderCheck = validateFolderNotExists(projectName, cwd ?? process.cwd());
   if (folderCheck !== true) {
     return { valid: false, error: folderCheck };
   }
@@ -54,6 +58,11 @@ export function validateCreateOptions(options: CreateOptions, cwd?: string): Val
   // If --no-agent (agent === false), no further validation needed
   if (options.agent === false) {
     return { valid: true };
+  }
+
+  const agentNameResult = AgentNameSchema.safeParse(options.name);
+  if (!agentNameResult.success) {
+    return { valid: false, error: agentNameResult.error.issues[0]?.message ?? 'Invalid agent name' };
   }
 
   // Import path: validate import-specific options
@@ -91,7 +100,7 @@ export function validateCreateOptions(options: CreateOptions, cwd?: string): Val
   if (options.protocol) {
     const protocolResult = ProtocolModeSchema.safeParse(options.protocol);
     if (!protocolResult.success) {
-      return { valid: false, error: `Invalid protocol: ${options.protocol}. Use HTTP, MCP, or A2A` };
+      return { valid: false, error: `Invalid protocol: ${options.protocol}. Use HTTP, MCP, A2A, or AGUI` };
     }
     protocol = protocolResult.data;
   }
@@ -206,6 +215,14 @@ export function validateCreateOptions(options: CreateOptions, cwd?: string): Val
   if (!lifecycleResult.valid) return lifecycleResult;
   if (lifecycleResult.idleTimeout !== undefined) options.idleTimeout = lifecycleResult.idleTimeout;
   if (lifecycleResult.maxLifetime !== undefined) options.maxLifetime = lifecycleResult.maxLifetime;
+
+  // Validate session storage mount path
+  if (options.sessionStorageMountPath) {
+    const mountPathResult = SessionStorageSchema.shape.mountPath.safeParse(options.sessionStorageMountPath);
+    if (!mountPathResult.success) {
+      return { valid: false, error: `--session-storage-mount-path: ${mountPathResult.error.issues[0]?.message}` };
+    }
+  }
 
   return { valid: true };
 }

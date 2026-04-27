@@ -14,6 +14,8 @@ export const AgentCoreDeployedStateSchema = z.object({
   memoryIds: z.array(z.string()).optional(),
   browserId: z.string().optional(),
   codeInterpreterId: z.string().optional(),
+  /** The latest deployed version number of this runtime. */
+  runtimeVersion: z.number().int().min(1).optional(),
 });
 
 export type AgentCoreDeployedState = z.infer<typeof AgentCoreDeployedStateSchema>;
@@ -211,6 +213,17 @@ export const HttpGatewayDeployedStateSchema = z.object({
 export type HttpGatewayDeployedState = z.infer<typeof HttpGatewayDeployedStateSchema>;
 
 // ============================================================================
+// Runtime Endpoint Deployed State
+// ============================================================================
+
+export const RuntimeEndpointDeployedStateSchema = z.object({
+  endpointId: z.string().min(1),
+  endpointArn: z.string().min(1),
+});
+
+export type RuntimeEndpointDeployedState = z.infer<typeof RuntimeEndpointDeployedStateSchema>;
+
+// ============================================================================
 // Deployed Resource State
 // ============================================================================
 
@@ -227,6 +240,7 @@ export const DeployedResourceStateSchema = z.object({
   httpGateways: z.record(z.string(), HttpGatewayDeployedStateSchema).optional(),
   policyEngines: z.record(z.string(), PolicyEngineDeployedStateSchema).optional(),
   policies: z.record(z.string(), PolicyDeployedStateSchema).optional(),
+  runtimeEndpoints: z.record(z.string(), RuntimeEndpointDeployedStateSchema).optional(),
   stackName: z.string().optional(),
   identityKmsKeyArn: z.string().optional(),
 });

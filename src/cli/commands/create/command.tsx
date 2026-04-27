@@ -10,6 +10,7 @@ import type {
 import { LIFECYCLE_TIMEOUT_MAX, LIFECYCLE_TIMEOUT_MIN } from '../../../schema';
 import { getErrorMessage } from '../../errors';
 import { COMMAND_DESCRIPTIONS } from '../../tui/copy';
+import { requireTTY } from '../../tui/guards';
 import { CreateScreen } from '../../tui/screens/create';
 import { parseCommaSeparatedList } from '../shared/vpc-utils';
 import { type ProgressCallback, createProject, createProjectWithAgent, getDryRunInfo } from './action';
@@ -75,6 +76,8 @@ function printCreateSummary(
 /** Handle CLI mode with progress output */
 async function handleCreateCLI(options: CreateOptions): Promise<void> {
   const cwd = options.outputDir ?? getWorkingDirectory();
+  const name = options.name ?? options.projectName;
+  const projectName = options.projectName ?? name;
 
   const validation = validateCreateOptions(options, cwd);
   if (!validation.valid) {
@@ -88,7 +91,7 @@ async function handleCreateCLI(options: CreateOptions): Promise<void> {
 
   // Handle dry-run mode
   if (options.dryRun) {
-    const result = getDryRunInfo({ name: options.name!, cwd, language: options.language });
+    const result = getDryRunInfo({ name: name!, projectName, cwd, language: options.language });
     if (options.json) {
       console.log(JSON.stringify(result));
     } else {
@@ -120,14 +123,15 @@ async function handleCreateCLI(options: CreateOptions): Promise<void> {
 
   const result = skipAgent
     ? await createProject({
-        name: options.name!,
+        name: projectName!,
         cwd,
         skipGit: options.skipGit,
         skipInstall: options.skipInstall,
         onProgress,
       })
     : await createProjectWithAgent({
-        name: options.name!,
+        name: name!,
+        projectName,
         cwd,
         type: options.type as 'create' | 'import' | undefined,
         buildType: (options.build as BuildType) ?? 'CodeZip',
@@ -145,6 +149,7 @@ async function handleCreateCLI(options: CreateOptions): Promise<void> {
         securityGroups: parseCommaSeparatedList(options.securityGroups),
         idleTimeout: options.idleTimeout ? Number(options.idleTimeout) : undefined,
         maxLifetime: options.maxLifetime ? Number(options.maxLifetime) : undefined,
+        sessionStorageMountPath: options.sessionStorageMountPath,
         skipGit: options.skipGit,
         skipInstall: options.skipInstall,
         skipPythonSetup: options.skipPythonSetup,
@@ -154,7 +159,7 @@ async function handleCreateCLI(options: CreateOptions): Promise<void> {
   if (options.json) {
     console.log(JSON.stringify(result));
   } else if (result.success) {
-    printCreateSummary(options.name!, result.agentName, options.language, options.framework);
+    printCreateSummary(projectName!, result.agentName, options.language, options.framework);
     if (options.skipInstall) {
       console.log(
         "\nDependency installation was skipped. Run 'npm install' in agentcore/cdk/ and 'uv sync' in your agent directory manually."
@@ -171,7 +176,11 @@ export const registerCreate = (program: Command) => {
   program
     .command('create')
     .description(COMMAND_DESCRIPTIONS.create)
-    .option('--name <name>', 'Project name (start with letter, alphanumeric only, max 23 chars) [non-interactive]')
+    .option('--name <name>', 'Resource name (agent or harness) [non-interactive]')
+    .option(
+      '--project-name <name>',
+      'Project name (start with letter, alphanumeric only, max 23 chars) [non-interactive]'
+    )
     .option('--no-agent', 'Skip agent creation [non-interactive]')
     .option('--defaults', 'Use defaults (Python, Strands, Bedrock, no memory) [non-interactive]')
     .option('--build <type>', 'Build type: CodeZip or Container (default: CodeZip) [non-interactive]')
@@ -183,7 +192,7 @@ export const registerCreate = (program: Command) => {
     .option('--model-provider <provider>', 'Model provider (Bedrock, Anthropic, OpenAI, Gemini) [non-interactive]')
     .option('--api-key <key>', 'API key for non-Bedrock providers [non-interactive]')
     .option('--memory <option>', 'Memory option (none, shortTerm, longAndShortTerm) [non-interactive]')
-    .option('--protocol <protocol>', 'Protocol: HTTP, MCP, A2A (default: HTTP) [non-interactive]')
+    .option('--protocol <protocol>', 'Protocol: HTTP, MCP, A2A, AGUI (default: HTTP) [non-interactive]')
     .option('--type <type>', 'Agent type: create or import (default: create) [non-interactive]')
     .option('--agent-id <id>', 'Bedrock Agent ID (required for --type import) [non-interactive]')
     .option('--agent-alias-id <id>', 'Bedrock Agent Alias ID (required for --type import) [non-interactive]')
@@ -198,6 +207,10 @@ export const registerCreate = (program: Command) => {
     .option(
       '--max-lifetime <seconds>',
       `Max instance lifetime in seconds (${LIFECYCLE_TIMEOUT_MIN}-${LIFECYCLE_TIMEOUT_MAX}) [non-interactive]`
+    )
+    .option(
+      '--session-storage-mount-path <path>',
+      'Absolute mount path for session filesystem storage under /mnt (e.g. /mnt/data) [non-interactive]'
     )
     .option('--output-dir <dir>', 'Output directory (default: current directory) [non-interactive]')
     .option('--skip-git', 'Skip git repository initialization [non-interactive]')
@@ -219,6 +232,7 @@ export const registerCreate = (program: Command) => {
         // Any flag triggers non-interactive CLI mode
         const hasAnyFlag = Boolean(
           options.name ??
+          options.projectName ??
           (options.agent === false ? true : null) ??
           options.defaults ??
           options.build ??
@@ -240,6 +254,7 @@ export const registerCreate = (program: Command) => {
           options.language = options.language ?? 'Python';
           await handleCreateCLI(options as CreateOptions);
         } else {
+          requireTTY();
           handleCreateTUI();
         }
       } catch (error) {

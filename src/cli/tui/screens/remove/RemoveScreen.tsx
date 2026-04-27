@@ -14,6 +14,7 @@ const REMOVE_RESOURCES = [
   { id: 'gateway-target', title: 'Gateway Target', description: 'Remove a gateway target' },
   { id: 'config-bundle', title: 'Configuration Bundle', description: 'Remove a configuration bundle' },
   { id: 'ab-test', title: 'AB Test', description: 'Remove an A/B test' },
+  { id: 'runtime-endpoint', title: 'Runtime Endpoint', description: 'Remove a runtime endpoint' },
   { id: 'all', title: 'All', description: 'Reset entire agentcore project' },
 ] as const;
 
@@ -44,6 +45,8 @@ interface RemoveScreenProps {
   configBundleCount: number;
   /** Number of AB tests available for removal */
   abTestCount: number;
+  /** Number of runtime endpoints available for removal */
+  runtimeEndpointCount: number;
 }
 
 export function RemoveScreen({
@@ -60,6 +63,7 @@ export function RemoveScreen({
   policyCount,
   configBundleCount,
   abTestCount,
+  runtimeEndpointCount,
 }: RemoveScreenProps) {
   const items: SelectableItem[] = useMemo(() => {
     return REMOVE_RESOURCES.map(r => {
@@ -133,6 +137,12 @@ export function RemoveScreen({
             description = 'No AB tests to remove';
           }
           break;
+        case 'runtime-endpoint':
+          if (runtimeEndpointCount === 0) {
+            disabled = true;
+            description = 'No runtime endpoints to remove';
+          }
+          break;
         case 'all':
           // 'all' is always available
           break;
@@ -152,6 +162,7 @@ export function RemoveScreen({
     policyCount,
     configBundleCount,
     abTestCount,
+    runtimeEndpointCount,
   ]);
 
   const isDisabled = (item: SelectableItem) => item.disabled ?? false;

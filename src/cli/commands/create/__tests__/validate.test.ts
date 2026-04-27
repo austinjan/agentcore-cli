@@ -35,6 +35,7 @@ describe('validateCreateOptions', () => {
   beforeAll(() => {
     testDir = join(tmpdir(), `create-opts-${randomUUID()}`);
     mkdirSync(testDir, { recursive: true });
+    mkdirSync(join(testDir, 'ExistingProject'), { recursive: true });
   });
 
   afterAll(() => {
@@ -57,6 +58,42 @@ describe('validateCreateOptions', () => {
     const result = validateCreateOptions({ name: 'TakenName' }, testDir);
     expect(result.valid).toBe(false);
     expect(result.error).toContain('already exists');
+  });
+
+  it('validates projectName separately from agent name', () => {
+    const result = validateCreateOptions(
+      {
+        name: `Agent${'A'.repeat(30)}`,
+        projectName: 'ShortProject',
+        language: 'Python',
+        framework: 'Strands',
+        modelProvider: 'Bedrock',
+        memory: 'none',
+      },
+      testDir
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it('checks folder existence using projectName', () => {
+    const result = validateCreateOptions(
+      {
+        name: 'AgentName',
+        projectName: 'ExistingProject',
+        language: 'Python',
+        framework: 'Strands',
+        modelProvider: 'Bedrock',
+        memory: 'none',
+      },
+      testDir
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('ExistingProject');
+  });
+
+  it('allows project-only create with only projectName', () => {
+    const result = validateCreateOptions({ projectName: 'OnlyProject', agent: false }, testDir);
+    expect(result.valid).toBe(true);
   });
 
   it('returns valid with --no-agent flag', () => {
@@ -338,6 +375,51 @@ describe('validateCreateOptions - lifecycle configuration', () => {
   });
 
   it('accepts no lifecycle flags', () => {
+    const result = validateCreateOptions({ ...baseOptions }, cwd);
+    expect(result.valid).toBe(true);
+  });
+});
+
+describe('validateCreateOptions - session storage mount path', () => {
+  const cwd = join(tmpdir(), `create-session-storage-${randomUUID()}`);
+
+  const baseOptions = {
+    name: 'TestProject',
+    language: 'Python',
+    framework: 'Strands',
+    modelProvider: 'Bedrock',
+    memory: 'none',
+  };
+
+  it('accepts valid mount path', () => {
+    const result = validateCreateOptions({ ...baseOptions, sessionStorageMountPath: '/mnt/data' }, cwd);
+    expect(result.valid).toBe(true);
+  });
+
+  it('accepts mount path with hyphenated subdirectory', () => {
+    const result = validateCreateOptions({ ...baseOptions, sessionStorageMountPath: '/mnt/my-storage' }, cwd);
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects path not under /mnt', () => {
+    const result = validateCreateOptions({ ...baseOptions, sessionStorageMountPath: '/data/storage' }, cwd);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('--session-storage-mount-path');
+  });
+
+  it('rejects path with more than one subdirectory level', () => {
+    const result = validateCreateOptions({ ...baseOptions, sessionStorageMountPath: '/mnt/data/subdir' }, cwd);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('--session-storage-mount-path');
+  });
+
+  it('rejects bare /mnt with no subdirectory', () => {
+    const result = validateCreateOptions({ ...baseOptions, sessionStorageMountPath: '/mnt/' }, cwd);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('--session-storage-mount-path');
+  });
+
+  it('accepts omitted mount path', () => {
     const result = validateCreateOptions({ ...baseOptions }, cwd);
     expect(result.valid).toBe(true);
   });
