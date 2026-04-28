@@ -126,14 +126,18 @@ export class ContainerDevServer extends DevServer {
   protected getSpawnConfig(): SpawnConfig {
     const { port, envVars = {} } = this.options;
 
-    // Forward AWS credentials from host environment into the container
+    // Forward AWS credentials from host environment into the container.
+    // When explicit credentials are present, omit AWS_PROFILE so SDK credential
+    // chains prefer the env var credentials over profile-based resolution (which
+    // can fail when the container user cannot read the mounted ~/.aws files).
+    const hasExplicitCreds = !!process.env.AWS_ACCESS_KEY_ID;
     const awsEnvKeys = [
       'AWS_ACCESS_KEY_ID',
       'AWS_SECRET_ACCESS_KEY',
       'AWS_SESSION_TOKEN',
       'AWS_REGION',
       'AWS_DEFAULT_REGION',
-      'AWS_PROFILE',
+      ...(hasExplicitCreds ? [] : ['AWS_PROFILE']),
     ];
     const awsEnvVars: Record<string, string> = {};
     for (const key of awsEnvKeys) {
