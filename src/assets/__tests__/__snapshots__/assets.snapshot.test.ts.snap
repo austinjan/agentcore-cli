@@ -5120,13 +5120,24 @@ app.run();
 exports[`Assets Directory Snapshots > TypeScript assets > typescript/typescript/http/vercelai/base/model/load.ts should match snapshot 1`] = `
 "{{#if (eq modelProvider "Bedrock")}}
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
+
+const provider = fromNodeProviderChain();
 
 const bedrock = createAmazonBedrock({
   region: process.env.AWS_REGION ?? 'us-east-1',
+  credentialProvider: async () => {
+    const creds = await provider();
+    return {
+      accessKeyId: creds.accessKeyId,
+      secretAccessKey: creds.secretAccessKey,
+      sessionToken: creds.sessionToken,
+    };
+  },
 });
 
 export function loadModel() {
-  return bedrock('us.anthropic.claude-sonnet-4-5-20250514-v1:0');
+  return bedrock('us.anthropic.claude-sonnet-4-5-20250929-v1:0');
 }
 {{/if}}
 {{#if (eq modelProvider "Anthropic")}}
@@ -5217,18 +5228,19 @@ exports[`Assets Directory Snapshots > TypeScript assets > typescript/typescript/
     "dev": "tsx watch main.ts"
   },
   "dependencies": {
-    "ai": "^4.3.0",
+    "ai": "^6.0.0",
     {{#if (eq modelProvider "Bedrock")}}
-    "@ai-sdk/amazon-bedrock": "^2.2.0",
+    "@ai-sdk/amazon-bedrock": "^4.0.0",
+    "@aws-sdk/credential-providers": "^3.0.0",
     {{/if}}
     {{#if (eq modelProvider "Anthropic")}}
     "@ai-sdk/anthropic": "^3.0.0",
     {{/if}}
     {{#if (eq modelProvider "OpenAI")}}
-    "@ai-sdk/openai": "^2.2.0",
+    "@ai-sdk/openai": "^3.0.0",
     {{/if}}
     {{#if (eq modelProvider "Gemini")}}
-    "@ai-sdk/google": "^2.2.0",
+    "@ai-sdk/google": "^3.0.0",
     {{/if}}
     "@opentelemetry/api": "^1.9.0",
     "bedrock-agentcore": "0.2.2",

@@ -10,18 +10,19 @@
     "dev": "tsx watch main.ts"
   },
   "dependencies": {
-    "ai": "^4.3.0",
+    "ai": "^6.0.0",
     {{#if (eq modelProvider "Bedrock")}}
-    "@ai-sdk/amazon-bedrock": "^2.2.0",
+    "@ai-sdk/amazon-bedrock": "^4.0.0",
+    "@aws-sdk/credential-providers": "^3.0.0",
     {{/if}}
     {{#if (eq modelProvider "Anthropic")}}
     "@ai-sdk/anthropic": "^3.0.0",
     {{/if}}
     {{#if (eq modelProvider "OpenAI")}}
-    "@ai-sdk/openai": "^2.2.0",
+    "@ai-sdk/openai": "^3.0.0",
     {{/if}}
     {{#if (eq modelProvider "Gemini")}}
-    "@ai-sdk/google": "^2.2.0",
+    "@ai-sdk/google": "^3.0.0",
     {{/if}}
     "@opentelemetry/api": "^1.9.0",
     "bedrock-agentcore": "0.2.2",
