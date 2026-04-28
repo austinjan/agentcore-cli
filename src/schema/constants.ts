@@ -4,7 +4,7 @@ import { z } from 'zod';
 // Feature Constants (shared across all schemas)
 // ============================================================================
 
-export const SDKFrameworkSchema = z.enum(['Strands', 'LangChain_LangGraph', 'GoogleADK', 'OpenAIAgents']);
+export const SDKFrameworkSchema = z.enum(['Strands', 'LangChain_LangGraph', 'GoogleADK', 'OpenAIAgents', 'VercelAI']);
 export type SDKFramework = z.infer<typeof SDKFrameworkSchema>;
 
 export const TargetLanguageSchema = z.enum(['Python', 'TypeScript', 'Other']);
@@ -47,6 +47,7 @@ export const SDK_MODEL_PROVIDER_MATRIX: Record<SDKFramework, readonly ModelProvi
   LangChain_LangGraph: ['Bedrock', 'Anthropic', 'OpenAI', 'Gemini'] as const,
   GoogleADK: ['Gemini'] as const,
   OpenAIAgents: ['OpenAI'] as const,
+  VercelAI: ['Bedrock', 'Anthropic', 'OpenAI', 'Gemini'] as const,
 };
 
 /**
@@ -99,6 +100,8 @@ export const RESERVED_PROJECT_NAMES: readonly string[] = [
   'strands',
   'strandsagents',
   'strandsagentstools',
+  'vercelai',
+  'aisdk',
   // Common utilities
   'httpx',
   'pytest',
@@ -180,7 +183,7 @@ export type ProtocolMode = z.infer<typeof ProtocolModeSchema>;
  * MCP is a standalone tool server with no framework.
  */
 export const PROTOCOL_FRAMEWORK_MATRIX: Record<ProtocolMode, readonly SDKFramework[]> = {
-  HTTP: ['Strands', 'LangChain_LangGraph', 'GoogleADK', 'OpenAIAgents'] as const,
+  HTTP: ['Strands', 'LangChain_LangGraph', 'GoogleADK', 'OpenAIAgents', 'VercelAI'] as const,
   MCP: [] as const,
   A2A: ['Strands', 'GoogleADK', 'LangChain_LangGraph'] as const,
 };

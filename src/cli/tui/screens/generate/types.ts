@@ -134,6 +134,7 @@ export const SDK_OPTIONS = [
   { id: 'LangChain_LangGraph', title: 'LangChain + LangGraph', description: 'Popular open-source frameworks' },
   { id: 'GoogleADK', title: 'Google ADK', description: 'Google Agent Development Kit' },
   { id: 'OpenAIAgents', title: 'OpenAI Agents', description: 'OpenAI native agent SDK' },
+  { id: 'VercelAI', title: 'Vercel AI SDK', description: 'Vercel AI SDK for TypeScript agents' },
 ] as const;
 
 /**
@@ -144,7 +145,7 @@ export function getSDKOptionsForProtocol(protocol: ProtocolMode, language?: Targ
   const supportedFrameworks = PROTOCOL_FRAMEWORK_MATRIX[protocol];
   const byProtocol = SDK_OPTIONS.filter(option => supportedFrameworks.includes(option.id));
   if (language === 'TypeScript') {
-    return byProtocol.filter(option => option.id === 'Strands');
+    return byProtocol.filter(option => option.id === 'Strands' || option.id === 'VercelAI');
   }
   return byProtocol;
 }

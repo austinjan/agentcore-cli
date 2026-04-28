@@ -185,10 +185,10 @@ export function validateCreateOptions(options: CreateOptions, cwd?: string): Val
     }
 
     // TypeScript is Strands-only for now
-    if (options.language === 'TypeScript' && fwResult.data !== 'Strands') {
+    if (options.language === 'TypeScript' && fwResult.data !== 'Strands' && fwResult.data !== 'VercelAI') {
       return {
         valid: false,
-        error: `Framework ${options.framework} is not yet available for TypeScript. Only Strands is supported.`,
+        error: `Framework ${options.framework} is not yet available for TypeScript. Only Strands and Vercel AI SDK are supported.`,
       };
     }
 

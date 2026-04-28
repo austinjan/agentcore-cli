@@ -247,10 +247,15 @@ export function validateAddAgentOptions(options: AddAgentOptions): ValidationRes
     if (options.language === 'Other') {
       return { valid: false, error: 'Create path only supports Python or TypeScript' };
     }
-    if (options.language === 'TypeScript' && options.framework && options.framework !== 'Strands') {
+    if (
+      options.language === 'TypeScript' &&
+      options.framework &&
+      options.framework !== 'Strands' &&
+      options.framework !== 'VercelAI'
+    ) {
       return {
         valid: false,
-        error: `Framework ${options.framework} is not yet available for TypeScript. Only Strands is supported.`,
+        error: `Framework ${options.framework} is not yet available for TypeScript. Only Strands and Vercel AI SDK are supported.`,
       };
     }
 
