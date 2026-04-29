@@ -375,10 +375,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout main
+      - name: Checkout release branch
         uses: actions/checkout@v6
         with:
-          ref: main
+          ref: release/v${{ needs.prepare-main.outputs.version }}
           fetch-depth: 0
 
       - uses: actions/setup-node@v6
@@ -389,6 +389,17 @@ jobs:
       - run: npm install -g npm@11.5.1
       - run: npm ci
       - run: npm run build
+
+      - name: Verify version before publish
+        env:
+          EXPECTED: ${{ needs.prepare-main.outputs.version }}
+        run: |
+          ACTUAL=$(node -p "require('./package.json').version")
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "❌ Version mismatch: expected $EXPECTED, got $ACTUAL"
+            exit 1
+          fi
+          echo "✅ Publishing version $ACTUAL"
 
       - name: Publish to npm
         run: npm publish --access public --provenance --tag latest
@@ -431,10 +442,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout preview
+      - name: Checkout release branch
         uses: actions/checkout@v6
         with:
-          ref: preview
+          ref: release/v${{ needs.prepare-preview.outputs.version }}
           fetch-depth: 0
 
       - uses: actions/setup-node@v6
@@ -445,6 +456,17 @@ jobs:
       - run: npm install -g npm@11.5.1
       - run: npm ci
       - run: npm run build
+
+      - name: Verify version before publish
+        env:
+          EXPECTED: ${{ needs.prepare-preview.outputs.version }}
+        run: |
+          ACTUAL=$(node -p "require('./package.json').version")
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "❌ Version mismatch: expected $EXPECTED, got $ACTUAL"
+            exit 1
+          fi
+          echo "✅ Publishing version $ACTUAL"
 
       - name: Publish to npm
         run: npm publish --access public --provenance --tag preview
