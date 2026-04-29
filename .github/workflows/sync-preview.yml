@@ -22,6 +22,7 @@ jobs:
         with:
           ref: preview
           fetch-depth: 0
+          token: ${{ secrets.SYNC_PAT }}
 
       - name: Configure git
         run: |
@@ -55,23 +56,18 @@ jobs:
       - name: Get original commit author
         if: steps.merge.outputs.status == 'conflict'
         id: author
-        run: |
-          AUTHOR=$(git log origin/main -1 --format='%an')
-          GH_USER=$(git log origin/main -1 --format='%ae' | grep -oP '.*(?=@users\.noreply\.github\.com)' || echo "")
-          if [[ -z "$GH_USER" ]]; then
-            # Try to get GitHub username from the commit
-            GH_USER=$(gh api "/repos/${{ github.repository }}/commits/$(git rev-parse origin/main)" --jq '.author.login // empty' 2>/dev/null || echo "")
-          fi
-          echo "name=$AUTHOR" >> $GITHUB_OUTPUT
-          echo "gh_user=$GH_USER" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          MAIN_COMMIT=$(git rev-parse origin/main)
+          GH_USER=$(gh api "/repos/$REPO/commits/$MAIN_COMMIT" --jq '.author.login // empty' 2>/dev/null || echo "")
+          echo "gh_user=$GH_USER" >> $GITHUB_OUTPUT
 
       - name: Create PR for conflict resolution
         if: steps.merge.outputs.status == 'conflict'
         env:
-          GH_TOKEN: ${{ github.token }}
-          AUTHOR_NAME: ${{ steps.author.outputs.name }}
+          GH_TOKEN: ${{ secrets.SYNC_PAT }}
           AUTHOR_GH: ${{ steps.author.outputs.gh_user }}
         run: |
           BRANCH="sync-preview/merge-main-$(date +%Y%m%d-%H%M%S)"
@@ -115,6 +111,10 @@ jobs:
              \`\`\`
           3. Keep preview-specific values (package version, preview tests, etc.) — accept main's changes for everything else.
           4. Commit and push, then merge this PR.
+
+          > **⚠️ You MUST merge this PR using "Create a merge commit".**
+          > Do NOT squash or rebase — that destroys the ancestry link
+          > and breaks the coordinated release workflow's preflight check.
 
           This must be resolved before the next coordinated release.
 
