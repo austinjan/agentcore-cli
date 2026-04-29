@@ -123,6 +123,31 @@ export class ContainerDevServer extends DevServer {
     });
   }
 
+  /**
+   * Resolve AWS credentials on the host so containers never need credential_process
+   * tools (e.g. ada) that aren't installed inside the image.
+   */
+  private resolveHostCredentials(): Record<string, string> | null {
+    const profile = process.env.AWS_PROFILE ?? 'default';
+    try {
+      const result = spawnSync('aws', ['configure', 'export-credentials', '--format', 'env', '--profile', profile], {
+        encoding: 'utf-8',
+        timeout: 10_000,
+        env: { ...process.env },
+      });
+      if (result.status !== 0 || !result.stdout) return null;
+
+      const creds: Record<string, string> = {};
+      for (const line of result.stdout.split('\n')) {
+        const match = /^export\s+(AWS_\w+)=(.+)$/.exec(line);
+        if (match?.[1] && match[2]) creds[match[1]] = match[2];
+      }
+      return creds.AWS_ACCESS_KEY_ID ? creds : null;
+    } catch {
+      return null;
+    }
+  }
+
   protected getSpawnConfig(): SpawnConfig {
     const { port, envVars = {} } = this.options;
 
@@ -130,7 +155,19 @@ export class ContainerDevServer extends DevServer {
     // When explicit credentials are present, omit AWS_PROFILE so SDK credential
     // chains prefer the env var credentials over profile-based resolution (which
     // can fail when the container user cannot read the mounted ~/.aws files).
-    const hasExplicitCreds = !!process.env.AWS_ACCESS_KEY_ID;
+    // If no explicit creds exist, resolve them on the host via `aws configure
+    // export-credentials` so containers don't need tools like ada/SSO browsers.
+    let hasExplicitCreds = !!process.env.AWS_ACCESS_KEY_ID;
+    if (!hasExplicitCreds) {
+      const resolved = this.resolveHostCredentials();
+      if (resolved) {
+        for (const [k, v] of Object.entries(resolved)) {
+          process.env[k] = v;
+        }
+        hasExplicitCreds = true;
+      }
+    }
+
     const awsEnvKeys = [
       'AWS_ACCESS_KEY_ID',
       'AWS_SECRET_ACCESS_KEY',
@@ -146,18 +183,19 @@ export class ContainerDevServer extends DevServer {
       }
     }
 
-    // Mount ~/.aws to a neutral path accessible by any container user, and set
-    // AWS SDK env vars to point to it. This supports SSO, profiles, and credential files
-    // regardless of what USER the Dockerfile specifies.
+    // Mount ~/.aws only when we couldn't resolve explicit credentials.
+    // This avoids containers hitting credential_process commands (e.g. ada)
+    // that aren't installed inside the image.
     const awsDir = join(homedir(), '.aws');
     const awsContainerPath = '/aws-config';
-    const awsMountArgs = existsSync(awsDir) ? ['-v', `${awsDir}:${awsContainerPath}:ro`] : [];
-    const awsConfigEnv = existsSync(awsDir)
-      ? {
-          AWS_CONFIG_FILE: `${awsContainerPath}/config`,
-          AWS_SHARED_CREDENTIALS_FILE: `${awsContainerPath}/credentials`,
-        }
-      : {};
+    const awsMountArgs = !hasExplicitCreds && existsSync(awsDir) ? ['-v', `${awsDir}:${awsContainerPath}:ro`] : [];
+    const awsConfigEnv =
+      !hasExplicitCreds && existsSync(awsDir)
+        ? {
+            AWS_CONFIG_FILE: `${awsContainerPath}/config`,
+            AWS_SHARED_CREDENTIALS_FILE: `${awsContainerPath}/credentials`,
+          }
+        : {};
 
     // Environment variables: AWS creds + config paths + user env + container-specific overrides.
     // OTEL env vars (endpoint + protocol) are passed via envVars from the caller,
