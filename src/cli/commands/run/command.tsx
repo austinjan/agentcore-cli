@@ -85,7 +85,7 @@ export const registerRun = (program: Command) => {
       '--endpoint <name>',
       'Runtime endpoint name (e.g. PROMPT_V1). Defaults to AGENTCORE_RUNTIME_ENDPOINT env var, then DEFAULT'
     )
-    .option('--lookback <days>', 'How far back to search for traces in CloudWatch (days)', '7')
+    .option('--days <days>', 'Lookback window in days', '7')
     .option('-A, --assertion <text...>', 'Ground truth assertion the agent response must satisfy (repeatable)')
     .option('--expected-trajectory <names>', 'Ground truth: expected tool call names in order (comma-separated)')
     .option('--expected-response <text>', 'Ground truth: expected agent response text to compare against')
@@ -104,7 +104,7 @@ export const registerRun = (program: Command) => {
         assertion?: string[];
         expectedTrajectory?: string;
         expectedResponse?: string;
-        lookback: string;
+        days: string;
         output?: string;
         json?: boolean;
       }) => {
@@ -137,7 +137,7 @@ export const registerRun = (program: Command) => {
             ? cliOptions.expectedTrajectory.split(',').map(s => s.trim())
             : undefined,
           expectedResponse: cliOptions.expectedResponse,
-          days: parseInt(cliOptions.lookback, 10),
+          days: parseInt(cliOptions.days, 10),
           output: cliOptions.output,
           json: cliOptions.json,
         };
