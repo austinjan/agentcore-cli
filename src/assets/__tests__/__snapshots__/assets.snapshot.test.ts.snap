@@ -543,8 +543,6 @@ exports[`Assets Directory Snapshots > File listing > should match the expected f
   "python/mcp/standalone/base/main.py",
   "python/mcp/standalone/base/pyproject.toml",
   "typescript/.gitkeep",
-  "wheels/.gitkeep",
-  "wheels/bedrock_agentcore-1.6.4-py3-none-any.whl",
 ]
 `;
 
