@@ -5,6 +5,7 @@
  * with direct HTTP requests and SigV4 signing.
  */
 import { getCredentialProvider } from './account';
+import { dnsSuffix } from './partition';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { HttpRequest } from '@smithy/protocol-http';
@@ -197,18 +198,11 @@ export interface ListABTestsResult {
 // HTTP signing helpers
 // ============================================================================
 
-function getControlPlaneEndpoint(region: string): string {
-  const stage = process.env.AGENTCORE_STAGE?.toLowerCase();
-  if (stage === 'beta') return `https://beta.${region}.elcapcp.genesis-primitives.aws.dev`;
-  if (stage === 'gamma') return `https://gamma.${region}.elcapcp.genesis-primitives.aws.dev`;
-  return `https://bedrock-agentcore-control.${region}.amazonaws.com`;
-}
-
 function getDataPlaneEndpoint(region: string): string {
   const stage = process.env.AGENTCORE_STAGE?.toLowerCase();
   if (stage === 'beta') return `https://beta.${region}.elcapdp.genesis-primitives.aws.dev`;
   if (stage === 'gamma') return `https://gamma.${region}.elcapdp.genesis-primitives.aws.dev`;
-  return `https://bedrock-agentcore.${region}.amazonaws.com`;
+  return `https://bedrock-agentcore.${region}.${dnsSuffix(region)}`;
 }
 
 async function signedRequestToEndpoint(
@@ -267,35 +261,6 @@ async function signedRequestToEndpoint(
   return response.json();
 }
 
-/**
- * Makes a data plane request with path fallback for the AB test API migration.
- * Tries the new `/ab-tests` path first; if a 404 is returned, retries with
- * the legacy `/abtests` path.
- */
-async function dpRequestWithFallback(options: {
-  region: string;
-  method: string;
-  path: string;
-  body?: string;
-}): Promise<unknown> {
-  try {
-    return await dpRequest(options);
-  } catch (err) {
-    // If the new path returns 404, fall back to the old `/abtests` path
-    if (err instanceof Error && err.message.includes('(404)')) {
-      const legacyPath = options.path.replace('/ab-tests', '/abtests'); // old path: /abtests
-      return dpRequest({ ...options, path: legacyPath });
-    }
-    throw err;
-  }
-}
-
-/** Control plane request — kept for future use. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function cpRequest(options: { region: string; method: string; path: string; body?: string }): Promise<unknown> {
-  return signedRequestToEndpoint(getControlPlaneEndpoint(options.region), options);
-}
-
 /** Data plane request — used for GetABTest (includes results/metrics). */
 async function dpRequest(options: { region: string; method: string; path: string; body?: string }): Promise<unknown> {
   return signedRequestToEndpoint(getDataPlaneEndpoint(options.region), options);
@@ -320,10 +285,10 @@ export async function createABTest(options: CreateABTestOptions): Promise<Create
     ...(options.enableOnCreate !== undefined && { enableOnCreate: options.enableOnCreate }),
   });
 
-  const result = await dpRequestWithFallback({
+  const result = await dpRequest({
     region: options.region,
     method: 'POST',
-    path: '/ab-tests', // new path; falls back to /abtests (legacy) on 404
+    path: '/ab-tests',
     body,
   });
 
@@ -332,10 +297,10 @@ export async function createABTest(options: CreateABTestOptions): Promise<Create
 
 export async function getABTest(options: GetABTestOptions): Promise<GetABTestResult> {
   // Data plane includes results/metrics in the response
-  const data = await dpRequestWithFallback({
+  const data = await dpRequest({
     region: options.region,
     method: 'GET',
-    path: `/ab-tests/${options.abTestId}`, // new path; falls back to /abtests/{id} (legacy) on 404
+    path: `/ab-tests/${options.abTestId}`,
   });
 
   return data as GetABTestResult;
@@ -352,10 +317,10 @@ export async function updateABTest(options: UpdateABTestOptions): Promise<Update
   if (options.executionStatus !== undefined) body.executionStatus = options.executionStatus;
   if (options.roleArn !== undefined) body.roleArn = options.roleArn;
 
-  const data = await dpRequestWithFallback({
+  const data = await dpRequest({
     region: options.region,
     method: 'PUT',
-    path: `/ab-tests/${options.abTestId}`, // new path; falls back to /abtests/{id} (legacy) on 404
+    path: `/ab-tests/${options.abTestId}`,
     body: JSON.stringify(body),
   });
 
@@ -364,10 +329,10 @@ export async function updateABTest(options: UpdateABTestOptions): Promise<Update
 
 export async function deleteABTest(options: DeleteABTestOptions): Promise<{ success: boolean; error?: string }> {
   try {
-    await dpRequestWithFallback({
+    await dpRequest({
       region: options.region,
       method: 'DELETE',
-      path: `/ab-tests/${options.abTestId}`, // new path; falls back to /abtests/{id} (legacy) on 404
+      path: `/ab-tests/${options.abTestId}`,
     });
     return { success: true };
   } catch (err) {
@@ -381,10 +346,10 @@ export async function listABTests(options: ListABTestsOptions): Promise<ListABTe
   if (options.nextToken) params.set('nextToken', options.nextToken);
   const query = params.toString();
 
-  const data = await dpRequestWithFallback({
+  const data = await dpRequest({
     region: options.region,
     method: 'GET',
-    path: `/ab-tests${query ? `?${query}` : ''}`, // new path; falls back to /abtests (legacy) on 404
+    path: `/ab-tests${query ? `?${query}` : ''}`,
   });
 
   const result = data as ListABTestsResult;

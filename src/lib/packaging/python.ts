@@ -22,27 +22,7 @@ import {
 } from './helpers';
 import type { ArtifactResult, CodeZipPackager, PackageOptions, RuntimePackager } from './types/packaging';
 import { detectUnavailablePlatform } from './uv';
-import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
-
-/**
- * Path to bundled Python wheels shipped inside the npm package.
- * When present, `--find-links` is added to `uv pip install` so uv
- * prefers the local wheel over fetching from PyPI.
- */
-// In the esbuild-bundled CLI (dist/cli/index.mjs), __dirname is dist/cli/,
-// so ../assets/wheels resolves to dist/assets/wheels/ — which is correct.
-// The tsc CJS build (dist/lib/packaging/python.js) is not used by end users.
-const BUNDLED_WHEELS_DIR = join(__dirname, '..', 'assets', 'wheels');
-
-/** Returns true if the bundled wheels directory exists and contains at least one .whl file. */
-function hasBundledWheels(): boolean {
-  try {
-    return existsSync(BUNDLED_WHEELS_DIR) && readdirSync(BUNDLED_WHEELS_DIR).some(f => f.endsWith('.whl'));
-  } catch {
-    return false;
-  }
-}
 
 // eslint-disable-next-line security/detect-unsafe-regex -- bounded input from RuntimeVersion enum, not user input
 const PYTHON_RUNTIME_REGEX = /PYTHON_(\d+)_?(\d+)?/;
@@ -131,25 +111,24 @@ export class PythonCodeZipPackager implements RuntimePackager {
       }
       await ensureDirClean(stagingDir);
 
-      const uvArgs = [
-        'pip',
-        'install',
-        '-r',
-        pyprojectPath,
-        '--target',
-        stagingDir,
-        '--python-version',
-        pythonVersion,
-        '--python-platform',
-        platform,
-        '--only-binary',
-        ':all:',
-      ];
-      if (hasBundledWheels()) {
-        uvArgs.push('--find-links', BUNDLED_WHEELS_DIR);
-      }
-
-      const result = await runSubprocessCapture('uv', uvArgs, { cwd: projectRoot });
+      const result = await runSubprocessCapture(
+        'uv',
+        [
+          'pip',
+          'install',
+          '-r',
+          pyprojectPath,
+          '--target',
+          stagingDir,
+          '--python-version',
+          pythonVersion,
+          '--python-platform',
+          platform,
+          '--only-binary',
+          ':all:',
+        ],
+        { cwd: projectRoot }
+      );
 
       if (result.code === 0) {
         await copySourceTree(srcDir, stagingDir);
@@ -229,25 +208,24 @@ export class PythonCodeZipPackagerSync implements CodeZipPackager {
       }
       ensureDirCleanSync(stagingDir);
 
-      const uvArgs = [
-        'pip',
-        'install',
-        '-r',
-        pyprojectPath,
-        '--target',
-        stagingDir,
-        '--python-version',
-        pythonVersion,
-        '--python-platform',
-        platform,
-        '--only-binary',
-        ':all:',
-      ];
-      if (hasBundledWheels()) {
-        uvArgs.push('--find-links', BUNDLED_WHEELS_DIR);
-      }
-
-      const result = runSubprocessCaptureSync('uv', uvArgs, { cwd: projectRoot });
+      const result = runSubprocessCaptureSync(
+        'uv',
+        [
+          'pip',
+          'install',
+          '-r',
+          pyprojectPath,
+          '--target',
+          stagingDir,
+          '--python-version',
+          pythonVersion,
+          '--python-platform',
+          platform,
+          '--only-binary',
+          ':all:',
+        ],
+        { cwd: projectRoot }
+      );
 
       if (result.code === 0) {
         copySourceTreeSync(srcDir, stagingDir);

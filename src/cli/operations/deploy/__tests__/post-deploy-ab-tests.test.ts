@@ -120,7 +120,9 @@ describe('setupABTests', () => {
       );
     });
 
-    it('skips already-deployed test', async () => {
+    it('updates already-deployed test', async () => {
+      mockUpdateABTest.mockResolvedValue({ abTestId: 'abt-existing', abTestArn: 'arn:abt:existing' });
+
       const result = await setupABTests({
         region: 'us-east-1',
         projectSpec: makeProjectSpec([sampleABTest]),
@@ -129,23 +131,26 @@ describe('setupABTests', () => {
         },
       });
 
-      expect(result.results[0]!.status).toBe('skipped');
+      expect(result.results[0]!.status).toBe('updated');
       expect(mockCreateABTest).not.toHaveBeenCalled();
+      expect(mockUpdateABTest).toHaveBeenCalled();
     });
 
-    it('skips test found via API list (state loss recovery)', async () => {
+    it('updates test found via API list (state loss recovery)', async () => {
       mockListABTests.mockResolvedValue({
         abTests: [{ name: 'TestOne', abTestId: 'abt-api', abTestArn: 'arn:abt:api' }],
       });
+      mockUpdateABTest.mockResolvedValue({ abTestId: 'abt-api', abTestArn: 'arn:abt:api' });
 
       const result = await setupABTests({
         region: 'us-east-1',
         projectSpec: makeProjectSpec([sampleABTest]),
       });
 
-      expect(result.results[0]!.status).toBe('skipped');
+      expect(result.results[0]!.status).toBe('updated');
       expect(result.abTests.TestOne!.abTestId).toBe('abt-api');
       expect(mockCreateABTest).not.toHaveBeenCalled();
+      expect(mockUpdateABTest).toHaveBeenCalled();
     });
 
     it('auto-creates IAM role when roleArn not provided', async () => {
@@ -567,11 +572,12 @@ describe('setupABTests', () => {
   });
 
   describe('mixed operations', () => {
-    it('creates new and skips existing', async () => {
+    it('creates new and updates existing', async () => {
       const newTest = { ...sampleABTest, name: 'NewTest' };
       const keptTest = { ...sampleABTest, name: 'KeptTest' };
 
       mockCreateABTest.mockResolvedValue({ abTestId: 'abt-new', abTestArn: 'arn:abt:new' });
+      mockUpdateABTest.mockResolvedValue({ abTestId: 'abt-kept', abTestArn: 'arn:abt:kept' });
 
       const result = await setupABTests({
         region: 'us-east-1',
@@ -584,7 +590,7 @@ describe('setupABTests', () => {
       expect(result.results).toHaveLength(2);
       const statuses = result.results.map(r => `${r.testName}:${r.status}`);
       expect(statuses).toContain('NewTest:created');
-      expect(statuses).toContain('KeptTest:skipped');
+      expect(statuses).toContain('KeptTest:updated');
     });
   });
 });

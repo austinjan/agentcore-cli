@@ -73,9 +73,9 @@ ImperativeHarness.displayName = 'ImperativeHarness';
 
 describe('useAddABTestWizard', () => {
   describe('defaults', () => {
-    it('default step is name', () => {
+    it('default step is mode', () => {
       const { lastFrame } = render(<Harness />);
-      expect(lastFrame()).toContain('step:name');
+      expect(lastFrame()).toContain('step:mode');
     });
 
     it('default treatment weight is 20', () => {
@@ -88,11 +88,11 @@ describe('useAddABTestWizard', () => {
       expect(lastFrame()).toContain('enableOnCreate:true');
     });
 
-    it('has all 9 steps', () => {
+    it('has all 10 steps', () => {
       const { lastFrame } = render(<Harness />);
       const frame = lastFrame()!.replace(/\n/g, '');
       expect(frame).toContain(
-        'steps:name,description,gateway,agent,variants,onlineEval,maxDuration,enableOnCreate,confirm'
+        'steps:mode,name,description,gateway,agent,variants,onlineEval,maxDuration,enableOnCreate,confirm'
       );
     });
   });
@@ -211,7 +211,7 @@ describe('useAddABTestWizard', () => {
       const { lastFrame } = render(<ImperativeHarness ref={ref} />);
 
       act(() => ref.current!.goBack());
-      expect(lastFrame()).toContain('step:name');
+      expect(lastFrame()).toContain('step:mode');
     });
   });
 
@@ -226,7 +226,7 @@ describe('useAddABTestWizard', () => {
 
       act(() => ref.current!.reset());
 
-      expect(lastFrame()).toContain('step:name');
+      expect(lastFrame()).toContain('step:mode');
       expect(lastFrame()).toContain('name:');
       expect(lastFrame()).toContain('treatmentWeight:20');
     });

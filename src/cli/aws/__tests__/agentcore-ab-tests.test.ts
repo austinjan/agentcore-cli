@@ -274,7 +274,7 @@ describe('agentcore-ab-tests', () => {
       );
     });
 
-    it('falls back to legacy path on 404 then returns error if both fail', async () => {
+    it('returns error on 404', async () => {
       mockFetch.mockResolvedValue({
         ok: false,
         status: 404,
@@ -284,10 +284,8 @@ describe('agentcore-ab-tests', () => {
 
       const result = await deleteABTest({ region: 'us-east-1', abTestId: 'abt-999' });
 
-      // First call: /ab-tests/abt-999 (new path), second call: /abtests/abt-999 (legacy fallback)
-      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(mockFetch.mock.calls[0]![0]).toContain('/ab-tests/abt-999');
-      expect(mockFetch.mock.calls[1]![0]).toContain('/abtests/abt-999');
       expect(result.success).toBe(false);
       expect(result.error).toContain('ABTest API error (404)');
     });

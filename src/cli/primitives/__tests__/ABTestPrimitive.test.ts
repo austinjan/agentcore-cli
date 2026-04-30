@@ -202,7 +202,8 @@ describe('ABTestPrimitive', () => {
       expect(result.success).toBe(true);
       const writtenSpec = mockWriteProjectSpec.mock.calls[0]![0];
       expect(writtenSpec.abTests).toHaveLength(0);
-      expect(writtenSpec.httpGateways).toHaveLength(0);
+      // Gateway is retained by default — cascade-delete only happens with deleteGateway: true
+      expect(writtenSpec.httpGateways).toHaveLength(1);
     });
 
     it('retains HTTP gateway when another AB test still references it', async () => {
