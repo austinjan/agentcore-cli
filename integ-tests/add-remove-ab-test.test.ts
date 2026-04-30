@@ -28,7 +28,7 @@ describe('integration: add and remove ab-test', () => {
   let project: TestProject;
 
   beforeAll(async () => {
-    project = await createTestProject({ noAgent: true });
+    project = await createTestProject();
   });
 
   afterAll(async () => {
@@ -53,7 +53,7 @@ describe('integration: add and remove ab-test', () => {
         '--name',
         'MyIntegTest',
         '--runtime',
-        'MyAgent',
+        project.agentName,
         '--control-bundle',
         'arn:bundle:control',
         '--control-version',
@@ -94,7 +94,7 @@ describe('integration: add and remove ab-test', () => {
         '--name',
         'MyIntegTest',
         '--runtime',
-        'MyAgent',
+        project.agentName,
         '--control-bundle',
         'arn:cb',
         '--control-version',
@@ -125,7 +125,7 @@ describe('integration: add and remove ab-test', () => {
         '--name',
         'BadWeights',
         '--runtime',
-        'MyAgent',
+        project.agentName,
         '--control-bundle',
         'arn:cb',
         '--control-version',
