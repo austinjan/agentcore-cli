@@ -193,6 +193,7 @@ export const COMMAND_SCHEMAS = {
   package: NoAttrs,
   validate: NoAttrs,
   'help.modes': NoAttrs,
+  help: NoAttrs,
   'remove.agent': NoAttrs,
   'remove.memory': NoAttrs,
   'remove.credential': NoAttrs,
