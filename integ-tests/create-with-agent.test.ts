@@ -103,7 +103,7 @@ describe('integration: create with TypeScript agent', () => {
         '--json',
       ],
       testDir,
-      true
+      { skipInstall: true }
     );
 
     expect(result.exitCode, `stderr: ${result.stderr}`).toBe(0);
