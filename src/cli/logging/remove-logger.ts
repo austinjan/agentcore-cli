@@ -13,10 +13,13 @@ export interface RemoveLoggerOptions {
     | 'credential'
     | 'gateway'
     | 'gateway-target'
+    | 'runtime-endpoint'
     | 'evaluator'
     | 'online-eval'
     | 'policy-engine'
-    | 'policy';
+    | 'policy'
+    | 'config-bundle'
+    | 'ab-test';
   /** Name of the resource being removed */
   resourceName: string;
 }

@@ -11,6 +11,7 @@ import type {
 import { getErrorMessage } from '../../errors';
 import { checkCreateDependencies } from '../../external-requirements';
 import { initGitRepo, setupNodeProject, setupPythonProject, writeEnvFile, writeGitignore } from '../../operations';
+import { createConfigBundleForAgent } from '../../operations/agent/config-bundle-defaults';
 import {
   mapGenerateConfigToRenderConfig,
   mapModelProviderToIdentityProviders,
@@ -111,6 +112,7 @@ type MemoryOption = 'none' | 'shortTerm' | 'longAndShortTerm';
 
 export interface CreateWithAgentOptions {
   name: string;
+  projectName?: string;
   cwd: string;
   type?: 'create' | 'import';
   buildType?: BuildType;
@@ -130,6 +132,7 @@ export interface CreateWithAgentOptions {
   idleTimeout?: number;
   maxLifetime?: number;
   sessionStorageMountPath?: string;
+  withConfigBundle?: boolean;
   skipGit?: boolean;
   skipInstall?: boolean;
   skipPythonSetup?: boolean;
@@ -139,6 +142,7 @@ export interface CreateWithAgentOptions {
 export async function createProjectWithAgent(options: CreateWithAgentOptions): Promise<CreateResult> {
   const {
     name,
+    projectName: explicitProjectName,
     cwd,
     buildType,
     language,
@@ -154,12 +158,14 @@ export async function createProjectWithAgent(options: CreateWithAgentOptions): P
     idleTimeout,
     maxLifetime: maxLifetimeOpt,
     sessionStorageMountPath,
+    withConfigBundle,
     skipGit,
     skipInstall,
     skipPythonSetup,
     onProgress,
   } = options;
-  const projectRoot = join(cwd, name);
+  const projectName = explicitProjectName ?? name;
+  const projectRoot = join(cwd, projectName);
   const configBaseDir = join(projectRoot, CONFIG_DIR);
 
   // Check CLI dependencies first (with language for conditional uv check)
@@ -172,7 +178,14 @@ export async function createProjectWithAgent(options: CreateWithAgentOptions): P
   }
 
   // First create the base project (skip dependency check since we already did it)
-  const projectResult = await createProject({ name, cwd, skipGit, skipInstall, skipDependencyCheck: true, onProgress });
+  const projectResult = await createProject({
+    name: projectName,
+    cwd,
+    skipGit,
+    skipInstall,
+    skipDependencyCheck: true,
+    onProgress,
+  });
   if (!projectResult.success) {
     // Merge warnings from both checks
     const allWarnings = [...depWarnings, ...(projectResult.warnings ?? [])];
@@ -235,6 +248,7 @@ export async function createProjectWithAgent(options: CreateWithAgentOptions): P
       ...(idleTimeout !== undefined && { idleRuntimeSessionTimeout: idleTimeout }),
       ...(maxLifetimeOpt !== undefined && { maxLifetime: maxLifetimeOpt }),
       ...(sessionStorageMountPath && { sessionStorageMountPath }),
+      ...(withConfigBundle && { withConfigBundle }),
     };
 
     // Resolve credential strategy FIRST (new project has no existing credentials)
@@ -243,7 +257,7 @@ export async function createProjectWithAgent(options: CreateWithAgentOptions): P
 
     if (!isMcp && resolvedModelProvider !== 'Bedrock') {
       strategy = await credentialPrimitive.resolveCredentialStrategy(
-        name,
+        projectName,
         agentName,
         resolvedModelProvider,
         apiKey,
@@ -275,6 +289,11 @@ export async function createProjectWithAgent(options: CreateWithAgentOptions): P
       await writeAgentToProject(generateConfig, { configBaseDir });
     }
     onProgress?.('Add agent to project', 'done');
+
+    // Auto-create config bundle when opted in
+    if (withConfigBundle) {
+      await createConfigBundleForAgent(agentName, configBaseDir);
+    }
 
     // Set up Python environment if needed (unless skipped)
     if (language === 'Python' && !skipPythonSetup && !skipInstall) {
@@ -313,9 +332,15 @@ export async function createProjectWithAgent(options: CreateWithAgentOptions): P
   }
 }
 
-export function getDryRunInfo(options: { name: string; cwd: string; language?: string }): CreateResult {
+export function getDryRunInfo(options: {
+  name: string;
+  cwd: string;
+  language?: string;
+  projectName?: string;
+}): CreateResult {
   const { name, cwd, language } = options;
-  const projectRoot = join(cwd, name);
+  const projectName = options.projectName ?? name;
+  const projectRoot = join(cwd, projectName);
 
   const wouldCreate = [
     `${projectRoot}/`,

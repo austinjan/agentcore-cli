@@ -5,6 +5,7 @@ import { spawnSync } from 'child_process';
 import { EventEmitter } from 'events';
 import { existsSync } from 'fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSpawn = vi.fn();
 vi.mock('child_process', () => ({
@@ -39,6 +40,8 @@ describe('CodeZipDevServer spawn config', () => {
   beforeEach(() => {
     mockSpawn.mockReturnValue(createMockChildProcess());
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   it('HTTP: uses uvicorn with --reload', async () => {
     const config: DevConfig = {

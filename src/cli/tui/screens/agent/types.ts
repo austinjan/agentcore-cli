@@ -73,7 +73,7 @@ export interface AddAgentConfig {
   buildType: BuildType;
   /** Path to custom Dockerfile (copied into code directory at setup) or filename already in code directory. */
   dockerfile?: string;
-  /** Protocol (HTTP, MCP, A2A). Defaults to HTTP. */
+  /** Protocol (HTTP, MCP, A2A, AGUI). Defaults to HTTP. */
   protocol: ProtocolMode;
   framework: SDKFramework;
   modelProvider: ModelProvider;
@@ -97,6 +97,8 @@ export interface AddAgentConfig {
   maxLifetime?: number;
   /** Mount path for session filesystem storage (e.g. /mnt/session-storage) */
   sessionStorageMountPath?: string;
+  /** When true, create a config bundle wired into the agent template */
+  withConfigBundle?: boolean;
   /** Python version (only for Python agents) */
   pythonVersion: PythonRuntime;
   /** Memory option (create path only) */

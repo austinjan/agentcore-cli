@@ -130,11 +130,28 @@ export async function resolveImportTarget(options: ResolveTargetOptions): Promis
   // Validate ARN format early if provided
   if (
     arn &&
-    !/^arn:aws:bedrock-agentcore:([^:]+):([^:]+):(runtime|memory|evaluator|online-evaluation-config)\/(.+)$/.test(arn)
+    !/^arn:[^:]+:bedrock-agentcore:([^:]+):([^:]+):(runtime|memory|evaluator|online-evaluation-config|gateway)\/(.+)$/.test(
+      arn
+    )
   ) {
     throw new Error(
-      `Not a valid ARN: "${arn}".\nExpected format: arn:aws:bedrock-agentcore:<region>:<account>:<runtime|memory|evaluator|online-evaluation-config>/<id>`
+      `Not a valid ARN: "${arn}".\nExpected format: arn:<partition>:bedrock-agentcore:<region>:<account>:<runtime|memory|evaluator|online-evaluation-config|gateway>/<id>`
     );
+  }
+
+  // Detect region mismatch between caller's AWS_REGION and the ARN's region up front.
+  // Without this the ARN's region silently wins and the user can import cross-region
+  // by accident, leaving agentcore.json pointed at a region they didn't intend.
+  if (arn) {
+    const arnRegionMatch = /^arn:[^:]+:bedrock-agentcore:([^:]+):/.exec(arn);
+    const arnRegion = arnRegionMatch?.[1];
+    const envRegion = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION;
+    if (arnRegion && envRegion && envRegion !== arnRegion) {
+      throw new Error(
+        `Region mismatch: AWS_REGION is "${envRegion}" but the ARN is in "${arnRegion}". ` +
+          `Either re-run with AWS_REGION=${arnRegion} or pass an ARN from ${envRegion}.`
+      );
+    }
   }
 
   let targets = await configIO.readAWSDeploymentTargets();
@@ -146,7 +163,7 @@ export async function resolveImportTarget(options: ResolveTargetOptions): Promis
       );
     }
 
-    const arnMatch = /^arn:aws:bedrock-agentcore:([^:]+):([^:]+):/.exec(arn);
+    const arnMatch = /^arn:[^:]+:bedrock-agentcore:([^:]+):([^:]+):/.exec(arn);
     if (!arnMatch) {
       throw new Error(
         'No deployment targets found in project and could not parse region/account from ARN.\nRun `agentcore deploy` first to set up a target, then re-run import.'
@@ -210,7 +227,7 @@ export interface ParsedArn {
 }
 
 const ARN_PATTERN =
-  /^arn:aws:bedrock-agentcore:([^:]+):([^:]+):(runtime|memory|evaluator|online-evaluation-config)\/(.+)$/;
+  /^arn:[^:]+:bedrock-agentcore:([^:]+):([^:]+):(runtime|memory|evaluator|online-evaluation-config|gateway)\/(.+)$/;
 
 /** Unified config for each importable resource type — ARN mapping, deployed state keys. */
 const RESOURCE_TYPE_CONFIG: Record<
@@ -229,6 +246,7 @@ const RESOURCE_TYPE_CONFIG: Record<
     collectionKey: 'onlineEvalConfigs',
     idField: 'onlineEvaluationConfigId',
   },
+  gateway: { arnType: 'gateway', collectionKey: 'mcp.gateways', idField: 'gatewayId' },
 };
 
 /**
@@ -244,7 +262,7 @@ export function parseAndValidateArn(
   const expectedArnType = RESOURCE_TYPE_CONFIG[expectedResourceType].arnType;
   if (!match) {
     throw new Error(
-      `Invalid ARN format: "${arn}". Expected format: arn:aws:bedrock-agentcore:<region>:<account>:${expectedArnType}/<id>`
+      `Invalid ARN format: "${arn}". Expected format: arn:<partition>:bedrock-agentcore:<region>:<account>:${expectedArnType}/<id>`
     );
   }
 
@@ -302,7 +320,11 @@ export async function findResourceInDeployedState(
 
   const { collectionKey, idField } = RESOURCE_TYPE_CONFIG[resourceType];
 
-  const collection = targetState.resources[collectionKey];
+  // Handle nested path (e.g., 'mcp.gateways') by traversing dot-separated keys
+  let collection: any = targetState.resources;
+  for (const key of collectionKey.split('.')) {
+    collection = collection?.[key];
+  }
   if (!collection) return undefined;
   for (const [name, entry] of Object.entries(collection)) {
     if ((entry as any)[idField] === resourceId) return name;
@@ -359,6 +381,13 @@ export async function updateDeployedState(
       targetState.resources.onlineEvalConfigs[resource.name] = {
         onlineEvaluationConfigId: resource.id,
         onlineEvaluationConfigArn: resource.arn,
+      };
+    } else if (resource.type === 'gateway') {
+      targetState.resources.mcp ??= {};
+      targetState.resources.mcp.gateways ??= {};
+      targetState.resources.mcp.gateways[resource.name] = {
+        gatewayId: resource.id,
+        gatewayArn: resource.arn,
       };
     }
   }

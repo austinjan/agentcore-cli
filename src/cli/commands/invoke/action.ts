@@ -1,10 +1,12 @@
 import { ConfigIO } from '../../../lib';
 import type { AgentCoreProjectSpec, AwsDeploymentTargets, DeployedState } from '../../../schema';
 import {
+  buildAguiRunInput,
   executeBashCommand,
   invokeA2ARuntime,
   invokeAgentRuntime,
   invokeAgentRuntimeStreaming,
+  invokeAguiRuntime,
   mcpCallTool,
   mcpInitSession,
   mcpListTools,
@@ -12,6 +14,7 @@ import {
 import { InvokeLogger } from '../../logging';
 import { formatMcpToolList } from '../../operations/dev/utils';
 import { canFetchRuntimeToken, fetchRuntimeToken } from '../../operations/fetch-access';
+import { generateSessionId } from '../../operations/session';
 import type { InvokeOptions, InvokeResult } from './types';
 
 export interface InvokeContext {
@@ -91,6 +94,20 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
     return { success: false, error: `Agent '${agentSpec.name}' is not deployed to target '${selectedTargetName}'` };
   }
 
+  // Build config bundle baggage if a bundle is associated with this agent
+  const deployedBundles = targetState?.resources?.configBundles ?? {};
+  let baggage: string | undefined;
+  const bundleSpec = project.configBundles?.find(b => {
+    const keys = Object.keys(b.components ?? {});
+    return keys.some(k => k === `{{runtime:${agentSpec.name}}}`);
+  });
+  if (bundleSpec) {
+    const bundleState = deployedBundles[bundleSpec.name];
+    if (bundleState?.bundleArn && bundleState?.versionId) {
+      baggage = `aws.agentcore.configbundle_arn=${encodeURIComponent(bundleState.bundleArn)},aws.agentcore.configbundle_version=${encodeURIComponent(bundleState.versionId)}`;
+    }
+  }
+
   // Auto-fetch bearer token for CUSTOM_JWT agents when not provided
   if (agentSpec.authorizerType === 'CUSTOM_JWT' && !options.bearerToken) {
     const canFetch = await canFetchRuntimeToken(agentSpec.name);
@@ -110,6 +127,14 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
         error: `Agent '${agentSpec.name}' is configured for CUSTOM_JWT but no bearer token is available.\nEither provide --bearer-token or re-add the agent with --client-id and --client-secret to enable auto-fetch.`,
       };
     }
+  }
+
+  // When invoking with a bearer token (OAuth/CUSTOM_JWT), AgentCore does not
+  // auto-generate a runtime session ID the way it does for SigV4 callers. Templates
+  // that wire up AgentCoreMemorySessionManager require a non-null session_id, so
+  // generate one here if the caller didn't pass --session-id.
+  if (options.bearerToken && !options.sessionId) {
+    options = { ...options, sessionId: generateSessionId() };
   }
 
   // Exec mode: run shell command in runtime container
@@ -219,6 +244,7 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
       userId: options.userId,
       headers: options.headers,
       bearerToken: options.bearerToken,
+      baggage,
     };
 
     // list-tools: list available MCP tools
@@ -321,6 +347,61 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
     }
   }
 
+  // AGUI protocol handling — send RunAgentInput via InvokeAgentRuntime, stream text
+  if (agentSpec.protocol === 'AGUI') {
+    const logger = new InvokeLogger({
+      agentName: agentSpec.name,
+      runtimeArn: agentState.runtimeArn,
+      region: targetConfig.region,
+    });
+
+    try {
+      const aguiInput = buildAguiRunInput(options.prompt, options.sessionId);
+      logger.logPrompt(options.prompt, undefined, options.userId);
+
+      const aguiResult = await invokeAguiRuntime(
+        {
+          region: targetConfig.region,
+          runtimeArn: agentState.runtimeArn,
+          sessionId: options.sessionId,
+          userId: options.userId,
+          logger,
+          headers: options.headers,
+          bearerToken: options.bearerToken,
+        },
+        aguiInput
+      );
+      let response = '';
+      let hasError = false;
+      for await (const chunk of aguiResult.textStream) {
+        response += chunk;
+        if (chunk.startsWith('Error: ')) {
+          hasError = true;
+        }
+        if (options.stream) {
+          process.stdout.write(chunk);
+        }
+      }
+      if (options.stream) {
+        process.stdout.write('\n');
+      }
+
+      logger.logResponse(response);
+
+      return {
+        success: !hasError,
+        agentName: agentSpec.name,
+        targetName: selectedTargetName,
+        response,
+        sessionId: aguiResult.sessionId,
+        logFilePath: logger.logFilePath,
+      };
+    } catch (err) {
+      logger.logError(err, 'AGUI invoke failed');
+      return { success: false, error: `AGUI invoke failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+
   // Create logger for this invocation
   const logger = new InvokeLogger({
     agentName: agentSpec.name,
@@ -344,6 +425,7 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
         logger,
         headers: options.headers,
         bearerToken: options.bearerToken,
+        baggage,
       });
 
       for await (const chunk of result.stream) {
@@ -359,6 +441,7 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
         agentName: agentSpec.name,
         targetName: selectedTargetName,
         response: fullResponse,
+        sessionId: result.sessionId,
         logFilePath: logger.logFilePath,
       };
     } catch (err) {
@@ -376,6 +459,7 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
     userId: options.userId,
     headers: options.headers,
     bearerToken: options.bearerToken,
+    baggage,
   });
 
   logger.logResponse(response.content);
@@ -385,6 +469,7 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
     agentName: agentSpec.name,
     targetName: selectedTargetName,
     response: response.content,
+    sessionId: response.sessionId,
     logFilePath: logger.logFilePath,
   };
 }

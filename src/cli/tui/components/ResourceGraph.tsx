@@ -20,6 +20,9 @@ const ICONS = {
   'online-eval': '↻',
   'policy-engine': '▣',
   policy: '▢',
+  'config-bundle': '⬡',
+  'ab-test': '⚗',
+  'runtime-endpoint': '◉',
 } as const;
 
 interface ResourceGraphProps {
@@ -102,7 +105,7 @@ function ResourceRow({
       )}
       {invocationUrl && (
         <Text dimColor>
-          {'      '}URL: {invocationUrl}
+          {'      '}Invocation URL: {invocationUrl}
         </Text>
       )}
     </Box>
@@ -128,6 +131,8 @@ export function ResourceGraph({ project, mcp, agentName, resourceStatuses }: Res
   const mcpRuntimeTools = mcp?.mcpRuntimeTools ?? [];
   const unassignedTargets = mcp?.unassignedTargets ?? [];
   const policyEngines = project.policyEngines ?? [];
+  const configBundles = project.configBundles ?? [];
+  const abTests = project.abTests ?? [];
 
   // Build lookup map and collect pending-removal resources in a single pass
   const { statusMap, pendingRemovals } = useMemo(() => {
@@ -180,17 +185,34 @@ export function ResourceGraph({ project, mcp, agentName, resourceStatuses }: Res
             const runtimeStatus = rsEntry?.error ? 'error' : rsEntry?.detail;
             const runtimeStatusColor = rsEntry?.error ? 'red' : getStatusColor(runtimeStatus);
             return (
-              <ResourceRow
-                key={agent.name}
-                icon={ICONS.agent}
-                color="green"
-                name={agent.name}
-                status={runtimeStatus}
-                statusColor={runtimeStatusColor}
-                deploymentState={rsEntry?.deploymentState}
-                identifier={rsEntry?.identifier}
-                invocationUrl={rsEntry?.invocationUrl}
-              />
+              <Box key={agent.name} flexDirection="column">
+                <ResourceRow
+                  icon={ICONS.agent}
+                  color="green"
+                  name={agent.name}
+                  status={runtimeStatus}
+                  statusColor={runtimeStatusColor}
+                  deploymentState={rsEntry?.deploymentState}
+                  identifier={rsEntry?.identifier}
+                  invocationUrl={rsEntry?.invocationUrl}
+                />
+                {agent.endpoints &&
+                  Object.entries(agent.endpoints).map(([epName, ep]) => {
+                    // Endpoints inherit deployment state from parent runtime
+                    const parentState = rsEntry?.deploymentState;
+                    const epState = parentState === 'deployed' ? 'deployed' : 'local-only';
+                    const badge = getDeploymentBadge(epState);
+                    return (
+                      <Text key={`${agent.name}/${epName}`}>
+                        {'    '}
+                        <Text color="green">{ICONS['runtime-endpoint']}</Text> {epName}
+                        <Text color="gray"> v{ep.version}</Text>
+                        {ep.description && <Text color="gray"> {ep.description}</Text>}
+                        {badge && <Text color={badge.color}> [{badge.text}]</Text>}
+                      </Text>
+                    );
+                  })}
+              </Box>
             );
           })}
         </Box>
@@ -282,6 +304,49 @@ export function ResourceGraph({ project, mcp, agentName, resourceStatuses }: Res
                 statusColor={rsEntry?.error ? 'red' : undefined}
                 deploymentState={rsEntry?.deploymentState}
                 identifier={rsEntry?.identifier}
+              />
+            );
+          })}
+        </Box>
+      )}
+
+      {/* Configuration Bundles */}
+      {configBundles.length > 0 && (
+        <Box flexDirection="column">
+          <SectionHeader>Configuration Bundles</SectionHeader>
+          {configBundles.map(bundle => {
+            const rsEntry = statusMap.get(`config-bundle:${bundle.name}`);
+            return (
+              <ResourceRow
+                key={bundle.name}
+                icon={ICONS['config-bundle']}
+                color="white"
+                name={bundle.name}
+                detail={rsEntry?.detail ?? bundle.description}
+                deploymentState={rsEntry?.deploymentState}
+                identifier={rsEntry?.identifier}
+              />
+            );
+          })}
+        </Box>
+      )}
+
+      {/* AB Tests */}
+      {abTests.length > 0 && (
+        <Box flexDirection="column">
+          <SectionHeader>AB Tests</SectionHeader>
+          {abTests.map(test => {
+            const rsEntry = statusMap.get(`ab-test:${test.name}`);
+            return (
+              <ResourceRow
+                key={test.name}
+                icon={ICONS['ab-test']}
+                color="white"
+                name={test.name}
+                detail={rsEntry?.detail ?? test.description}
+                deploymentState={rsEntry?.deploymentState}
+                identifier={rsEntry?.identifier}
+                invocationUrl={rsEntry?.invocationUrl}
               />
             );
           })}
@@ -418,19 +483,10 @@ export function ResourceGraph({ project, mcp, agentName, resourceStatuses }: Res
           <Text color="cyan">{ICONS.evaluator}</Text> evaluator{'  '}
           <Text color="magenta">{ICONS['online-eval']}</Text> online-eval{'  '}
           <Text color="magenta">{ICONS.gateway}</Text> gateway{'  '}
-          <Text color="red">{ICONS['policy-engine']}</Text> policy engine
+          <Text color="red">{ICONS['policy-engine']}</Text> policy engine{'  '}
+          <Text color="white">{ICONS['config-bundle']}</Text> config bundle{'  '}
+          <Text color="white">{ICONS['ab-test']}</Text> ab test
         </Text>
-        {resourceStatuses && resourceStatuses.length > 0 && (
-          <Box flexDirection="column" marginTop={1}>
-            <Text>
-              <Text color="green">[Deployed]</Text>
-              <Text color="gray"> live in AWS</Text>
-              {'  '}
-              <Text color="yellow">[Local only]</Text>
-              <Text color="gray"> not yet deployed</Text>
-            </Text>
-          </Box>
-        )}
       </Box>
     </Box>
   );

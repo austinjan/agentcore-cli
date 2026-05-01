@@ -1,5 +1,6 @@
 import { ConfigIO, SecureCredentials } from '../../../lib';
 import type { AgentCoreMcpSpec, DeployedState } from '../../../schema';
+import { applyTargetRegionToEnv } from '../../aws';
 import { validateAwsCredentials } from '../../aws/account';
 import { createSwitchableIoHost } from '../../cdk/toolkit-lib';
 import {
@@ -12,6 +13,7 @@ import {
   parseOnlineEvalOutputs,
   parsePolicyEngineOutputs,
   parsePolicyOutputs,
+  parseRuntimeEndpointOutputs,
 } from '../../cloudformation';
 import { getErrorMessage } from '../../errors';
 import { ExecLogger } from '../../logging';
@@ -31,6 +33,13 @@ import {
   validateProject,
 } from '../../operations/deploy';
 import { formatTargetStatus, getGatewayTargetStatuses } from '../../operations/deploy/gateway-status';
+import { deleteOrphanedABTests, setupABTests } from '../../operations/deploy/post-deploy-ab-tests';
+import {
+  resolveConfigBundleComponentKeys,
+  setupConfigBundles,
+} from '../../operations/deploy/post-deploy-config-bundles';
+import { setupHttpGateways } from '../../operations/deploy/post-deploy-http-gateways';
+import { enableOnlineEvalConfigs } from '../../operations/deploy/post-deploy-online-evals';
 import type { DeployResult } from './types';
 
 export interface ValidatedDeployOptions {
@@ -48,6 +57,7 @@ const MEMORY_ONLY_NEXT_STEPS = ['agentcore add agent', 'agentcore status'];
 
 export async function handleDeploy(options: ValidatedDeployOptions): Promise<DeployResult> {
   let toolkitWrapper = null;
+  let restoreEnv: (() => void) | null = null;
   const logger = new ExecLogger({ command: 'deploy' });
   const { onProgress } = options;
   let currentStepName = '';
@@ -79,6 +89,10 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
         logPath: logger.getRelativeLogPath(),
       };
     }
+    // Make the resolved target region authoritative for downstream SDK / CDK
+    // calls that don't receive an explicit region option.
+    // See https://github.com/aws/agentcore-cli/issues/924.
+    restoreEnv = applyTargetRegionToEnv(target.region);
     endStep('success');
 
     // Read project spec for gateway information (used later for deploy step name and outputs)
@@ -383,8 +397,12 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
     const evaluators = parseEvaluatorOutputs(outputs, evaluatorNames);
 
     // Parse online eval config outputs
-    const onlineEvalNames = (context.projectSpec.onlineEvalConfigs ?? []).map(c => c.name);
-    const onlineEvalConfigs = parseOnlineEvalOutputs(outputs, onlineEvalNames);
+    const onlineEvalSpecs = (context.projectSpec.onlineEvalConfigs ?? []).map(c => ({
+      name: c.name,
+      agent: c.agent,
+      endpoint: c.endpoint,
+    }));
+    const onlineEvalConfigs = parseOnlineEvalOutputs(outputs, onlineEvalSpecs);
 
     // Parse policy engine outputs
     const policyEngineSpecs = context.projectSpec.policyEngines ?? [];
@@ -396,6 +414,17 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       pe.policies.map(p => ({ engineName: pe.name, policyName: p.name }))
     );
     const policies = parsePolicyOutputs(outputs, policySpecs);
+
+    // Parse runtime endpoint outputs
+    const endpointSpecs: { agentName: string; endpointName: string }[] = [];
+    for (const runtime of context.projectSpec.runtimes) {
+      if (runtime.endpoints) {
+        for (const endpointName of Object.keys(runtime.endpoints)) {
+          endpointSpecs.push({ agentName: runtime.name, endpointName });
+        }
+      }
+    }
+    const runtimeEndpoints = parseRuntimeEndpointOutputs(outputs, endpointSpecs);
 
     // Parse gateway outputs
     const gatewaySpecs =
@@ -409,7 +438,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
     const gateways = parseGatewayOutputs(outputs, gatewaySpecs);
 
     const existingState = await configIO.readDeployedState().catch(() => undefined);
-    const deployedState = buildDeployedState({
+    let deployedState = buildDeployedState({
       targetName: target.name,
       stackName,
       agents,
@@ -422,6 +451,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       onlineEvalConfigs,
       policyEngines,
       policies,
+      runtimeEndpoints,
     });
     await configIO.writeDeployedState(deployedState);
 
@@ -442,6 +472,161 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
     }
 
     endStep('success');
+
+    // Post-deploy: Enable online eval configs that have enableOnCreate (CFN deploys them as DISABLED).
+    // Only enable configs that are newly deployed — skip configs that already existed before this
+    // deploy run, so we don't re-enable configs a customer intentionally disabled.
+    const postDeployWarnings: string[] = [];
+    const onlineEvalFullSpecs = context.projectSpec.onlineEvalConfigs ?? [];
+    const deployedOnlineEvalConfigs = deployedState.targets?.[target.name]?.resources?.onlineEvalConfigs ?? {};
+    const previouslyDeployedOnlineEvals = existingState?.targets?.[target.name]?.resources?.onlineEvalConfigs ?? {};
+    const newOnlineEvalFullSpecs = onlineEvalFullSpecs.filter(c => !previouslyDeployedOnlineEvals[c.name]);
+    if (newOnlineEvalFullSpecs.length > 0 && Object.keys(deployedOnlineEvalConfigs).length > 0) {
+      const enableResult = await enableOnlineEvalConfigs({
+        region: target.region,
+        onlineEvalConfigs: newOnlineEvalFullSpecs,
+        deployedOnlineEvalConfigs,
+      });
+
+      if (enableResult.hasErrors) {
+        const errors = enableResult.results.filter(r => r.status === 'error');
+        const errorMessages = errors.map(err => `"${err.configName}": ${err.error}`).join('; ');
+        logger.log(`Online eval enable warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `Online eval "${err.configName}": ${err.error}`));
+      }
+    }
+
+    // Pre-gateway: Delete orphaned AB tests so their gateway rules are cleaned up
+    // before we attempt to delete orphaned HTTP gateways.
+    const existingABTestsForCleanup = deployedState.targets?.[target.name]?.resources?.abTests;
+    if (existingABTestsForCleanup && Object.keys(existingABTestsForCleanup).length > 0) {
+      const deleteResult = await deleteOrphanedABTests({
+        region: target.region,
+        projectSpec: context.projectSpec,
+        existingABTests: existingABTestsForCleanup,
+      });
+
+      if (deleteResult.hasErrors) {
+        const errors = deleteResult.results.filter(r => r.status === 'error');
+        const errorMessages = errors.map(err => `"${err.testName}": ${err.error}`).join('; ');
+        logger.log(`AB test orphan cleanup warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `AB test "${err.testName}": ${err.error}`));
+      }
+
+      // Surface warnings (e.g., "AB test was stopped before deletion")
+      for (const r of deleteResult.results) {
+        if (r.warning) {
+          logger.log(r.warning, 'warn');
+          postDeployWarnings.push(r.warning);
+        }
+      }
+
+      // Update deployed state to remove deleted AB tests
+      if (deleteResult.results.some(r => r.status === 'deleted')) {
+        const updatedState = await configIO.readDeployedState().catch(() => deployedState);
+        const targetResources = updatedState.targets[target.name]?.resources;
+        if (targetResources?.abTests) {
+          for (const r of deleteResult.results) {
+            if (r.status === 'deleted') delete targetResources.abTests[r.testName];
+          }
+          await configIO.writeDeployedState(updatedState);
+          deployedState = updatedState;
+        }
+      }
+    }
+
+    // Post-deploy: Create/update HTTP gateways for AB tests (must run BEFORE config bundles
+    // because config bundle component keys may reference gateway ARNs)
+    const httpGatewaySpecs = context.projectSpec.httpGateways ?? [];
+    const existingHttpGateways = deployedState.targets?.[target.name]?.resources?.httpGateways;
+    if (httpGatewaySpecs.length > 0 || Object.keys(existingHttpGateways ?? {}).length > 0) {
+      const deployedResources = deployedState.targets?.[target.name]?.resources;
+      const httpGatewayResult = await setupHttpGateways({
+        region: target.region,
+        projectName: context.projectSpec.name,
+        projectSpec: context.projectSpec,
+        existingHttpGateways,
+        deployedResources,
+      });
+
+      // Always merge HTTP gateway state (even if empty, to clear deleted gateways)
+      const updatedState = await configIO.readDeployedState().catch(() => deployedState);
+      const targetResources = updatedState.targets[target.name]?.resources;
+      if (targetResources) {
+        targetResources.httpGateways = httpGatewayResult.httpGateways;
+        await configIO.writeDeployedState(updatedState);
+        deployedState = updatedState;
+      }
+
+      if (httpGatewayResult.hasErrors) {
+        const errors = httpGatewayResult.results.filter(r => r.status === 'error');
+        const errorMessages = errors.map(err => `"${err.gatewayName}": ${err.error}`).join('; ');
+        logger.log(`HTTP gateway setup warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `HTTP gateway "${err.gatewayName}": ${err.error}`));
+      }
+    }
+
+    // Post-deploy: Create/update configuration bundles
+    const configBundleSpecs = context.projectSpec.configBundles ?? [];
+    if (configBundleSpecs.length > 0) {
+      // Resolve component key placeholders (e.g., {{gateway:name}} → real ARN)
+      const resolvedProjectSpec = resolveConfigBundleComponentKeys(context.projectSpec, deployedState, target.name);
+
+      const existingConfigBundles = deployedState.targets?.[target.name]?.resources?.configBundles;
+      const configBundleResult = await setupConfigBundles({
+        region: target.region,
+        projectSpec: resolvedProjectSpec,
+        existingBundles: existingConfigBundles,
+      });
+
+      // Merge config bundle state into deployed state
+      if (Object.keys(configBundleResult.configBundles).length > 0) {
+        const updatedState = await configIO.readDeployedState().catch(() => deployedState);
+        const targetResources = updatedState.targets[target.name]?.resources;
+        if (targetResources) {
+          targetResources.configBundles = configBundleResult.configBundles;
+          await configIO.writeDeployedState(updatedState);
+          deployedState = updatedState;
+        }
+      }
+
+      if (configBundleResult.hasErrors) {
+        const errors = configBundleResult.results.filter(r => r.status === 'error');
+        const errorMessages = errors.map(err => `"${err.bundleName}": ${err.error}`).join('; ');
+        logger.log(`Config bundle setup warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `Config bundle "${err.bundleName}": ${err.error}`));
+      }
+    }
+
+    // Post-deploy: Create/update AB tests
+    const abTestSpecs = context.projectSpec.abTests ?? [];
+    if (abTestSpecs.length > 0) {
+      const existingABTests = deployedState.targets?.[target.name]?.resources?.abTests;
+      const deployedResources = deployedState.targets?.[target.name]?.resources;
+      const abTestResult = await setupABTests({
+        region: target.region,
+        projectSpec: context.projectSpec,
+        existingABTests,
+        deployedResources,
+      });
+
+      // Merge AB test state into deployed state
+      if (Object.keys(abTestResult.abTests).length > 0) {
+        const updatedState = await configIO.readDeployedState().catch(() => deployedState);
+        const targetResources = updatedState.targets[target.name]?.resources;
+        if (targetResources) {
+          targetResources.abTests = abTestResult.abTests;
+          await configIO.writeDeployedState(updatedState);
+        }
+      }
+
+      if (abTestResult.hasErrors) {
+        const errors = abTestResult.results.filter(r => r.status === 'error');
+        const errorMessages = errors.map(err => `"${err.testName}": ${err.error}`).join('; ');
+        logger.log(`AB test setup warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `AB test "${err.testName}": ${err.error}`));
+      }
+    }
 
     // Post-deploy: Enable CloudWatch Transaction Search (non-blocking, silent)
     const nextSteps = agentNames.length > 0 ? [...AGENT_NEXT_STEPS] : [...MEMORY_ONLY_NEXT_STEPS];
@@ -476,6 +661,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       logPath: logger.getRelativeLogPath(),
       nextSteps,
       notes,
+      postDeployWarnings: postDeployWarnings.length > 0 ? postDeployWarnings : undefined,
     };
   } catch (err: unknown) {
     logger.log(getErrorMessage(err), 'error');
@@ -485,5 +671,16 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
     if (toolkitWrapper) {
       await toolkitWrapper.dispose();
     }
+    restoreEnv?.();
   }
 }
+
+/**
+ * Resolve config bundle component key placeholders to real ARNs.
+ *
+ * Component keys like {{gateway:name}} or {{runtime:name}} are replaced
+ * with the actual ARNs from deployed state. Keys that are already ARNs or
+ * don't match a placeholder pattern are left unchanged.
+ */
+// resolveConfigBundleComponentKeys and resolveComponentKey moved to
+// src/cli/operations/deploy/post-deploy-config-bundles.ts

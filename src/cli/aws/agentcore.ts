@@ -1,15 +1,24 @@
 import { parseJsonRpcResponse } from '../../lib/utils/json-rpc';
 import { getCredentialProvider } from './account';
+import { parseAguiSSEStream } from './agui-parser';
+import { serviceEndpoint } from './partition';
 import {
   BedrockAgentCoreClient,
   EvaluateCommand,
-  type EvaluationReferenceInput,
   InvokeAgentRuntimeCommand,
   InvokeAgentRuntimeCommandCommand,
   StopRuntimeSessionCommand,
 } from '@aws-sdk/client-bedrock-agentcore';
 import type { HttpRequest } from '@smithy/protocol-http';
 import type { DocumentType } from '@smithy/types';
+
+/** Local definition — SDK does not yet export this type. */
+export interface EvaluationReferenceInput {
+  context: { spanContext: { sessionId: string; traceId?: string } };
+  expectedTrajectory?: { toolNames: string[] };
+  assertions?: { text: string }[];
+  expectedResponse?: { text: string };
+}
 
 /**
  * Create a BedrockAgentCoreClient with optional custom header injection middleware.
@@ -57,6 +66,8 @@ export interface InvokeAgentRuntimeOptions {
   headers?: Record<string, string>;
   /** Bearer token for CUSTOM_JWT auth. When provided, uses raw HTTP with Authorization header instead of SigV4. */
   bearerToken?: string;
+  /** W3C baggage header value (e.g. config bundle ref for runtime) */
+  baggage?: string;
 }
 
 export interface InvokeAgentRuntimeResult {
@@ -142,11 +153,38 @@ export function extractResult(text: string): string {
 
 /**
  * Build the invoke URL for a runtime ARN.
- * Format: https://bedrock-agentcore.{REGION}.amazonaws.com/runtimes/{ESCAPED_ARN}/invocations?qualifier=DEFAULT
  */
 function buildInvokeUrl(region: string, runtimeArn: string): string {
   const escapedArn = encodeURIComponent(runtimeArn);
-  return `https://bedrock-agentcore.${region}.amazonaws.com/runtimes/${escapedArn}/invocations?qualifier=DEFAULT`;
+  return `https://${serviceEndpoint('bedrock-agentcore', region)}/runtimes/${escapedArn}/invocations?qualifier=DEFAULT`;
+}
+
+/**
+ * Build headers for bearer-token invoke requests.
+ * Shared by both streaming and non-streaming invoke paths.
+ */
+export function buildBearerInvokeHeaders(
+  options: Pick<InvokeAgentRuntimeOptions, 'bearerToken' | 'sessionId' | 'userId' | 'headers' | 'baggage'>,
+  accept: string
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${options.bearerToken}`,
+    'Content-Type': 'application/json',
+    Accept: accept,
+  };
+  if (options.sessionId) {
+    headers['X-Amzn-Bedrock-AgentCore-Runtime-Session-Id'] = options.sessionId;
+  }
+  headers['X-Amzn-Bedrock-AgentCore-Runtime-User-Id'] = options.userId ?? DEFAULT_RUNTIME_USER_ID;
+  if (options.baggage) {
+    headers.baggage = options.baggage;
+  }
+  if (options.headers) {
+    for (const [name, value] of Object.entries(options.headers)) {
+      headers[name] = value;
+    }
+  }
+  return headers;
 }
 
 /**
@@ -155,15 +193,7 @@ function buildInvokeUrl(region: string, runtimeArn: string): string {
  */
 async function invokeWithBearerTokenStreaming(options: InvokeAgentRuntimeOptions): Promise<StreamingInvokeResult> {
   const url = buildInvokeUrl(options.region, options.runtimeArn);
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${options.bearerToken}`,
-    'Content-Type': 'application/json',
-    Accept: 'application/json, text/event-stream',
-  };
-  if (options.sessionId) {
-    headers['X-Amzn-Bedrock-AgentCore-Runtime-Session-Id'] = options.sessionId;
-  }
-  headers['X-Amzn-Bedrock-AgentCore-Runtime-User-Id'] = options.userId ?? DEFAULT_RUNTIME_USER_ID;
+  const headers = buildBearerInvokeHeaders(options, 'application/json, text/event-stream');
 
   const res = await fetch(url, {
     method: 'POST',
@@ -249,15 +279,7 @@ async function invokeWithBearerTokenStreaming(options: InvokeAgentRuntimeOptions
  */
 async function invokeWithBearerToken(options: InvokeAgentRuntimeOptions): Promise<InvokeAgentRuntimeResult> {
   const url = buildInvokeUrl(options.region, options.runtimeArn);
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${options.bearerToken}`,
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-  };
-  if (options.sessionId) {
-    headers['X-Amzn-Bedrock-AgentCore-Runtime-Session-Id'] = options.sessionId;
-  }
-  headers['X-Amzn-Bedrock-AgentCore-Runtime-User-Id'] = options.userId ?? DEFAULT_RUNTIME_USER_ID;
+  const headers = buildBearerInvokeHeaders(options, 'application/json');
 
   const res = await fetch(url, {
     method: 'POST',
@@ -299,6 +321,7 @@ export async function invokeAgentRuntimeStreaming(options: InvokeAgentRuntimeOpt
     accept: 'application/json, text/event-stream',
     runtimeSessionId: options.sessionId,
     runtimeUserId: options.userId ?? DEFAULT_RUNTIME_USER_ID,
+    ...(options.baggage && { baggage: options.baggage }),
   });
 
   const response = await client.send(command);
@@ -394,6 +417,7 @@ export async function invokeAgentRuntime(options: InvokeAgentRuntimeOptions): Pr
     accept: 'application/json, text/event-stream',
     runtimeSessionId: options.sessionId,
     runtimeUserId: options.userId ?? DEFAULT_RUNTIME_USER_ID,
+    ...(options.baggage && { baggage: options.baggage }),
   });
 
   const response = await client.send(command);
@@ -975,6 +999,78 @@ export function parseA2AResponse(text: string): string {
   } catch {
     return text;
   }
+}
+
+// ---------------------------------------------------------------------------
+// AGUI: Structured event streaming over InvokeAgentRuntime
+// ---------------------------------------------------------------------------
+
+export interface AguiInvokeOptions {
+  region: string;
+  runtimeArn: string;
+  sessionId?: string;
+  userId?: string;
+  logger?: SSELogger;
+  headers?: Record<string, string>;
+  /** Bearer token for CUSTOM_JWT auth — not yet supported for AGUI, will throw if provided */
+  bearerToken?: string;
+}
+
+export interface AguiStreamingInvokeResult {
+  /** Typed event stream — yields all AGUI events for rich TUI rendering */
+  stream: AsyncGenerator<import('./agui-types').AguiEvent, void, unknown>;
+  /** Text-only convenience stream — yields only TEXT_MESSAGE_CONTENT deltas */
+  textStream: AsyncGenerator<string, void, unknown>;
+  sessionId: string | undefined;
+}
+
+/**
+ * Invoke an AgentCore AGUI Runtime and stream structured events.
+ * Returns both a typed event stream and a text-only convenience stream.
+ */
+export async function invokeAguiRuntime(
+  options: AguiInvokeOptions,
+  input: import('./agui-types').AguiRunInput
+): Promise<AguiStreamingInvokeResult> {
+  if (options.bearerToken) {
+    throw new Error('Bearer token auth is not yet supported for AGUI. Use SigV4 credentials.');
+  }
+
+  const client = createAgentCoreClient(options.region, options.headers);
+
+  const command = new InvokeAgentRuntimeCommand({
+    agentRuntimeArn: options.runtimeArn,
+    payload: new TextEncoder().encode(JSON.stringify(input)),
+    contentType: 'application/json',
+    accept: 'text/event-stream',
+    runtimeSessionId: options.sessionId,
+    runtimeUserId: options.userId ?? DEFAULT_RUNTIME_USER_ID,
+  });
+
+  const response = await client.send(command);
+  const sessionId = response.runtimeSessionId;
+
+  if (!response.response) {
+    throw new Error('No response from AgentCore Runtime');
+  }
+
+  const webStream = response.response.transformToWebStream();
+  const reader = webStream.getReader();
+
+  const { eventStream, textStream } = parseAguiSSEStream({
+    reader,
+    logger: options.logger,
+  });
+
+  if (!textStream) {
+    throw new Error('AGUI parser created in single-consumer mode — textStream unavailable');
+  }
+
+  return {
+    stream: eventStream,
+    textStream,
+    sessionId,
+  };
 }
 
 /**

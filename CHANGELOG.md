@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.13.0] - 2026-05-01
+
+### Added
+- feat: evo preview features — config bundles, batch evaluation, recommendations, AB testing (#1068) (9ccf802)
+- feat: wire telemetry into all add.* commands (#1050) (e9dfc16)
+- feat: make parsing resilient to individual failures (#1062) (a4c37a2)
+- feat: update @aws/agent-inspector to 0.3.0 (90f17b4)
+- feat: update @aws/agent-inspector to 0.3.0 (278783a)
+
+### Fixed
+- fix: remove unnecessary non-null assertions after .default([]) revert (#1075) (eab8c87)
+- fix: revert .optional() to .default([]) and strip empty evo arrays on write (#1074) (8c5cdfe)
+- fix: remove dead preflight patch, proper teardown, optional evo schema fields (#1073) (839b32b)
+- fix: remove dead preflight patch and use proper teardown for evo resources (#1072) (0e38e9e)
+- fix: resolve e2e import test concurrency races (#1067) (bd6f841)
+- fix: forward custom headers in bearer token invoke paths (#1065) (3dccd97)
+
+### Other Changes
+- refactor: consolidate cli-config into global-config (#802) (3aec000)
+- ci: cut full e2e time in half via vitest sharding (#1016) (4daca83)
+
+## [0.11.0] - 2026-04-24
+
+### Added
+- feat: add telemetry schemas and client (#941) (7c37fa6)
+- feat: add GitHub Action for automated PR review via AgentCore Harness (#934) (a365bf5)
+
+### Fixed
+- fix: display session ID after CLI invoke completes (#957) (51e4a8e)
+- fix: lower eventExpiryDuration minimum from 7 to 3 days (closes #744) (#956) (8613657)
+- fix: use pull_request_target for fork PR support (#958) (933bac8)
+- fix: agentcore dev not working in windows (#951) (5271f55)
+- fix: add TTY detection before TUI fallbacks to prevent agent/CI hangs (#949) (c30ed54)
+- fix: allow code-based evaluators in online eval configs (#947) (3d2d671)
+- fix: buffer streaming text to avoid per-token log lines in GitHub Actions (#946) (cb1e81a)
+
+### Other Changes
+- test: add browser tests for agent inspector (#938) (7a4104d)
+
+## [0.10.0] - 2026-04-23
+
+### Added
+- feat: upgrade agent inspector to 0.2.1 (#937) (b49a06f)
+- feat: remove deployed/local from status legend (#936) (c0d5b7b)
+- feat: add GovCloud multi-partition support (#908) (098b104)
+- feat: support preview releases from feature branches (#905) (1a93f92)
+- feat: add AG-UI (AGUI) as fourth first-class protocol mode (#858) (52144dc)
+- feat: add session filesystem storage support (#893) (b97e337)
+
+### Fixed
+- fix: agentcore add component opens component wizard directly (#896) (74a35cb)
+- fix: propagate sessionId as A2A contextId in Inspector proxy (#892) (08d452e)
+
+### Documentation
+- docs: update vended AGENTS.md, README.md, and llm-context references (#898) (84a6dde)
+
+### Other Changes
+- fix(deploy): honor aws-targets.json region for all SDK and CDK calls (#925) (1903f7d)
+- fix(invoke): show full session ID and print resume command on exit (#904) (ce683c0)
+- chore: remove preview bump type from release workflow (#847) (13f16d3)
+- chore: remove single-commit-must-match-PR-title validation (#897) (4d7da2f)
+- fix(invoke): pass session ID to local invoke log files (#894) (e966cb6)
+
 ## [0.9.1] - 2026-04-17
 
 ## [0.9.0] - 2026-04-17

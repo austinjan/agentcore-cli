@@ -271,6 +271,7 @@ export async function mapGenerateConfigToRenderConfig(
 ): Promise<AgentRenderConfig> {
   const isMcp = config.protocol === 'MCP';
   const gatewayProviders = isMcp ? [] : await mapGatewaysToGatewayProviders();
+  const enableOtel = !isMcp;
 
   return {
     name: config.projectName,
@@ -292,5 +293,7 @@ export async function mapGenerateConfigToRenderConfig(
     protocol: config.protocol,
     dockerfile: config.dockerfile,
     sessionStorageMountPath: config.sessionStorageMountPath,
+    enableOtel,
+    hasConfigBundle: config.withConfigBundle,
   };
 }

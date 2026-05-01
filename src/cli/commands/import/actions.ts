@@ -8,6 +8,7 @@ import type {
   Memory,
 } from '../../../schema';
 import { validateAwsCredentials } from '../../aws/account';
+import { arnPrefix } from '../../aws/partition';
 import { ExecLogger } from '../../logging';
 import { setupPythonProject } from '../../operations/python/setup';
 import { executeCdkImportPipeline } from './import-pipeline';
@@ -41,7 +42,7 @@ function toAgentEnvSpec(agent: ParsedStarterToolkitConfig['agents'][0]): AgentEn
     runtimeVersion: (agent.runtimeVersion ?? 'PYTHON_3_12') as any,
     protocol: agent.protocol,
     networkMode: agent.networkMode,
-    instrumentation: { enableOtel: agent.enableOtel },
+    instrumentation: { enableOtel: agent.protocol === 'MCP' ? false : agent.enableOtel },
   };
   /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any */
 
@@ -77,7 +78,7 @@ function toMemorySpec(mem: ParsedStarterToolkitConfig['memories'][0]): Memory {
 
   return {
     name: mem.name,
-    eventExpiryDuration: Math.max(7, Math.min(365, mem.eventExpiryDays)),
+    eventExpiryDuration: Math.max(3, Math.min(365, mem.eventExpiryDays)),
     strategies,
   };
 }
@@ -521,7 +522,7 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
           id: a.physicalAgentId!,
           arn:
             a.physicalAgentArn ??
-            `arn:aws:bedrock-agentcore:${target.region}:${target.account}:runtime/${a.physicalAgentId}`,
+            `${arnPrefix(target.region)}:bedrock-agentcore:${target.region}:${target.account}:runtime/${a.physicalAgentId}`,
         })),
       ...memoriesToImport
         .filter(m => m.physicalMemoryId)
@@ -531,7 +532,7 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
           id: m.physicalMemoryId!,
           arn:
             m.physicalMemoryArn ??
-            `arn:aws:bedrock-agentcore:${target.region}:${target.account}:memory/${m.physicalMemoryId}`,
+            `${arnPrefix(target.region)}:bedrock-agentcore:${target.region}:${target.account}:memory/${m.physicalMemoryId}`,
         })),
     ];
 
@@ -542,11 +543,14 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
       configIO,
       targetName,
       onProgress: progressFn,
-      buildResourcesToImport: synthTemplate => {
+      buildResourcesToImport: (synthTemplate, deployedTemplate) => {
         const resourcesToImport: ResourceToImport[] = [];
+        const deployedIds = new Set(Object.keys(deployedTemplate.Resources));
 
         for (const agent of agentsToImport) {
-          const runtimeLogicalIds = findLogicalIdsByType(synthTemplate, 'AWS::BedrockAgentCore::Runtime');
+          const runtimeLogicalIds = findLogicalIdsByType(synthTemplate, 'AWS::BedrockAgentCore::Runtime').filter(
+            id => !deployedIds.has(id)
+          );
           let logicalId: string | undefined;
 
           const expectedRuntimeName = `${projectName}_${agent.name}`;
@@ -554,7 +558,8 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
             synthTemplate,
             'AWS::BedrockAgentCore::Runtime',
             'AgentRuntimeName',
-            expectedRuntimeName
+            expectedRuntimeName,
+            { excludeLogicalIds: deployedIds }
           );
 
           if (!logicalId && runtimeLogicalIds.length === 1) {
@@ -575,16 +580,22 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
         }
 
         for (const memory of memoriesToImport) {
-          const memoryLogicalIds = findLogicalIdsByType(synthTemplate, 'AWS::BedrockAgentCore::Memory');
+          const memoryLogicalIds = findLogicalIdsByType(synthTemplate, 'AWS::BedrockAgentCore::Memory').filter(
+            id => !deployedIds.has(id)
+          );
           let logicalId: string | undefined;
 
-          logicalId = findLogicalIdByProperty(synthTemplate, 'AWS::BedrockAgentCore::Memory', 'Name', memory.name);
+          logicalId = findLogicalIdByProperty(synthTemplate, 'AWS::BedrockAgentCore::Memory', 'Name', memory.name, {
+            excludeLogicalIds: deployedIds,
+          });
 
           // CDK prefixes memory names with the project name (e.g. "myproject_Agent_mem"),
           // so also try matching with the project name prefix.
           if (!logicalId) {
             const prefixedName = `${projectName}_${memory.name}`;
-            logicalId = findLogicalIdByProperty(synthTemplate, 'AWS::BedrockAgentCore::Memory', 'Name', prefixedName);
+            logicalId = findLogicalIdByProperty(synthTemplate, 'AWS::BedrockAgentCore::Memory', 'Name', prefixedName, {
+              excludeLogicalIds: deployedIds,
+            });
           }
 
           if (!logicalId && memoryLogicalIds.length === 1) {

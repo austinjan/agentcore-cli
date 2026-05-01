@@ -15,6 +15,13 @@ import { getErrorMessage, isChangesetInProgressError, isExpiredTokenError } from
 import { ExecLogger } from '../../../logging';
 import { performStackTeardown, setupTransactionSearch } from '../../../operations/deploy';
 import { getGatewayTargetStatuses } from '../../../operations/deploy/gateway-status';
+import { deleteOrphanedABTests, setupABTests } from '../../../operations/deploy/post-deploy-ab-tests';
+import {
+  resolveConfigBundleComponentKeys,
+  setupConfigBundles,
+} from '../../../operations/deploy/post-deploy-config-bundles';
+import { setupHttpGateways } from '../../../operations/deploy/post-deploy-http-gateways';
+import { enableOnlineEvalConfigs } from '../../../operations/deploy/post-deploy-online-evals';
 import {
   type StackDiffSummary,
   type Step,
@@ -83,6 +90,10 @@ interface DeployFlowState {
   numStacksWithChanges?: number;
   /** Notes to display after successful deploy (e.g., transaction search info) */
   deployNotes: string[];
+  /** Warnings from post-deploy steps (config bundles, AB tests) */
+  postDeployWarnings: string[];
+  /** True if any post-deploy sub-resource operation had errors */
+  postDeployHasError: boolean;
   /** Whether an on-demand diff is currently running */
   isDiffLoading: boolean;
   /** Request an on-demand diff (lazy: runs once, caches result) */
@@ -122,6 +133,10 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
   const identityKmsKeyArn = preSynthesized?.identityKmsKeyArn ?? preflight.identityKmsKeyArn;
   const allCredentials = preSynthesized?.allCredentials ?? preflight.allCredentials;
 
+  const [preDeployDiffStep, setPreDeployDiffStep] = useState<Step>({
+    label: 'Computing diff changes...',
+    status: 'pending',
+  });
   const [publishAssetsStep, setPublishAssetsStep] = useState<Step>({ label: 'Publish assets', status: 'pending' });
   const [deployStep, setDeployStep] = useState<Step>({ label: 'Deploy to AWS', status: 'pending' });
   const [diffStep, setDiffStep] = useState<Step>({ label: 'Run CDK diff', status: 'pending' });
@@ -129,6 +144,8 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
   const [numStacksWithChanges, setNumStacksWithChanges] = useState<number | undefined>();
   const [isDiffLoading, setIsDiffLoading] = useState(false);
   const [deployNotes, setDeployNotes] = useState<string[]>([]);
+  const [postDeployWarnings, setPostDeployWarnings] = useState<string[]>([]);
+  const [postDeployHasError, setPostDeployHasError] = useState(false);
   const isDiffRunningRef = useRef(false);
   const [deployOutput, setDeployOutput] = useState<string | null>(null);
   const [deployMessages, setDeployMessages] = useState<DeployMessage[]>([]);
@@ -144,6 +161,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
   const streamOutputsRef = useRef<Record<string, string> | null>(null);
 
   const startDeploy = useCallback(() => {
+    setPreDeployDiffStep({ label: 'Computing diff changes...', status: 'pending' });
     setPublishAssetsStep({ label: 'Publish assets', status: 'pending' });
     setDeployStep({ label: 'Deploy to AWS', status: 'pending' });
     setDeployOutput(null);
@@ -269,8 +287,14 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
     const evaluators = parseEvaluatorOutputs(outputs, evaluatorNames);
 
     // Parse online eval config outputs
-    const onlineEvalNames = (ctx.projectSpec.onlineEvalConfigs ?? []).map((c: { name: string }) => c.name);
-    const onlineEvalConfigs = parseOnlineEvalOutputs(outputs, onlineEvalNames);
+    const onlineEvalSpecs = (ctx.projectSpec.onlineEvalConfigs ?? []).map(
+      (c: { name: string; agent?: string; endpoint?: string }) => ({
+        name: c.name,
+        agent: c.agent,
+        endpoint: c.endpoint,
+      })
+    );
+    const onlineEvalConfigs = parseOnlineEvalOutputs(outputs, onlineEvalSpecs);
 
     // Parse policy engine outputs
     const policyEngineSpecs = ctx.projectSpec.policyEngines ?? [];
@@ -287,7 +311,7 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
     setStackOutputs(outputs);
 
     const existingState = await configIO.readDeployedState().catch(() => undefined);
-    const deployedState = buildDeployedState({
+    let deployedState = buildDeployedState({
       targetName: target.name,
       stackName: currentStackName,
       agents,
@@ -302,6 +326,210 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
       policies,
     });
     await configIO.writeDeployedState(deployedState);
+
+    // Post-deploy: Enable online eval configs that have enableOnCreate (CFN deploys them as DISABLED).
+    // Only enable configs that are newly deployed — skip configs that already existed before this
+    // deploy run, so we don't re-enable configs a customer intentionally disabled.
+    const onlineEvalFullSpecs = ctx.projectSpec.onlineEvalConfigs ?? [];
+    const deployedOnlineEvalConfigs = deployedState.targets?.[target.name]?.resources?.onlineEvalConfigs ?? {};
+    const previouslyDeployedOnlineEvals = existingState?.targets?.[target.name]?.resources?.onlineEvalConfigs ?? {};
+    const newOnlineEvalFullSpecs = onlineEvalFullSpecs.filter(c => !previouslyDeployedOnlineEvals[c.name]);
+    if (newOnlineEvalFullSpecs.length > 0 && Object.keys(deployedOnlineEvalConfigs).length > 0) {
+      try {
+        const enableResult = await enableOnlineEvalConfigs({
+          region: target.region,
+          onlineEvalConfigs: newOnlineEvalFullSpecs,
+          deployedOnlineEvalConfigs,
+        });
+
+        if (enableResult.hasErrors) {
+          const errors = enableResult.results.filter(r => r.status === 'error');
+          for (const err of errors) {
+            logger.log(`Online eval enable "${err.configName}" error: ${err.error}`, 'warn');
+          }
+          setPostDeployHasError(true);
+          setPostDeployWarnings(prev => [
+            ...prev,
+            ...errors.map(err => `Online eval "${err.configName}": ${err.error}`),
+          ]);
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.log(`Online eval enable failed: ${message}`, 'warn');
+        setPostDeployHasError(true);
+        setPostDeployWarnings(prev => [...prev, `Online eval enable failed: ${message}`]);
+      }
+    }
+
+    // Post-deploy: Create/update configuration bundles
+    const configBundleSpecs = ctx.projectSpec.configBundles ?? [];
+    if (configBundleSpecs.length > 0) {
+      try {
+        // Resolve component key placeholders (e.g., {{runtime:name}} → real ARN)
+        const resolvedProjectSpec = resolveConfigBundleComponentKeys(ctx.projectSpec, deployedState, target.name);
+        const existingConfigBundles = deployedState.targets?.[target.name]?.resources?.configBundles;
+        const configBundleResult = await setupConfigBundles({
+          region: target.region,
+          projectSpec: resolvedProjectSpec,
+          existingBundles: existingConfigBundles,
+        });
+
+        // Merge config bundle state into deployed state
+        if (Object.keys(configBundleResult.configBundles).length > 0) {
+          const updatedState = await configIO.readDeployedState().catch(() => deployedState);
+          const targetResources = updatedState.targets[target.name]?.resources;
+          if (targetResources) {
+            targetResources.configBundles = configBundleResult.configBundles;
+            await configIO.writeDeployedState(updatedState);
+          }
+        }
+
+        if (configBundleResult.hasErrors) {
+          const errors = configBundleResult.results.filter(r => r.status === 'error');
+          for (const err of errors) {
+            logger.log(`Config bundle "${err.bundleName}" setup error: ${err.error}`, 'warn');
+          }
+          setPostDeployHasError(true);
+          setPostDeployWarnings(prev => [
+            ...prev,
+            ...errors.map(err => `Config bundle "${err.bundleName}": ${err.error}`),
+          ]);
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.log(`Config bundle setup failed: ${message}`, 'warn');
+        setPostDeployHasError(true);
+        setPostDeployWarnings(prev => [...prev, `Config bundle setup failed: ${message}`]);
+      }
+    }
+
+    // Pre-gateway: Delete orphaned AB tests so their gateway rules are cleaned up
+    // before we attempt to delete orphaned HTTP gateways.
+    const existingABTests = deployedState.targets?.[target.name]?.resources?.abTests;
+    if (existingABTests && Object.keys(existingABTests).length > 0) {
+      try {
+        const deleteResult = await deleteOrphanedABTests({
+          region: target.region,
+          projectSpec: ctx.projectSpec,
+          existingABTests,
+        });
+
+        if (deleteResult.hasErrors) {
+          const errors = deleteResult.results.filter(r => r.status === 'error');
+          for (const err of errors) {
+            logger.log(`AB test delete "${err.testName}" error: ${err.error}`, 'warn');
+          }
+          setPostDeployHasError(true);
+          setPostDeployWarnings(prev => [...prev, ...errors.map(err => `AB test "${err.testName}": ${err.error}`)]);
+        }
+
+        // Surface warnings (e.g., "AB test was stopped before deletion")
+        for (const r of deleteResult.results) {
+          if (r.warning) {
+            logger.log(r.warning, 'warn');
+            setPostDeployWarnings(prev => [...prev, r.warning!]);
+          }
+        }
+
+        // Update deployed state to remove deleted AB tests
+        if (deleteResult.results.some(r => r.status === 'deleted')) {
+          const updatedState = await configIO.readDeployedState().catch(() => deployedState);
+          const targetResources = updatedState.targets[target.name]?.resources;
+          if (targetResources?.abTests) {
+            for (const r of deleteResult.results) {
+              if (r.status === 'deleted') delete targetResources.abTests[r.testName];
+            }
+            await configIO.writeDeployedState(updatedState);
+            deployedState = updatedState;
+          }
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.log(`AB test orphan cleanup failed: ${message}`, 'warn');
+        setPostDeployHasError(true);
+        setPostDeployWarnings(prev => [...prev, `AB test orphan cleanup failed: ${message}`]);
+      }
+    }
+
+    // Post-deploy: Create/update HTTP gateways
+    const httpGatewaySpecs = ctx.projectSpec.httpGateways ?? [];
+    const existingHttpGateways = deployedState.targets?.[target.name]?.resources?.httpGateways;
+    if (httpGatewaySpecs.length > 0 || Object.keys(existingHttpGateways ?? {}).length > 0) {
+      try {
+        const deployedResources = deployedState.targets?.[target.name]?.resources;
+        const httpGatewayResult = await setupHttpGateways({
+          region: target.region,
+          projectName: ctx.projectSpec.name,
+          projectSpec: ctx.projectSpec,
+          existingHttpGateways,
+          deployedResources,
+        });
+
+        // Always merge HTTP gateway state (even if empty, to clear deleted gateways)
+        const updatedState = await configIO.readDeployedState().catch(() => deployedState);
+        const targetResources = updatedState.targets[target.name]?.resources;
+        if (targetResources) {
+          targetResources.httpGateways = httpGatewayResult.httpGateways;
+          await configIO.writeDeployedState(updatedState);
+          deployedState = updatedState;
+        }
+
+        if (httpGatewayResult.hasErrors) {
+          const errors = httpGatewayResult.results.filter(r => r.status === 'error');
+          for (const err of errors) {
+            logger.log(`HTTP gateway "${err.gatewayName}" setup error: ${err.error}`, 'warn');
+          }
+          setPostDeployHasError(true);
+          setPostDeployWarnings(prev => [
+            ...prev,
+            ...errors.map(err => `HTTP gateway "${err.gatewayName}": ${err.error}`),
+          ]);
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.log(`HTTP gateway setup failed: ${message}`, 'warn');
+        setPostDeployHasError(true);
+        setPostDeployWarnings(prev => [...prev, `HTTP gateway setup failed: ${message}`]);
+      }
+    }
+
+    // Post-deploy: Create/update AB tests
+    const abTestSpecs = ctx.projectSpec.abTests ?? [];
+    if (abTestSpecs.length > 0) {
+      try {
+        const existingABTests = deployedState.targets?.[target.name]?.resources?.abTests;
+        const deployedResources = deployedState.targets?.[target.name]?.resources;
+        const abTestResult = await setupABTests({
+          region: target.region,
+          projectSpec: ctx.projectSpec,
+          existingABTests,
+          deployedResources,
+        });
+
+        if (Object.keys(abTestResult.abTests).length > 0) {
+          const updatedState = await configIO.readDeployedState().catch(() => deployedState);
+          const targetResources = updatedState.targets[target.name]?.resources;
+          if (targetResources) {
+            targetResources.abTests = abTestResult.abTests;
+            await configIO.writeDeployedState(updatedState);
+          }
+        }
+
+        if (abTestResult.hasErrors) {
+          const errors = abTestResult.results.filter(r => r.status === 'error');
+          for (const err of errors) {
+            logger.log(`AB test "${err.testName}" setup error: ${err.error}`, 'warn');
+          }
+          setPostDeployHasError(true);
+          setPostDeployWarnings(prev => [...prev, ...errors.map(err => `AB test "${err.testName}": ${err.error}`)]);
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.log(`AB test setup failed: ${message}`, 'warn');
+        setPostDeployHasError(true);
+        setPostDeployWarnings(prev => [...prev, `AB test setup failed: ${message}`]);
+      }
+    }
 
     // Query gateway target sync statuses (non-blocking)
     const allStatuses: { name: string; status: string }[] = [];
@@ -327,6 +555,8 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
       if (!isDiffRunningRef.current) {
         isDiffRunningRef.current = true;
         setIsDiffLoading(true);
+        setPreDeployDiffStep(prev => ({ ...prev, status: 'running' }));
+        logger.startStep('Computing diff changes...');
         switchableIoHost?.setOnRawMessage((code, _level, message, data) => {
           logger.logDiff(code, message);
           if (code === 'CDK_TOOLKIT_I4002') {
@@ -345,6 +575,8 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
           switchableIoHost?.setOnRawMessage(null);
           isDiffRunningRef.current = false;
           setIsDiffLoading(false);
+          logger.endStep('success');
+          setPreDeployDiffStep(prev => ({ ...prev, status: 'success' }));
         }
       }
 
@@ -569,8 +801,10 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
     if (diffMode) {
       return skipPreflight ? [diffStep] : [...preflight.steps, diffStep];
     }
-    return skipPreflight ? [publishAssetsStep, deployStep] : [...preflight.steps, publishAssetsStep, deployStep];
-  }, [preflight.steps, publishAssetsStep, deployStep, diffStep, skipPreflight, diffMode]);
+    return skipPreflight
+      ? [preDeployDiffStep, publishAssetsStep, deployStep]
+      : [...preflight.steps, preDeployDiffStep, publishAssetsStep, deployStep];
+  }, [preflight.steps, preDeployDiffStep, publishAssetsStep, deployStep, diffStep, skipPreflight, diffMode]);
 
   const phase: DeployPhase = useMemo(() => {
     const activeStep = diffMode ? diffStep : deployStep;
@@ -639,6 +873,8 @@ export function useDeployFlow(options: DeployFlowOptions = {}): DeployFlowState 
     diffSummaries,
     numStacksWithChanges,
     deployNotes,
+    postDeployWarnings,
+    postDeployHasError,
     isDiffLoading,
     requestDiff,
     stackOutputs,

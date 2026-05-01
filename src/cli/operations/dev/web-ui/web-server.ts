@@ -4,8 +4,10 @@ import { type AgentError, type AgentInfo, WEB_UI_LOCAL_URL } from './constants';
 import {
   type RouteContext,
   handleA2AAgentCard,
+  handleGetCloudWatchTrace,
   handleGetTrace,
   handleInvocations,
+  handleListCloudWatchTraces,
   handleListMemoryRecords,
   handleListTraces,
   handleMcpProxy,
@@ -32,16 +34,17 @@ const CSP_HEADER =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self' data:";
 
 /** Resolve the frontend dist directory. Returns null if not found. */
-function resolveUIDistDir(): string | null {
+export function resolveUIDistDir(): string | null {
   const thisDir = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
+    process.env.AGENT_INSPECTOR_PATH,
     // Bundled CLI: dist/cli/index.mjs → dist/agent-inspector/
     path.resolve(thisDir, '..', 'agent-inspector'),
     // npm package: @aws/agent-inspector/dist-assets/
     path.resolve(thisDir, '..', '..', '..', '..', '..', 'node_modules', '@aws', 'agent-inspector', 'dist-assets'),
     // Dev via tsx: src/cli/operations/dev/web-ui/ → src/assets/agent-inspector/
     path.resolve(thisDir, '..', '..', '..', '..', 'assets', 'agent-inspector'),
-  ];
+  ].filter((c): c is string => !!c);
   for (const dir of candidates) {
     if (fs.existsSync(path.join(dir, 'index.html'))) return dir;
   }
@@ -76,6 +79,29 @@ export type GetTraceHandler = (
   startTime?: number,
   endTime?: number
 ) => Promise<{ success: boolean; resourceSpans?: unknown[]; resourceLogs?: unknown[]; error?: string }>;
+
+/**
+ * Custom handler for GET /api/cloudwatch-traces.
+ * Returns a list of recent CloudWatch traces for the given agent or harness.
+ */
+export type ListCloudWatchTracesHandler = (
+  agentName: string | undefined,
+  harnessName: string | undefined,
+  startTime?: number,
+  endTime?: number
+) => Promise<{ success: boolean; traces?: unknown[]; error?: string }>;
+
+/**
+ * Custom handler for GET /api/cloudwatch-traces/:traceId.
+ * Returns the full CloudWatch trace data for a specific trace.
+ */
+export type GetCloudWatchTraceHandler = (
+  agentName: string | undefined,
+  harnessName: string | undefined,
+  traceId: string,
+  startTime?: number,
+  endTime?: number
+) => Promise<{ success: boolean; records?: unknown[]; spans?: unknown[]; error?: string }>;
 
 /**
  * Custom handler for GET /api/memory.
@@ -123,6 +149,10 @@ export interface WebUIOptions {
   onListTraces?: ListTracesHandler;
   /** Custom handler for getting a single trace */
   onGetTrace?: GetTraceHandler;
+  /** Custom handler for listing CloudWatch traces */
+  onListCloudWatchTraces?: ListCloudWatchTracesHandler;
+  /** Custom handler for getting a single CloudWatch trace */
+  onGetCloudWatchTrace?: GetCloudWatchTraceHandler;
   /** Custom handler for listing memory records */
   onListMemoryRecords?: ListMemoryRecordsHandler;
   /** Custom handler for searching memory records */
@@ -290,6 +320,10 @@ export class WebUIServer {
       await handleGetTrace(ctx, req, res, origin);
     } else if (req.method === 'GET' && req.url?.startsWith('/api/traces')) {
       await handleListTraces(ctx, req, res, origin);
+    } else if (req.method === 'GET' && req.url?.startsWith('/api/cloudwatch-traces/')) {
+      await handleGetCloudWatchTrace(ctx, req, res, origin);
+    } else if (req.method === 'GET' && req.url?.startsWith('/api/cloudwatch-traces')) {
+      await handleListCloudWatchTraces(ctx, req, res, origin);
     } else if (req.method === 'POST' && req.url === '/api/start') {
       await handleStart(ctx, req, res, origin);
     } else if (req.method === 'POST' && req.url === '/invocations') {

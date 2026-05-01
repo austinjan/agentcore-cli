@@ -19,7 +19,7 @@ export interface ParsedStarterToolkitAgent {
   sourcePath?: string;
   networkMode: 'PUBLIC' | 'VPC';
   networkConfig?: { subnets: string[]; securityGroups: string[] };
-  protocol: 'HTTP' | 'MCP' | 'A2A';
+  protocol: 'HTTP' | 'MCP' | 'A2A' | 'AGUI';
   enableOtel: boolean;
   /** Physical agent runtime ID from the starter toolkit deployment */
   physicalAgentId?: string;
@@ -74,7 +74,7 @@ export interface ParsedStarterToolkitConfig {
  * Resource types supported by the import subcommands.
  * Use the array for runtime checks (e.g., IMPORTABLE_RESOURCES.includes(x)).
  */
-export const IMPORTABLE_RESOURCES = ['runtime', 'memory', 'evaluator', 'online-eval'] as const;
+export const IMPORTABLE_RESOURCES = ['runtime', 'memory', 'evaluator', 'online-eval', 'gateway'] as const;
 export type ImportableResourceType = (typeof IMPORTABLE_RESOURCES)[number];
 
 /**

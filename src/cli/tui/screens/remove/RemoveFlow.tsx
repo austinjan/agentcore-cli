@@ -1,7 +1,9 @@
 import type { RemovableGatewayTarget, RemovalPreview } from '../../../operations/remove';
 import { ErrorPrompt, Panel, Screen } from '../../components';
 import {
+  useRemovableABTests,
   useRemovableAgents,
+  useRemovableConfigBundles,
   useRemovableEvaluators,
   useRemovableGatewayTargets,
   useRemovableGateways,
@@ -10,8 +12,11 @@ import {
   useRemovableOnlineEvalConfigs,
   useRemovablePolicies,
   useRemovablePolicyEngines,
+  useRemovableRuntimeEndpoints,
   useRemovalPreview,
+  useRemoveABTest,
   useRemoveAgent,
+  useRemoveConfigBundle,
   useRemoveEvaluator,
   useRemoveGateway,
   useRemoveGatewayTarget,
@@ -20,9 +25,12 @@ import {
   useRemoveOnlineEvalConfig,
   useRemovePolicy,
   useRemovePolicyEngine,
+  useRemoveRuntimeEndpoint,
 } from '../../hooks/useRemove';
+import { RemoveABTestScreen } from '../ab-test/RemoveABTestScreen';
 import { RemoveAgentScreen } from './RemoveAgentScreen';
 import { RemoveAllScreen } from './RemoveAllScreen';
+import { RemoveConfigBundleScreen } from './RemoveConfigBundleScreen';
 import { RemoveConfirmScreen } from './RemoveConfirmScreen';
 import { RemoveEvaluatorScreen } from './RemoveEvaluatorScreen';
 import { RemoveGatewayScreen } from './RemoveGatewayScreen';
@@ -32,6 +40,7 @@ import { RemoveMemoryScreen } from './RemoveMemoryScreen';
 import { RemoveOnlineEvalScreen } from './RemoveOnlineEvalScreen';
 import { RemovePolicyEngineScreen } from './RemovePolicyEngineScreen';
 import { RemovePolicyScreen } from './RemovePolicyScreen';
+import { RemoveRuntimeEndpointScreen } from './RemoveRuntimeEndpointScreen';
 import type { RemoveResourceType } from './RemoveScreen';
 import { RemoveScreen } from './RemoveScreen';
 import { RemoveSuccessScreen } from './RemoveSuccessScreen';
@@ -50,6 +59,9 @@ type FlowState =
   | { name: 'select-online-eval' }
   | { name: 'select-policy-engine' }
   | { name: 'select-policy' }
+  | { name: 'select-config-bundle' }
+  | { name: 'select-ab-test' }
+  | { name: 'select-runtime-endpoint' }
   | { name: 'confirm-agent'; agentName: string; preview: RemovalPreview }
   | { name: 'confirm-gateway'; gatewayName: string; preview: RemovalPreview }
   | { name: 'confirm-gateway-target'; tool: RemovableGatewayTarget; preview: RemovalPreview }
@@ -59,6 +71,9 @@ type FlowState =
   | { name: 'confirm-online-eval'; configName: string; preview: RemovalPreview }
   | { name: 'confirm-policy-engine'; engineName: string; preview: RemovalPreview }
   | { name: 'confirm-policy'; compositeKey: string; policyName: string; preview: RemovalPreview }
+  | { name: 'confirm-config-bundle'; bundleName: string; preview: RemovalPreview }
+  | { name: 'confirm-ab-test'; testName: string; preview: RemovalPreview }
+  | { name: 'confirm-runtime-endpoint'; endpointName: string; preview: RemovalPreview }
   | { name: 'loading'; message: string }
   | { name: 'agent-success'; agentName: string; logFilePath?: string }
   | { name: 'gateway-success'; gatewayName: string; logFilePath?: string }
@@ -69,6 +84,9 @@ type FlowState =
   | { name: 'online-eval-success'; configName: string; logFilePath?: string }
   | { name: 'policy-engine-success'; engineName: string; logFilePath?: string }
   | { name: 'policy-success'; policyName: string; logFilePath?: string }
+  | { name: 'config-bundle-success'; bundleName: string; logFilePath?: string }
+  | { name: 'ab-test-success'; testName: string; logFilePath?: string }
+  | { name: 'runtime-endpoint-success'; endpointName: string; logFilePath?: string }
   | { name: 'remove-all' }
   | { name: 'error'; message: string };
 
@@ -85,12 +103,15 @@ interface RemoveFlowProps {
     | 'agent'
     | 'gateway'
     | 'gateway-target'
+    | 'runtime-endpoint'
     | 'memory'
     | 'credential'
     | 'evaluator'
     | 'online-eval'
     | 'policy-engine'
-    | 'policy';
+    | 'policy'
+    | 'config-bundle'
+    | 'ab-test';
   /** Initial resource name to auto-select (for CLI --name flag) */
   initialResourceName?: string;
 }
@@ -124,6 +145,12 @@ export function RemoveFlow({
         return { name: 'select-policy-engine' };
       case 'policy':
         return { name: 'select-policy' };
+      case 'config-bundle':
+        return { name: 'select-config-bundle' };
+      case 'ab-test':
+        return { name: 'select-ab-test' };
+      case 'runtime-endpoint':
+        return { name: 'select-runtime-endpoint' };
       default:
         return { name: 'select' };
     }
@@ -148,6 +175,17 @@ export function RemoveFlow({
     refresh: refreshPolicyEngines,
   } = useRemovablePolicyEngines();
   const { policies, isLoading: isLoadingPolicies, refresh: refreshPolicies } = useRemovablePolicies();
+  const {
+    configBundles,
+    isLoading: isLoadingConfigBundles,
+    refresh: refreshConfigBundles,
+  } = useRemovableConfigBundles();
+  const { abTests } = useRemovableABTests();
+  const {
+    endpoints: runtimeEndpoints,
+    isLoading: isLoadingRuntimeEndpoints,
+    refresh: refreshRuntimeEndpoints,
+  } = useRemovableRuntimeEndpoints();
 
   // Check if any data is still loading
   const isLoading =
@@ -159,7 +197,9 @@ export function RemoveFlow({
     isLoadingEvaluators ||
     isLoadingOnlineEvals ||
     isLoadingPolicyEngines ||
-    isLoadingPolicies;
+    isLoadingPolicies ||
+    isLoadingConfigBundles ||
+    isLoadingRuntimeEndpoints;
 
   // Preview hook
   const {
@@ -172,6 +212,9 @@ export function RemoveFlow({
     loadOnlineEvalPreview,
     loadPolicyEnginePreview,
     loadPolicyPreview,
+    loadConfigBundlePreview,
+    loadABTestPreview,
+    loadRuntimeEndpointPreview,
     reset: resetPreview,
   } = useRemovalPreview();
 
@@ -185,6 +228,9 @@ export function RemoveFlow({
   const { remove: removeOnlineEvalOp, reset: resetRemoveOnlineEval } = useRemoveOnlineEvalConfig();
   const { remove: removePolicyEngineOp, reset: resetRemovePolicyEngine } = useRemovePolicyEngine();
   const { remove: removePolicyOp, reset: resetRemovePolicy } = useRemovePolicy();
+  const { remove: removeConfigBundleOp, reset: resetRemoveConfigBundle } = useRemoveConfigBundle();
+  const { remove: removeABTestOp, reset: resetRemoveABTest } = useRemoveABTest();
+  const { remove: removeRuntimeEndpointOp, reset: resetRemoveRuntimeEndpoint } = useRemoveRuntimeEndpoint();
 
   // Track pending result state
   const pendingResultRef = useRef<FlowState | null>(null);
@@ -215,6 +261,9 @@ export function RemoveFlow({
         'online-eval-success',
         'policy-engine-success',
         'policy-success',
+        'config-bundle-success',
+        'ab-test-success',
+        'runtime-endpoint-success',
       ];
       if (successStates.includes(flow.name)) {
         onExit();
@@ -253,6 +302,15 @@ export function RemoveFlow({
         break;
       case 'policy':
         setFlow({ name: 'select-policy' });
+        break;
+      case 'config-bundle':
+        setFlow({ name: 'select-config-bundle' });
+        break;
+      case 'ab-test':
+        setFlow({ name: 'select-ab-test' });
+        break;
+      case 'runtime-endpoint':
+        setFlow({ name: 'select-runtime-endpoint' });
         break;
       case 'all':
         setFlow({ name: 'remove-all' });
@@ -464,6 +522,72 @@ export function RemoveFlow({
     [loadPolicyPreview, force, removePolicyOp]
   );
 
+  const handleSelectConfigBundle = useCallback(
+    async (bundleName: string) => {
+      const result = await loadConfigBundlePreview(bundleName);
+      if (result.ok) {
+        if (force) {
+          setFlow({ name: 'loading', message: `Removing configuration bundle ${bundleName}...` });
+          const removeResult = await removeConfigBundleOp(bundleName, result.preview);
+          if (removeResult.success) {
+            setFlow({ name: 'config-bundle-success', bundleName });
+          } else {
+            setFlow({ name: 'error', message: removeResult.error });
+          }
+        } else {
+          setFlow({ name: 'confirm-config-bundle', bundleName, preview: result.preview });
+        }
+      } else {
+        setFlow({ name: 'error', message: result.error });
+      }
+    },
+    [loadConfigBundlePreview, force, removeConfigBundleOp]
+  );
+
+  const handleSelectABTest = useCallback(
+    async (testName: string) => {
+      const result = await loadABTestPreview(testName);
+      if (result.ok) {
+        if (force) {
+          setFlow({ name: 'loading', message: `Removing AB test ${testName}...` });
+          const removeResult = await removeABTestOp(testName, result.preview);
+          if (removeResult.success) {
+            setFlow({ name: 'ab-test-success', testName });
+          } else {
+            setFlow({ name: 'error', message: removeResult.error });
+          }
+        } else {
+          setFlow({ name: 'confirm-ab-test', testName, preview: result.preview });
+        }
+      } else {
+        setFlow({ name: 'error', message: result.error });
+      }
+    },
+    [loadABTestPreview, force, removeABTestOp]
+  );
+
+  const handleSelectRuntimeEndpoint = useCallback(
+    async (endpointName: string) => {
+      const result = await loadRuntimeEndpointPreview(endpointName);
+      if (result.ok) {
+        if (force) {
+          setFlow({ name: 'loading', message: `Removing runtime endpoint ${endpointName}...` });
+          const removeResult = await removeRuntimeEndpointOp(endpointName, result.preview);
+          if (removeResult.success) {
+            setFlow({ name: 'runtime-endpoint-success', endpointName });
+          } else {
+            setFlow({ name: 'error', message: removeResult.error });
+          }
+        } else {
+          setFlow({ name: 'confirm-runtime-endpoint', endpointName, preview: result.preview });
+        }
+      } else {
+        setFlow({ name: 'error', message: result.error });
+      }
+    },
+    [loadRuntimeEndpointPreview, force, removeRuntimeEndpointOp]
+  );
+
   // Auto-select resource when initialResourceName is provided and data is loaded
   useEffect(() => {
     if (!initialResourceName || isLoading || hasTriggeredInitialSelection.current) {
@@ -500,6 +624,15 @@ export function RemoveFlow({
         case 'policy':
           void handleSelectPolicy(initialResourceName);
           break;
+        case 'config-bundle':
+          void handleSelectConfigBundle(initialResourceName);
+          break;
+        case 'ab-test':
+          void handleSelectABTest(initialResourceName);
+          break;
+        case 'runtime-endpoint':
+          void handleSelectRuntimeEndpoint(initialResourceName);
+          break;
       }
     }, 0);
   }, [
@@ -514,6 +647,9 @@ export function RemoveFlow({
     handleSelectOnlineEval,
     handleSelectPolicyEngine,
     handleSelectPolicy,
+    handleSelectConfigBundle,
+    handleSelectABTest,
+    handleSelectRuntimeEndpoint,
   ]);
 
   // Confirm handlers - pass preview for logging
@@ -661,6 +797,54 @@ export function RemoveFlow({
     [removePolicyOp]
   );
 
+  const handleConfirmConfigBundle = useCallback(
+    async (bundleName: string, preview: RemovalPreview) => {
+      pendingResultRef.current = null;
+      setResultReady(false);
+      setFlow({ name: 'loading', message: `Removing configuration bundle ${bundleName}...` });
+      const result = await removeConfigBundleOp(bundleName, preview);
+      if (result.success) {
+        pendingResultRef.current = { name: 'config-bundle-success', bundleName, logFilePath: result.logFilePath };
+      } else {
+        pendingResultRef.current = { name: 'error', message: result.error };
+      }
+      setResultReady(true);
+    },
+    [removeConfigBundleOp]
+  );
+
+  const handleConfirmABTest = useCallback(
+    async (testName: string, preview: RemovalPreview) => {
+      pendingResultRef.current = null;
+      setResultReady(false);
+      setFlow({ name: 'loading', message: `Removing AB test ${testName}...` });
+      const result = await removeABTestOp(testName, preview);
+      if (result.success) {
+        pendingResultRef.current = { name: 'ab-test-success', testName, logFilePath: result.logFilePath };
+      } else {
+        pendingResultRef.current = { name: 'error', message: result.error };
+      }
+      setResultReady(true);
+    },
+    [removeABTestOp]
+  );
+
+  const handleConfirmRuntimeEndpoint = useCallback(
+    async (endpointName: string, preview: RemovalPreview) => {
+      pendingResultRef.current = null;
+      setResultReady(false);
+      setFlow({ name: 'loading', message: `Removing runtime endpoint ${endpointName}...` });
+      const result = await removeRuntimeEndpointOp(endpointName, preview);
+      if (result.success) {
+        pendingResultRef.current = { name: 'runtime-endpoint-success', endpointName, logFilePath: result.logFilePath };
+      } else {
+        pendingResultRef.current = { name: 'error', message: result.error };
+      }
+      setResultReady(true);
+    },
+    [removeRuntimeEndpointOp]
+  );
+
   const resetAll = useCallback(() => {
     resetPreview();
     resetRemoveAgent();
@@ -672,6 +856,9 @@ export function RemoveFlow({
     resetRemoveOnlineEval();
     resetRemovePolicyEngine();
     resetRemovePolicy();
+    resetRemoveConfigBundle();
+    resetRemoveABTest();
+    resetRemoveRuntimeEndpoint();
   }, [
     resetPreview,
     resetRemoveAgent,
@@ -683,6 +870,9 @@ export function RemoveFlow({
     resetRemoveOnlineEval,
     resetRemovePolicyEngine,
     resetRemovePolicy,
+    resetRemoveConfigBundle,
+    resetRemoveABTest,
+    resetRemoveRuntimeEndpoint,
   ]);
 
   const refreshAll = useCallback(async () => {
@@ -696,6 +886,8 @@ export function RemoveFlow({
       refreshOnlineEvals(),
       refreshPolicyEngines(),
       refreshPolicies(),
+      refreshConfigBundles(),
+      refreshRuntimeEndpoints(),
     ]);
   }, [
     refreshAgents,
@@ -707,6 +899,8 @@ export function RemoveFlow({
     refreshOnlineEvals,
     refreshPolicyEngines,
     refreshPolicies,
+    refreshConfigBundles,
+    refreshRuntimeEndpoints,
   ]);
 
   // Select screen - wait for data to load to avoid arrow position issues
@@ -727,6 +921,9 @@ export function RemoveFlow({
         onlineEvalCount={onlineEvalConfigs.length}
         policyEngineCount={policyEngines.length}
         policyCount={policies.length}
+        configBundleCount={configBundles.length}
+        abTestCount={abTests.length}
+        runtimeEndpointCount={runtimeEndpoints.length}
       />
     );
   }
@@ -861,6 +1058,45 @@ export function RemoveFlow({
     );
   }
 
+  if (flow.name === 'select-config-bundle') {
+    if (initialResourceName && isLoading) {
+      return null;
+    }
+    return (
+      <RemoveConfigBundleScreen
+        configBundles={configBundles}
+        onSelect={(name: string) => void handleSelectConfigBundle(name)}
+        onExit={() => setFlow({ name: 'select' })}
+      />
+    );
+  }
+
+  if (flow.name === 'select-ab-test') {
+    if (initialResourceName && isLoading) {
+      return null;
+    }
+    return (
+      <RemoveABTestScreen
+        abTests={abTests}
+        onSelect={(name: string) => void handleSelectABTest(name)}
+        onExit={() => setFlow({ name: 'select' })}
+      />
+    );
+  }
+
+  if (flow.name === 'select-runtime-endpoint') {
+    if (initialResourceName && isLoading) {
+      return null;
+    }
+    return (
+      <RemoveRuntimeEndpointScreen
+        endpoints={runtimeEndpoints}
+        onSelect={(name: string) => void handleSelectRuntimeEndpoint(name)}
+        onExit={() => setFlow({ name: 'select' })}
+      />
+    );
+  }
+
   // Confirmation screens
   if (flow.name === 'confirm-agent') {
     return (
@@ -957,6 +1193,39 @@ export function RemoveFlow({
         preview={flow.preview}
         onConfirm={() => void handleConfirmPolicy(flow.compositeKey, flow.policyName, flow.preview)}
         onCancel={() => setFlow({ name: 'select-policy' })}
+      />
+    );
+  }
+
+  if (flow.name === 'confirm-config-bundle') {
+    return (
+      <RemoveConfirmScreen
+        title={`Remove Configuration Bundle: ${flow.bundleName}`}
+        preview={flow.preview}
+        onConfirm={() => void handleConfirmConfigBundle(flow.bundleName, flow.preview)}
+        onCancel={() => setFlow({ name: 'select-config-bundle' })}
+      />
+    );
+  }
+
+  if (flow.name === 'confirm-ab-test') {
+    return (
+      <RemoveConfirmScreen
+        title={`Remove AB Test: ${flow.testName}`}
+        preview={flow.preview}
+        onConfirm={() => void handleConfirmABTest(flow.testName, flow.preview)}
+        onCancel={() => setFlow({ name: 'select-ab-test' })}
+      />
+    );
+  }
+
+  if (flow.name === 'confirm-runtime-endpoint') {
+    return (
+      <RemoveConfirmScreen
+        title={`Remove Runtime Endpoint: ${flow.endpointName}`}
+        preview={flow.preview}
+        onConfirm={() => void handleConfirmRuntimeEndpoint(flow.endpointName, flow.preview)}
+        onCancel={() => setFlow({ name: 'select-runtime-endpoint' })}
       />
     );
   }
@@ -1106,6 +1375,54 @@ export function RemoveFlow({
     );
   }
 
+  if (flow.name === 'config-bundle-success') {
+    return (
+      <RemoveSuccessScreen
+        isInteractive={isInteractive}
+        message={`Removed configuration bundle: ${flow.bundleName}`}
+        detail="Configuration bundle removed from agentcore.json. Deploy with `agentcore deploy` to apply changes."
+        logFilePath={flow.logFilePath}
+        onRemoveAnother={() => {
+          resetAll();
+          void refreshAll().then(() => setFlow({ name: 'select' }));
+        }}
+        onExit={onExit}
+      />
+    );
+  }
+
+  if (flow.name === 'ab-test-success') {
+    return (
+      <RemoveSuccessScreen
+        isInteractive={isInteractive}
+        message={`Removed AB test: ${flow.testName}`}
+        detail="AB test removed from agentcore.json. Deploy with `agentcore deploy` to apply changes."
+        logFilePath={flow.logFilePath}
+        onRemoveAnother={() => {
+          resetAll();
+          void refreshAll().then(() => setFlow({ name: 'select' }));
+        }}
+        onExit={onExit}
+      />
+    );
+  }
+
+  if (flow.name === 'runtime-endpoint-success') {
+    return (
+      <RemoveSuccessScreen
+        isInteractive={isInteractive}
+        message={`Removed runtime endpoint: ${flow.endpointName}`}
+        detail="Runtime endpoint removed from agentcore.json. Deploy with `agentcore deploy` to apply changes."
+        logFilePath={flow.logFilePath}
+        onRemoveAnother={() => {
+          resetAll();
+          void refreshAll().then(() => setFlow({ name: 'select' }));
+        }}
+        onExit={onExit}
+      />
+    );
+  }
+
   // Remove all screen
   if (flow.name === 'remove-all') {
     return <RemoveAllScreen isInteractive={isInteractive} onExit={onExit} onNavigate={onNavigate} />;
@@ -1115,7 +1432,7 @@ export function RemoveFlow({
   return (
     <ErrorPrompt
       message="Failed to remove resource"
-      detail={flow.message}
+      detail={'message' in flow ? flow.message : 'Unknown error'}
       onBack={() => {
         resetAll();
         setFlow({ name: 'select' });

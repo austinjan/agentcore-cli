@@ -6,6 +6,7 @@ import type {
   OnlineEvalDeployedState,
   PolicyDeployedState,
   PolicyEngineDeployedState,
+  RuntimeEndpointDeployedState,
   TargetDeployedState,
 } from '../../schema';
 import { getCredentialProvider } from '../aws';
@@ -249,13 +250,13 @@ export function parseEvaluatorOutputs(
  */
 export function parseOnlineEvalOutputs(
   outputs: StackOutputs,
-  onlineEvalNames: string[]
+  onlineEvalSpecs: { name: string; agent?: string; endpoint?: string }[]
 ): Record<string, OnlineEvalDeployedState> {
   const configs: Record<string, OnlineEvalDeployedState> = {};
   const outputKeys = Object.keys(outputs);
 
-  for (const configName of onlineEvalNames) {
-    const pascal = toPascalId('OnlineEval', configName);
+  for (const spec of onlineEvalSpecs) {
+    const pascal = toPascalId('OnlineEval', spec.name);
     const idPrefix = `Application${pascal}IdOutput`;
     const arnPrefix = `Application${pascal}ArnOutput`;
 
@@ -263,9 +264,11 @@ export function parseOnlineEvalOutputs(
     const arnKey = outputKeys.find(k => k.startsWith(arnPrefix));
 
     if (idKey && arnKey) {
-      configs[configName] = {
+      configs[spec.name] = {
         onlineEvaluationConfigId: outputs[idKey]!,
         onlineEvaluationConfigArn: outputs[arnKey]!,
+        ...(spec.agent && { agent: spec.agent }),
+        ...(spec.endpoint && { endpoint: spec.endpoint }),
       };
     }
   }
@@ -338,6 +341,40 @@ export function parsePolicyOutputs(
   return policies;
 }
 
+/**
+ * Parse stack outputs into deployed state for runtime endpoints.
+ *
+ * Output key pattern: ApplicationAgent{AgentPascal}Endpoint{AgentPascal}{EndpointPascal}(Id|Arn)Output{Hash}
+ * The Agent{PascalName} prefix comes from the AgentEnvironment construct in the CDK tree.
+ */
+export function parseRuntimeEndpointOutputs(
+  outputs: StackOutputs,
+  endpointSpecs: { agentName: string; endpointName: string }[]
+): Record<string, RuntimeEndpointDeployedState> {
+  const endpoints: Record<string, RuntimeEndpointDeployedState> = {};
+  const outputKeys = Object.keys(outputs);
+
+  for (const { agentName, endpointName } of endpointSpecs) {
+    const agentPascal = toPascalId(agentName);
+    const endpointPascal = toPascalId('Endpoint', agentName, endpointName);
+    const idPrefix = `ApplicationAgent${agentPascal}${endpointPascal}IdOutput`;
+    const arnPrefix = `ApplicationAgent${agentPascal}${endpointPascal}ArnOutput`;
+
+    const idKey = outputKeys.find(k => k.startsWith(idPrefix));
+    const arnKey = outputKeys.find(k => k.startsWith(arnPrefix));
+
+    if (idKey && arnKey) {
+      const key = `${agentName}/${endpointName}`;
+      endpoints[key] = {
+        endpointId: outputs[idKey]!,
+        endpointArn: outputs[arnKey]!,
+      };
+    }
+  }
+
+  return endpoints;
+}
+
 export interface BuildDeployedStateOptions {
   targetName: string;
   stackName: string;
@@ -351,6 +388,7 @@ export interface BuildDeployedStateOptions {
   onlineEvalConfigs?: Record<string, OnlineEvalDeployedState>;
   policyEngines?: Record<string, PolicyEngineDeployedState>;
   policies?: Record<string, PolicyDeployedState>;
+  runtimeEndpoints?: Record<string, RuntimeEndpointDeployedState>;
 }
 
 /**
@@ -370,6 +408,7 @@ export function buildDeployedState(opts: BuildDeployedStateOptions): DeployedSta
     onlineEvalConfigs,
     policyEngines,
     policies,
+    runtimeEndpoints,
   } = opts;
   const targetState: TargetDeployedState = {
     resources: {
@@ -402,6 +441,29 @@ export function buildDeployedState(opts: BuildDeployedStateOptions): DeployedSta
   // Add online eval config state if configs exist
   if (onlineEvalConfigs && Object.keys(onlineEvalConfigs).length > 0) {
     targetState.resources!.onlineEvalConfigs = onlineEvalConfigs;
+  }
+
+  // Add runtime endpoint state if endpoints exist
+  if (runtimeEndpoints && Object.keys(runtimeEndpoints).length > 0) {
+    targetState.resources!.runtimeEndpoints = runtimeEndpoints;
+  }
+
+  // Carry forward config bundles from existing state (managed post-deploy, not via CFN outputs)
+  const existingConfigBundles = existingState?.targets?.[targetName]?.resources?.configBundles;
+  if (existingConfigBundles && Object.keys(existingConfigBundles).length > 0) {
+    targetState.resources!.configBundles = existingConfigBundles;
+  }
+
+  // Carry forward AB tests from existing state (managed post-deploy, not via CFN outputs)
+  const existingABTests = existingState?.targets?.[targetName]?.resources?.abTests;
+  if (existingABTests && Object.keys(existingABTests).length > 0) {
+    targetState.resources!.abTests = existingABTests;
+  }
+
+  // Carry forward HTTP gateways from existing state (managed post-deploy, not via CFN outputs)
+  const existingHttpGateways = existingState?.targets?.[targetName]?.resources?.httpGateways;
+  if (existingHttpGateways && Object.keys(existingHttpGateways).length > 0) {
+    targetState.resources!.httpGateways = existingHttpGateways;
   }
 
   return {

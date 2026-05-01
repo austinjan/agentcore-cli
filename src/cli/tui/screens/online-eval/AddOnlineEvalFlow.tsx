@@ -3,16 +3,17 @@ import { validateAwsCredentials } from '../../../aws/account';
 import { listEvaluators } from '../../../aws/agentcore-control';
 import { detectRegion } from '../../../aws/region';
 import { getErrorMessage } from '../../../errors';
-import { ErrorPrompt } from '../../components';
+import { ErrorPrompt, GradientText } from '../../components';
 import { useCreateOnlineEval, useExistingOnlineEvalNames } from '../../hooks/useCreateOnlineEval';
 import { AddSuccessScreen } from '../add/AddSuccessScreen';
+import type { RuntimeInfoForEval } from './AddOnlineEvalScreen';
 import { AddOnlineEvalScreen } from './AddOnlineEvalScreen';
 import type { AddOnlineEvalConfig, EvaluatorItem } from './types';
 import React, { useCallback, useEffect, useState } from 'react';
 
 type FlowState =
   | { name: 'loading' }
-  | { name: 'create-wizard'; evaluators: EvaluatorItem[]; agentNames: string[] }
+  | { name: 'create-wizard'; evaluators: EvaluatorItem[]; agentNames: string[]; runtimes: RuntimeInfoForEval[] }
   | { name: 'create-success'; configName: string }
   | { name: 'creds-error'; message: string }
   | { name: 'error'; message: string };
@@ -48,19 +49,15 @@ export function AddOnlineEvalFlow({ isInteractive = true, onExit, onBack, onDev,
         const result = await listEvaluators({ region });
         if (cancelled) return;
 
-        // Filter out code-based evaluators — not supported for online evaluation.
-        // Check both the API response type ('CustomCode') and local config (codeBased).
-        const codeBasedNames = new Set(projectSpec.evaluators.filter(e => e.config.codeBased).map(e => e.name));
-        const items: EvaluatorItem[] = result.evaluators
-          .filter(e => e.evaluatorType !== 'CustomCode' && !codeBasedNames.has(e.evaluatorName))
-          .map(e => ({
-            arn: e.evaluatorArn,
-            name: e.evaluatorName,
-            type: e.evaluatorType,
-            description: e.description,
-          }));
+        const items: EvaluatorItem[] = result.evaluators.map(e => ({
+          arn: e.evaluatorArn,
+          name: e.evaluatorName,
+          type: e.evaluatorType,
+          description: e.description,
+        }));
 
-        const agentNames = projectSpec.runtimes.map(a => a.name);
+        const runtimesList = projectSpec.runtimes ?? [];
+        const agentNames = runtimesList.map(a => a.name);
 
         if (agentNames.length === 0) {
           setFlow({
@@ -70,7 +67,16 @@ export function AddOnlineEvalFlow({ isInteractive = true, onExit, onBack, onDev,
           return;
         }
 
-        setFlow({ name: 'create-wizard', evaluators: items, agentNames });
+        // Build runtime info with endpoints for the endpoint picker
+        const runtimesInfo: RuntimeInfoForEval[] = runtimesList.map(r => ({
+          name: r.name,
+          endpoints: Object.entries(r.endpoints ?? {}).map(([epName, ep]) => ({
+            name: epName,
+            version: ep.version,
+          })),
+        }));
+
+        setFlow({ name: 'create-wizard', evaluators: items, agentNames, runtimes: runtimesInfo });
       } catch (err) {
         if (!cancelled) setFlow({ name: 'error', message: getErrorMessage(err) });
       }
@@ -101,7 +107,7 @@ export function AddOnlineEvalFlow({ isInteractive = true, onExit, onBack, onDev,
   );
 
   if (flow.name === 'loading') {
-    return null;
+    return <GradientText text="Preparing online eval setup..." />;
   }
 
   if (flow.name === 'creds-error') {
@@ -114,6 +120,7 @@ export function AddOnlineEvalFlow({ isInteractive = true, onExit, onBack, onDev,
         existingConfigNames={existingConfigNames}
         evaluatorItems={flow.evaluators}
         agentNames={flow.agentNames}
+        runtimes={flow.runtimes}
         onComplete={handleCreateComplete}
         onExit={onBack}
       />

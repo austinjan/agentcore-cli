@@ -1,7 +1,7 @@
 import { ConfigIO } from '../../../lib';
 import { getErrorMessage } from '../../errors';
 import { COMMAND_DESCRIPTIONS } from '../../tui/copy';
-import { requireProject } from '../../tui/guards';
+import { requireProject, requireTTY } from '../../tui/guards';
 import { RemoveAllScreen, RemoveFlow } from '../../tui/screens/remove';
 import type { RemoveAllOptions, RemoveResult } from './types';
 import { validateRemoveAllOptions } from './validate';
@@ -34,6 +34,9 @@ async function handleRemoveAll(_options: RemoveAllOptions): Promise<RemoveResult
       onlineEvalConfigs: [],
       agentCoreGateways: [],
       policyEngines: [],
+      configBundles: [],
+      abTests: [],
+      httpGateways: [],
     });
 
     // Preserve aws-targets.json and deployed-state.json so that
@@ -76,6 +79,7 @@ export const registerRemove = (program: Command): Command => {
             json: cliOptions.json,
           });
         } else {
+          requireTTY();
           const { unmount } = render(
             <RemoveAllScreen
               isInteractive={false}
@@ -112,6 +116,7 @@ export const registerRemove = (program: Command): Command => {
       }
 
       requireProject();
+      requireTTY();
 
       const { clear, unmount } = render(
         <RemoveFlow

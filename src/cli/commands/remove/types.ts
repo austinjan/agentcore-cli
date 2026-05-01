@@ -2,12 +2,15 @@ export type ResourceType =
   | 'agent'
   | 'gateway'
   | 'gateway-target'
+  | 'runtime-endpoint'
   | 'memory'
   | 'credential'
   | 'evaluator'
   | 'online-eval'
   | 'policy-engine'
-  | 'policy';
+  | 'policy'
+  | 'config-bundle'
+  | 'ab-test';
 
 export interface RemoveOptions {
   resourceType: ResourceType;
