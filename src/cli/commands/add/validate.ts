@@ -25,6 +25,7 @@ import { validateJwtAuthorizerOptions } from './auth-options';
 import type {
   AddAgentOptions,
   AddCredentialOptions,
+  AddDatasetOptions,
   AddGatewayOptions,
   AddGatewayTargetOptions,
   AddMemoryOptions,
@@ -754,6 +755,15 @@ export function validateAddMemoryOptions(options: AddMemoryOptions): ValidationR
             : 'Invalid --stream-delivery-resources: does not match the expected schema',
       };
     }
+  }
+
+  return { valid: true };
+}
+
+// Dataset validation
+export function validateAddDatasetOptions(options: AddDatasetOptions): ValidationResult {
+  if (!options.name) {
+    return { valid: false, error: '--name is required' };
   }
 
   return { valid: true };

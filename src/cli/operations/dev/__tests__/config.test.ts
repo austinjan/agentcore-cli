@@ -24,6 +24,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project);
@@ -54,6 +55,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project);
@@ -84,6 +86,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project, '/test/project/agentcore');
@@ -120,6 +123,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     expect(() => getDevConfig(workingDir, project, undefined, 'NonExistentAgent')).toThrow(
@@ -151,6 +155,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     expect(() => getDevConfig(workingDir, project, undefined, 'NodeAgent')).toThrow('Dev mode only supports Python');
@@ -180,6 +185,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project, '/test/project/agentcore');
@@ -212,6 +218,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     // No configRoot provided
@@ -244,6 +251,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project, '/test/project/agentcore');
@@ -276,6 +284,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project, '/test/project/agentcore');
@@ -307,6 +316,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project, '/test/project/agentcore');
@@ -338,6 +348,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project, '/test/project/agentcore');
@@ -369,6 +380,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project, '/test/project/agentcore');
@@ -400,6 +412,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project, '/test/project/agentcore');
@@ -432,6 +445,7 @@ describe('getDevConfig', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const config = getDevConfig(workingDir, project, '/test/project/agentcore');
@@ -477,6 +491,7 @@ describe('getAgentPort', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     expect(getAgentPort(project, 'Agent1', 8080)).toBe(8080);
@@ -498,6 +513,7 @@ describe('getAgentPort', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     expect(getAgentPort(project, 'NonExistent', 9000)).toBe(9000);
@@ -524,6 +540,7 @@ describe('getDevSupportedAgents', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     expect(getDevSupportedAgents(project)).toEqual([]);
@@ -553,6 +570,7 @@ describe('getDevSupportedAgents', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     expect(getDevSupportedAgents(project)).toEqual([]);
@@ -590,6 +608,7 @@ describe('getDevSupportedAgents', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const supported = getDevSupportedAgents(project);
@@ -621,6 +640,7 @@ describe('getDevSupportedAgents', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const supported = getDevSupportedAgents(project);
@@ -660,6 +680,7 @@ describe('getDevSupportedAgents', () => {
       configBundles: [],
       abTests: [],
       httpGateways: [],
+      datasets: [],
     };
 
     const supported = getDevSupportedAgents(project);

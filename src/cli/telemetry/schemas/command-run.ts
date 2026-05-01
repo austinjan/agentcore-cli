@@ -150,6 +150,7 @@ export const COMMAND_SCHEMAS = {
   // add
   'add.agent': AddAgentAttrs,
   'add.memory': AddMemoryAttrs,
+  'add.dataset': NoAttrs,
   'add.credential': AddCredentialAttrs,
   'add.evaluator': AddEvaluatorAttrs,
   'add.online-eval': AddOnlineEvalAttrs,
@@ -197,6 +198,7 @@ export const COMMAND_SCHEMAS = {
   help: NoAttrs,
   'remove.agent': NoAttrs,
   'remove.memory': NoAttrs,
+  'remove.dataset': NoAttrs,
   'remove.credential': NoAttrs,
   'remove.evaluator': NoAttrs,
   'remove.online-eval': NoAttrs,

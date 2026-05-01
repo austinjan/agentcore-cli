@@ -15,6 +15,7 @@ const REMOVE_RESOURCES = [
   { id: 'config-bundle', title: 'Configuration Bundle [preview]', description: 'Remove a configuration bundle' },
   { id: 'ab-test', title: 'AB Test [preview]', description: 'Remove an A/B test' },
   { id: 'runtime-endpoint', title: 'Runtime Endpoint', description: 'Remove a runtime endpoint' },
+  { id: 'dataset', title: 'Dataset', description: 'Remove a dataset' },
   { id: 'all', title: 'All', description: 'Reset entire agentcore project' },
 ] as const;
 

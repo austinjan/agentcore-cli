@@ -111,7 +111,8 @@ interface RemoveFlowProps {
     | 'policy-engine'
     | 'policy'
     | 'config-bundle'
-    | 'ab-test';
+    | 'ab-test'
+    | 'dataset';
   /** Initial resource name to auto-select (for CLI --name flag) */
   initialResourceName?: string;
 }
@@ -632,6 +633,9 @@ export function RemoveFlow({
           break;
         case 'runtime-endpoint':
           void handleSelectRuntimeEndpoint(initialResourceName);
+          break;
+        case 'dataset':
+          // Dataset removal is handled via CLI path; no TUI screen yet
           break;
       }
     }, 0);

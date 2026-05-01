@@ -11,6 +11,7 @@ import { AgentEnvSpecSchema } from './agent-env';
 import { AgentCoreGatewaySchema, AgentCoreGatewayTargetSchema, AgentCoreMcpRuntimeToolSchema } from './mcp';
 import { ABTestSchema } from './primitives/ab-test';
 import { ConfigBundleSchema } from './primitives/config-bundle';
+import { DatasetSchema } from './primitives/dataset';
 import { EvaluationLevelSchema, EvaluatorConfigSchema, EvaluatorNameSchema } from './primitives/evaluator';
 import { HttpGatewaySchema } from './primitives/http-gateway';
 import {
@@ -54,6 +55,9 @@ export type { Policy, PolicyEngine, ValidationMode } from './primitives/policy';
 export { PolicyEngineNameSchema, PolicyNameSchema, PolicySchema, ValidationModeSchema } from './primitives/policy';
 export { TagsSchema };
 export type { Tags } from './primitives/tags';
+export { DatasetSchema };
+export { DatasetNameSchema } from './primitives/dataset';
+export type { Dataset } from './primitives/dataset';
 export type { ABTestMode, TargetRef, GatewayFilter, PerVariantOnlineEvaluationConfig } from './primitives/ab-test';
 export { ABTestModeSchema, TargetRefSchema, GatewayFilterSchema } from './primitives/ab-test';
 export type { HttpGatewayTarget } from './primitives/http-gateway';
@@ -350,6 +354,16 @@ export const AgentCoreProjectSpecSchema = z
         uniqueBy(
           gw => gw.name,
           name => `Duplicate HTTP gateway name: ${name}`
+        )
+      ),
+
+    datasets: z
+      .array(DatasetSchema)
+      .default([])
+      .superRefine(
+        uniqueBy(
+          dataset => dataset.name,
+          name => `Duplicate dataset name: ${name}`
         )
       ),
   })

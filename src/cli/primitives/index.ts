@@ -1,5 +1,7 @@
 export { ABTestPrimitive } from './ABTestPrimitive';
 export { BasePrimitive } from './BasePrimitive';
+export { DatasetPrimitive } from './DatasetPrimitive';
+export type { AddDatasetOptions, RemovableDataset } from './DatasetPrimitive';
 export { MemoryPrimitive } from './MemoryPrimitive';
 export { CredentialPrimitive } from './CredentialPrimitive';
 export { AgentPrimitive } from './AgentPrimitive';
@@ -13,6 +15,7 @@ export {
   ALL_PRIMITIVES,
   agentPrimitive,
   memoryPrimitive,
+  datasetPrimitive,
   credentialPrimitive,
   evaluatorPrimitive,
   onlineEvalConfigPrimitive,

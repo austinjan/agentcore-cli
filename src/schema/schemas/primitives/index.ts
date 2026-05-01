@@ -6,6 +6,9 @@ export type {
   TrafficAllocationConfig,
   VariantConfiguration,
 } from './ab-test';
+
+export type { Dataset } from './dataset';
+export { DatasetNameSchema, DatasetSchema } from './dataset';
 export {
   ABTestNameSchema,
   ABTestDescriptionSchema,
