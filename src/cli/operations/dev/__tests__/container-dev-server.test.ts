@@ -216,11 +216,7 @@ describe('ContainerDevServer', () => {
       await server.start();
 
       // rm call uses spawnSync (build uses async spawn); resolveHostCredentials may also call spawnSync
-      expect(mockSpawnSync).toHaveBeenCalledWith(
-        'docker',
-        expect.arrayContaining(['rm', '-f']),
-        expect.anything()
-      );
+      expect(mockSpawnSync).toHaveBeenCalledWith('docker', expect.arrayContaining(['rm', '-f']), expect.anything());
       // First spawn call is the build
       const buildCall = mockSpawn.mock.calls[0]!;
       const buildArgs = buildCall[1] as string[];
