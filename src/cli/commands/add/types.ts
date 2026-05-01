@@ -127,7 +127,7 @@ export interface AddMemoryResult {
 
 // Dataset types
 export interface AddDatasetOptions {
-  name?: string;
+  name: string;
   description?: string;
   json?: boolean;
 }

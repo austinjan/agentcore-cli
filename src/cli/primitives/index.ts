@@ -1,7 +1,8 @@
 export { ABTestPrimitive } from './ABTestPrimitive';
 export { BasePrimitive } from './BasePrimitive';
 export { DatasetPrimitive } from './DatasetPrimitive';
-export type { AddDatasetOptions, RemovableDataset } from './DatasetPrimitive';
+export type { AddDatasetOptions } from '../commands/add/types';
+export type { RemovableDataset } from './DatasetPrimitive';
 export { MemoryPrimitive } from './MemoryPrimitive';
 export { CredentialPrimitive } from './CredentialPrimitive';
 export { AgentPrimitive } from './AgentPrimitive';

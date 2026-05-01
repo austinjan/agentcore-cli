@@ -2,6 +2,7 @@ import { ConfigIO, findConfigRoot } from '../../../lib';
 import {
   AgentNameSchema,
   BuildTypeSchema,
+  DatasetNameSchema,
   GatewayAuthorizerTypeSchema,
   GatewayExceptionLevelSchema,
   GatewayNameSchema,
@@ -764,6 +765,11 @@ export function validateAddMemoryOptions(options: AddMemoryOptions): ValidationR
 export function validateAddDatasetOptions(options: AddDatasetOptions): ValidationResult {
   if (!options.name) {
     return { valid: false, error: '--name is required' };
+  }
+
+  const nameResult = DatasetNameSchema.safeParse(options.name);
+  if (!nameResult.success) {
+    return { valid: false, error: nameResult.error.issues[0]?.message ?? 'Invalid dataset name' };
   }
 
   return { valid: true };

@@ -1,5 +1,6 @@
 import { findConfigRoot } from '../../lib';
 import { DatasetSchema } from '../../schema';
+import type { AddDatasetOptions } from '../commands/add/types';
 import { validateAddDatasetOptions } from '../commands/add/validate';
 import { getErrorMessage } from '../errors';
 import type { RemovalPreview, RemovalResult, SchemaChange } from '../operations/remove/types';
@@ -7,14 +8,6 @@ import { cliCommandRun } from '../telemetry/cli-command-run.js';
 import { BasePrimitive } from './BasePrimitive';
 import type { AddResult, AddScreenComponent, RemovableResource } from './types';
 import type { Command } from '@commander-js/extra-typings';
-
-/**
- * Options for adding a dataset resource.
- */
-export interface AddDatasetOptions {
-  name: string;
-  description?: string;
-}
 
 /**
  * Represents a dataset that can be removed.
@@ -131,7 +124,7 @@ export class DatasetPrimitive extends BasePrimitive<AddDatasetOptions, Removable
           // CLI mode
           await cliCommandRun('add.dataset', !!cliOptions.json, async () => {
             const validation = validateAddDatasetOptions({
-              name: cliOptions.name,
+              name: cliOptions.name ?? '',
               description: cliOptions.description,
             });
 

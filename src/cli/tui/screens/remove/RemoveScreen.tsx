@@ -144,6 +144,10 @@ export function RemoveScreen({
             description = 'No runtime endpoints to remove';
           }
           break;
+        case 'dataset':
+          // Dataset removal requires --name flag; not supported interactively
+          description = 'Remove a dataset (use --name flag: agentcore remove dataset --name <name>)';
+          break;
         case 'all':
           // 'all' is always available
           break;

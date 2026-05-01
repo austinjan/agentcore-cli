@@ -635,7 +635,12 @@ export function RemoveFlow({
           void handleSelectRuntimeEndpoint(initialResourceName);
           break;
         case 'dataset':
-          // Dataset removal is handled via CLI path; no TUI screen yet
+          // Dataset removal is not supported interactively; show an error message
+          setFlow({
+            name: 'error',
+            message:
+              'Dataset removal is not supported in interactive mode. Use: agentcore remove dataset --name <name>',
+          });
           break;
       }
     }, 0);
