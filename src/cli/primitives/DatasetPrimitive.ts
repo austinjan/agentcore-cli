@@ -1,4 +1,5 @@
 import { findConfigRoot } from '../../lib';
+import type { DatasetSchemaType } from '../../schema';
 import { DatasetSchema } from '../../schema';
 import type { AddDatasetOptions } from '../commands/add/types';
 import { validateAddDatasetOptions } from '../commands/add/validate';
@@ -30,6 +31,7 @@ export class DatasetPrimitive extends BasePrimitive<AddDatasetOptions, Removable
 
       const dataset = {
         name: options.name,
+        schemaType: options.schemaType,
         ...(options.description && { description: options.description }),
       };
 
@@ -112,9 +114,13 @@ export class DatasetPrimitive extends BasePrimitive<AddDatasetOptions, Removable
       .command('dataset')
       .description('Add a dataset to the project')
       .option('--name <name>', 'Dataset name [non-interactive]')
+      .option(
+        '--schema-type <schemaType>',
+        'Dataset schema type (e.g. AGENTCORE_EVALUATION_PREDEFINED_V1) [non-interactive]'
+      )
       .option('--description <description>', 'Dataset description [non-interactive]')
       .option('--json', 'Output as JSON [non-interactive]')
-      .action(async (cliOptions: { name?: string; description?: string; json?: boolean }) => {
+      .action(async (cliOptions: { name?: string; schemaType?: string; description?: string; json?: boolean }) => {
         if (!findConfigRoot()) {
           console.error('No agentcore project found. Run `agentcore create` first.');
           process.exit(1);
@@ -125,6 +131,7 @@ export class DatasetPrimitive extends BasePrimitive<AddDatasetOptions, Removable
           await cliCommandRun('add.dataset', !!cliOptions.json, async () => {
             const validation = validateAddDatasetOptions({
               name: cliOptions.name ?? '',
+              schemaType: (cliOptions.schemaType ?? '') as DatasetSchemaType,
               description: cliOptions.description,
             });
 
@@ -134,6 +141,7 @@ export class DatasetPrimitive extends BasePrimitive<AddDatasetOptions, Removable
 
             const result = await this.add({
               name: cliOptions.name!,
+              schemaType: cliOptions.schemaType! as DatasetSchemaType,
               description: cliOptions.description,
             });
 

@@ -3,6 +3,7 @@ import {
   AgentNameSchema,
   BuildTypeSchema,
   DatasetNameSchema,
+  DatasetSchemaTypeSchema,
   GatewayAuthorizerTypeSchema,
   GatewayExceptionLevelSchema,
   GatewayNameSchema,
@@ -770,6 +771,16 @@ export function validateAddDatasetOptions(options: AddDatasetOptions): Validatio
   const nameResult = DatasetNameSchema.safeParse(options.name);
   if (!nameResult.success) {
     return { valid: false, error: nameResult.error.issues[0]?.message ?? 'Invalid dataset name' };
+  }
+
+  if (!options.schemaType) {
+    return { valid: false, error: '--schema-type is required' };
+  }
+
+  const schemaTypeResult = DatasetSchemaTypeSchema.safeParse(options.schemaType);
+  if (!schemaTypeResult.success) {
+    const valid = DatasetSchemaTypeSchema.options.join(', ');
+    return { valid: false, error: `Invalid schema type: ${options.schemaType}. Valid options: ${valid}` };
   }
 
   return { valid: true };

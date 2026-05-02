@@ -56,8 +56,8 @@ export { PolicyEngineNameSchema, PolicyNameSchema, PolicySchema, ValidationModeS
 export { TagsSchema };
 export type { Tags } from './primitives/tags';
 export { DatasetSchema };
-export { DatasetNameSchema } from './primitives/dataset';
-export type { Dataset } from './primitives/dataset';
+export { DatasetNameSchema, DatasetSchemaTypeSchema } from './primitives/dataset';
+export type { Dataset, DatasetSchemaType } from './primitives/dataset';
 export type { ABTestMode, TargetRef, GatewayFilter, PerVariantOnlineEvaluationConfig } from './primitives/ab-test';
 export { ABTestModeSchema, TargetRefSchema, GatewayFilterSchema } from './primitives/ab-test';
 export type { HttpGatewayTarget } from './primitives/http-gateway';

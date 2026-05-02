@@ -1,4 +1,5 @@
 import type {
+  DatasetSchemaType,
   GatewayAuthorizerType,
   ModelProvider,
   ProtocolMode,
@@ -128,6 +129,7 @@ export interface AddMemoryResult {
 // Dataset types
 export interface AddDatasetOptions {
   name: string;
+  schemaType: DatasetSchemaType;
   description?: string;
   json?: boolean;
 }

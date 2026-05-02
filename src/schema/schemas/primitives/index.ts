@@ -7,8 +7,8 @@ export type {
   VariantConfiguration,
 } from './ab-test';
 
-export type { Dataset } from './dataset';
-export { DatasetNameSchema, DatasetSchema } from './dataset';
+export type { Dataset, DatasetSchemaType } from './dataset';
+export { DatasetNameSchema, DatasetSchema, DatasetSchemaTypeSchema } from './dataset';
 export {
   ABTestNameSchema,
   ABTestDescriptionSchema,
