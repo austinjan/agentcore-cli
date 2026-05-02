@@ -7,6 +7,7 @@ import {
   buildDeployedState,
   getStackOutputs,
   parseAgentOutputs,
+  parseDatasetOutputs,
   parseEvaluatorOutputs,
   parseGatewayOutputs,
   parseMemoryOutputs,
@@ -38,6 +39,7 @@ import {
   resolveConfigBundleComponentKeys,
   setupConfigBundles,
 } from '../../operations/deploy/post-deploy-config-bundles';
+import { syncDatasetSources } from '../../operations/deploy/post-deploy-datasets';
 import { setupHttpGateways } from '../../operations/deploy/post-deploy-http-gateways';
 import { enableOnlineEvalConfigs } from '../../operations/deploy/post-deploy-online-evals';
 import type { DeployResult } from './types';
@@ -437,6 +439,10 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       ) ?? {};
     const gateways = parseGatewayOutputs(outputs, gatewaySpecs);
 
+    // Parse dataset outputs
+    const datasetNames = (context.projectSpec.datasets ?? []).map(d => d.name);
+    const datasets = parseDatasetOutputs(outputs, datasetNames);
+
     const existingState = await configIO.readDeployedState().catch(() => undefined);
     let deployedState = buildDeployedState({
       targetName: target.name,
@@ -452,6 +458,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       policyEngines,
       policies,
       runtimeEndpoints,
+      datasets,
     });
     await configIO.writeDeployedState(deployedState);
 
@@ -473,10 +480,41 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
 
     endStep('success');
 
+    const postDeployWarnings: string[] = [];
+
+    // Post-deploy: Sync dataset source files (CFN Source property is createOnly, so the
+    // CLI must upload examples after each deploy when the source file has changed).
+    const datasetSpecs = context.projectSpec.datasets ?? [];
+    const datasetsWithSource = datasetSpecs.filter(d => d.source);
+    if (datasetsWithSource.length > 0) {
+      const deployedDatasetsForSync = deployedState.targets?.[target.name]?.resources?.datasets ?? {};
+      const syncResult = await syncDatasetSources({
+        region: target.region,
+        datasetSpecs: datasetsWithSource,
+        deployedDatasets: deployedDatasetsForSync,
+        configBaseDir: configIO.getConfigRoot(),
+      });
+
+      if (syncResult.hasErrors) {
+        const errors = syncResult.results.filter(r => r.status === 'error');
+        const errorMessages = errors.map(err => `"${err.datasetName}": ${err.error}`).join('; ');
+        logger.log(`Dataset source sync warnings: ${errorMessages}`, 'warn');
+        postDeployWarnings.push(...errors.map(err => `Dataset "${err.datasetName}": ${err.error}`));
+      }
+
+      // Persist updated sourceHash values into deployed state
+      const updatedState = await configIO.readDeployedState().catch(() => deployedState);
+      const targetResources = updatedState.targets[target.name]?.resources;
+      if (targetResources) {
+        targetResources.datasets = syncResult.updatedDatasets;
+        await configIO.writeDeployedState(updatedState);
+        deployedState = updatedState;
+      }
+    }
+
     // Post-deploy: Enable online eval configs that have enableOnCreate (CFN deploys them as DISABLED).
     // Only enable configs that are newly deployed — skip configs that already existed before this
     // deploy run, so we don't re-enable configs a customer intentionally disabled.
-    const postDeployWarnings: string[] = [];
     const onlineEvalFullSpecs = context.projectSpec.onlineEvalConfigs ?? [];
     const deployedOnlineEvalConfigs = deployedState.targets?.[target.name]?.resources?.onlineEvalConfigs ?? {};
     const previouslyDeployedOnlineEvals = existingState?.targets?.[target.name]?.resources?.onlineEvalConfigs ?? {};
