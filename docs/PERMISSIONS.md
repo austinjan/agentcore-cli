@@ -39,8 +39,10 @@ Attach this to every IAM user or role that will run AgentCore CLI commands. The 
 - `sts:GetCallerIdentity`, `cloudformation:DescribeStacks`, `tag:GetResources` for basic operations
 - `bedrock-agentcore:Invoke*`, `bedrock-agentcore:Get*`, `bedrock-agentcore:List*` for invoking agents and checking
   status
+- Batch evaluation and recommendation actions for `run batch-eval` and `run recommend`
 - Credential provider and token vault actions for `deploy` when the project uses identity features
-- CloudWatch Logs, X-Ray, and Application Signals actions for `logs`, `traces`, and observability setup
+- CloudWatch Logs (including log group creation for batch eval results), X-Ray, and Application Signals actions for
+  `logs`, `traces`, and observability setup
 - Bedrock actions for agent import and AI-assisted code generation (optional, see
   [Scoping down by feature](#scoping-down-by-feature))
 
@@ -162,15 +164,16 @@ The policy files provided cover every AgentCore feature. If your team only uses 
 corresponding statements to further tighten the policies. This table maps features to the policy statements that can be
 safely removed:
 
-| If your team does not use...    | Remove from user policy                                              | Remove from CFN execution policy                                                                       |
-| ------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Container builds (CodeZip only) | _(no change)_                                                        | `EcrContainerBuilds`, `CodeBuildContainerBuilds`                                                       |
-| MCP Lambda compute              | _(no change)_                                                        | `LambdaMcpAndCustomResources` (keep if using container builds, which need Lambda for custom resources) |
-| Agent import from Bedrock       | `BedrockAgentImport`                                                 | _(no change)_                                                                                          |
-| AI-assisted code generation     | `BedrockModelInvocation`                                             | _(no change)_                                                                                          |
-| Identity/credential providers   | `IdentityCredentialManagement`, `TokenVaultKmsKeyCreation`           | `SecretsManagerForCredentials`                                                                         |
-| Policy engine                   | `PolicyGeneration`                                                   | Remove `*PolicyEngine*` and `*Policy` actions from `BedrockAgentCoreResources`                         |
-| Online evaluations              | Remove `UpdateOnlineEvaluationConfig` from `AgentCoreResourceStatus` | Remove `*OnlineEvaluationConfig*` actions from `BedrockAgentCoreResources`                             |
+| If your team does not use...    | Remove from user policy                                                                                                 | Remove from CFN execution policy                                                                       |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Container builds (CodeZip only) | _(no change)_                                                                                                           | `EcrContainerBuilds`, `CodeBuildContainerBuilds`                                                       |
+| MCP Lambda compute              | _(no change)_                                                                                                           | `LambdaMcpAndCustomResources` (keep if using container builds, which need Lambda for custom resources) |
+| Agent import from Bedrock       | `BedrockAgentImport`                                                                                                    | _(no change)_                                                                                          |
+| AI-assisted code generation     | `BedrockModelInvocation`                                                                                                | _(no change)_                                                                                          |
+| Identity/credential providers   | `IdentityCredentialManagement`, `TokenVaultKmsKeyCreation`                                                              | `SecretsManagerForCredentials`                                                                         |
+| Policy engine                   | `PolicyGeneration`                                                                                                      | Remove `*PolicyEngine*` and `*Policy` actions from `BedrockAgentCoreResources`                         |
+| Online evaluations              | Remove `UpdateOnlineEvaluationConfig` from `AgentCoreResourceStatus`                                                    | Remove `*OnlineEvaluationConfig*` actions from `BedrockAgentCoreResources`                             |
+| Batch eval / recommendations    | `BatchEvalAndRecommendations`; remove `CreateLogGroup`, `CreateLogStream`, `PutLogEvents` from `LogsStreamingAndSearch` | _(no change)_                                                                                          |
 
 ## Hardening with permission boundaries
 
@@ -335,6 +338,20 @@ Required for all deployment operations (`deploy`, `status`, `diff`).
 | `bedrock-agentcore:Evaluate`                     | `run evals`                               | Run on-demand evaluation against agent traces |
 | `bedrock-agentcore:UpdateOnlineEvaluationConfig` | `pause online-eval`, `resume online-eval` | Pause or resume online evaluation             |
 
+### Batch evaluation and recommendations
+
+| Action                                    | CLI Commands     | Purpose                        |
+| ----------------------------------------- | ---------------- | ------------------------------ |
+| `bedrock-agentcore:StartBatchEvaluation`  | `run batch-eval` | Start a batch evaluation job   |
+| `bedrock-agentcore:GetBatchEvaluation`    | `run batch-eval` | Poll batch evaluation status   |
+| `bedrock-agentcore:ListBatchEvaluations`  | `evals history`  | List past batch evaluations    |
+| `bedrock-agentcore:StopBatchEvaluation`   | `run batch-eval` | Stop an in-progress batch eval |
+| `bedrock-agentcore:DeleteBatchEvaluation` | `run batch-eval` | Delete a batch evaluation      |
+| `bedrock-agentcore:StartRecommendation`   | `run recommend`  | Start a recommendation job     |
+| `bedrock-agentcore:GetRecommendation`     | `run recommend`  | Poll recommendation status     |
+| `bedrock-agentcore:ListRecommendations`   | `run recommend`  | List past recommendations      |
+| `bedrock-agentcore:DeleteRecommendation`  | `run recommend`  | Stop/delete a recommendation   |
+
 ### Identity and credential management
 
 | Action                                             | CLI Commands | Purpose                                   |
@@ -361,14 +378,18 @@ Required for all deployment operations (`deploy`, `status`, `diff`).
 
 ### Logging, traces, and observability
 
-| Action                          | CLI Commands                             | Purpose                                       |
-| ------------------------------- | ---------------------------------------- | --------------------------------------------- |
-| `logs:StartLiveTail`            | `logs`                                   | Stream agent logs in real-time                |
-| `logs:FilterLogEvents`          | `logs`                                   | Search agent logs                             |
-| `logs:StartQuery`               | `traces list`, `traces get`, `run evals` | Run CloudWatch Logs Insights queries          |
-| `logs:GetQueryResults`          | `traces list`, `traces get`, `run evals` | Retrieve query results                        |
-| `logs:DescribeResourcePolicies` | `deploy`                                 | Check for X-Ray log resource policy           |
-| `logs:PutResourcePolicy`        | `deploy`                                 | Create resource policy for X-Ray trace access |
+| Action                          | CLI Commands                             | Purpose                                                 |
+| ------------------------------- | ---------------------------------------- | ------------------------------------------------------- |
+| `logs:StartLiveTail`            | `logs`                                   | Stream agent logs in real-time                          |
+| `logs:FilterLogEvents`          | `logs`                                   | Search agent logs                                       |
+| `logs:StartQuery`               | `traces list`, `traces get`, `run evals` | Run CloudWatch Logs Insights queries                    |
+| `logs:GetQueryResults`          | `traces list`, `traces get`, `run evals` | Retrieve query results                                  |
+| `logs:DescribeResourcePolicies` | `deploy`                                 | Check for X-Ray log resource policy                     |
+| `logs:PutResourcePolicy`        | `deploy`                                 | Create resource policy for X-Ray trace access           |
+| `logs:DescribeLogGroups`        | `run batch-eval`, `run recommend`        | Discover runtime log groups for evaluation data sources |
+| `logs:CreateLogGroup`           | `run batch-eval`                         | Create log group for batch evaluation results output    |
+| `logs:CreateLogStream`          | `run batch-eval`                         | Create log stream for batch evaluation results          |
+| `logs:PutLogEvents`             | `run batch-eval`                         | Write batch evaluation results to CloudWatch Logs       |
 
 ### Transaction search setup
 
