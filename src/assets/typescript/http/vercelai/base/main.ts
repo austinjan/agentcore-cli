@@ -20,4 +20,4 @@ const app = new BedrockAgentCoreApp({
   },
 });
 
-app.run();
+app.run({ port: parseInt(process.env.PORT ?? '8080') });
