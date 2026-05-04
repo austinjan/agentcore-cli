@@ -4,20 +4,13 @@ import {
   parseJsonOutput,
   readProjectConfig,
   runCLI,
+  runSuccess,
 } from '../src/test-utils/index.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-
-async function runSuccess(args: string[], cwd: string) {
-  const result = await runCLI(args, cwd);
-  expect(result.exitCode, `stdout: ${result.stdout}, stderr: ${result.stderr}`).toBe(0);
-  const json: unknown = parseJsonOutput(result.stdout);
-  expect(json).toHaveProperty('success', true);
-  return json as Record<string, unknown>;
-}
 
 describe('integration: batch evaluation CLI validation', () => {
   let project: TestProject;
@@ -191,7 +184,6 @@ describe('integration: batch evaluation CLI validation', () => {
       expect(found!.config.codeBased?.managed).toBeDefined();
       expect(found!.config.codeBased?.managed?.codeLocation).toContain(managedName);
     });
-
 
     it('adds online eval config with builtin evaluator reference', async () => {
       const configName = `OeBuiltin${Date.now().toString().slice(-6)}`;
