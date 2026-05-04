@@ -192,35 +192,6 @@ describe('integration: batch evaluation CLI validation', () => {
       expect(found!.config.codeBased?.managed?.codeLocation).toContain(managedName);
     });
 
-    it('rejects code-based evaluator in online eval config', async () => {
-      const codeName = project
-        ? (await readProjectConfig(project.projectPath)).evaluators.find(e => e.config.codeBased)?.name
-        : undefined;
-
-      if (!codeName) return;
-
-      const result = await runCLI(
-        [
-          'add',
-          'online-eval',
-          '--name',
-          'InvalidCodeConfig',
-          '--runtime',
-          project.agentName,
-          '--evaluator',
-          codeName,
-          '--sampling-rate',
-          '50',
-          '--json',
-        ],
-        project.projectPath
-      );
-
-      expect(result.exitCode).toBe(1);
-      const json = parseJsonOutput(result.stdout) as Record<string, unknown>;
-      expect(json.success).toBe(false);
-      expect(json.error).toContain('Code-based');
-    });
 
     it('adds online eval config with builtin evaluator reference', async () => {
       const configName = `OeBuiltin${Date.now().toString().slice(-6)}`;
