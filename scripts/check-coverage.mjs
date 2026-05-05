@@ -64,9 +64,7 @@ for (const [absPath, fileSummary] of Object.entries(summary)) {
   // Longest-prefix match: iterate from most specific to least specific.
   // DIRECTORY_THRESHOLDS is already ordered with nested paths before parents
   // for tui/hooks and tui/components, but we sort by length to be safe.
-  const match = [...dirStats]
-    .sort((a, b) => b.prefix.length - a.prefix.length)
-    .find(d => rel.startsWith(d.prefix));
+  const match = [...dirStats].sort((a, b) => b.prefix.length - a.prefix.length).find(d => rel.startsWith(d.prefix));
   if (!match) continue;
 
   match.total += fileSummary.lines.total;
