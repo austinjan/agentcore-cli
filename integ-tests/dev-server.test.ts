@@ -69,18 +69,43 @@ describe('integration: dev server', () => {
     }
   }, 120000);
 
-  afterEach(() => {
-    // Kill dev server if running
-    if (devProcess) {
-      devProcess.kill('SIGTERM');
-      devProcess = null;
+  async function terminateDevProcess(timeoutMs = 5000): Promise<void> {
+    if (!devProcess) return;
+    const proc = devProcess;
+    devProcess = null;
+
+    if (proc.pid) {
+      try {
+        process.kill(-proc.pid, 'SIGTERM');
+      } catch {
+        // Process group already exited
+      }
     }
+
+    await new Promise<void>(resolve => {
+      const timer = setTimeout(() => {
+        if (proc.pid) {
+          try {
+            process.kill(-proc.pid, 'SIGKILL');
+          } catch {
+            // Already dead
+          }
+        }
+        resolve();
+      }, timeoutMs);
+      proc.on('exit', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+
+  afterEach(async () => {
+    await terminateDevProcess();
   });
 
   afterAll(async () => {
-    if (devProcess) {
-      devProcess.kill('SIGKILL');
-    }
+    await terminateDevProcess();
     await rm(testDir, { recursive: true, force: true });
   });
 
@@ -95,15 +120,14 @@ describe('integration: dev server', () => {
       devProcess = spawn('node', [cliPath, 'dev', '--port', String(port), '--logs'], {
         cwd: projectPath,
         stdio: 'pipe',
+        detached: true,
         env: { ...process.env, INIT_CWD: undefined },
       });
 
       const serverReady = await waitForServer(port, 20000);
       expect(serverReady, 'Dev server should respond to ping within 20s').toBeTruthy();
 
-      // Clean shutdown
-      devProcess.kill('SIGTERM');
-      devProcess = null;
+      await terminateDevProcess();
     },
     30000
   );

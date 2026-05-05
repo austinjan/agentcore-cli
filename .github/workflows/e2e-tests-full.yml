@@ -28,6 +28,17 @@ jobs:
       matrix:
         cdk-source: [npm, main]
         shard: ['1/6', '2/6', '3/6', '4/6', '5/6', '6/6']
+    env:
+      # Scheduled runs cover 6 priority suites spanning CodeZip, Container, Auth,
+      # Evals, Import, and local Dev paths. Manual workflow_dispatch runs the
+      # full e2e directory to exercise every framework/model-provider combo.
+      SCHEDULED_TESTS: >-
+        e2e-tests/strands-bedrock.test.ts
+        e2e-tests/container-strands-bedrock.test.ts
+        e2e-tests/byo-custom-jwt.test.ts
+        e2e-tests/evals-lifecycle.test.ts
+        e2e-tests/import-resources.test.ts
+        e2e-tests/dev-lifecycle.test.ts
     steps:
       - uses: actions/checkout@v6
         with:
@@ -79,7 +90,14 @@ jobs:
           OPENAI_API_KEY: ${{ env.E2E_OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ env.E2E_GEMINI_API_KEY }}
           CDK_TARBALL: ${{ env.CDK_TARBALL }}
-        run: npx vitest run --project e2e --shard=${{ matrix.shard }}
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "Scheduled run: executing priority e2e suites"
+            npx vitest run --project e2e --shard=${{ matrix.shard }} $SCHEDULED_TESTS
+          else
+            echo "Manual/push run: executing full e2e suite"
+            npx vitest run --project e2e --shard=${{ matrix.shard }}
+          fi
   browser-tests:
     runs-on: ubuntu-latest
     environment: e2e-testing
