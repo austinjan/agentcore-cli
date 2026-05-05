@@ -1,0 +1,60 @@
+name: Bug Fixer Agent
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_url:
+        description: 'GitHub issue URL'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  fix-bug:
+    if: github.event.label.name == 'bug' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine issue URL
+        id: issue
+        env:
+          INPUT_URL: ${{ inputs.issue_url }}
+          EVENT_URL: ${{ github.event.issue.html_url }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "url=$INPUT_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=$EVENT_URL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.HARNESS_AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Run Bug Fixer Agent
+        working-directory: agents
+        env:
+          HARNESS_ARN: ${{ secrets.HARNESS_ARN }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          ISSUE_URL: ${{ steps.issue.outputs.url }}
+        run: uv sync && uv run python -m bug_fixer.main --issue "$ISSUE_URL"

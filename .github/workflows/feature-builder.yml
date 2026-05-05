@@ -1,0 +1,58 @@
+name: Feature Builder Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      devex_doc:
+        description: 'Path to devex doc (relative to repo root)'
+        required: true
+        type: string
+      impl_doc:
+        description: 'Path to implementation plan (relative to repo root)'
+        required: true
+        type: string
+      feature_name:
+        description: 'Feature name (used for branch naming)'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  build-feature:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.HARNESS_AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Run Feature Builder Agent
+        working-directory: agents
+        env:
+          HARNESS_ARN: ${{ secrets.HARNESS_ARN }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          DEVEX_DOC: ${{ inputs.devex_doc }}
+          IMPL_DOC: ${{ inputs.impl_doc }}
+          FEATURE_NAME: ${{ inputs.feature_name }}
+        run: |
+          uv sync
+          uv run python -m feature_builder.main \
+            --devex "../$DEVEX_DOC" \
+            --impl "../$IMPL_DOC" \
+            --name "$FEATURE_NAME"
