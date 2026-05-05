@@ -1,12 +1,13 @@
-/**
- * Error thrown when an agent with the same name already exists.
- */
-export class AgentAlreadyExistsError extends Error {
-  constructor(agentName: string) {
-    super(`An agent named "${agentName}" already exists in the schema.`);
-    this.name = 'AgentAlreadyExistsError';
-  }
-}
+export {
+  AccessDeniedError,
+  AgentAlreadyExistsError,
+  ConflictError,
+  DependencyCheckError,
+  GitInitError,
+  ResourceNotFoundError,
+  OperationTimeoutError,
+  ValidationError,
+} from '../lib/errors/types';
 
 /**
  * Converts an unknown error to a string message.
@@ -14,6 +15,14 @@ export class AgentAlreadyExistsError extends Error {
  */
 export function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Converts an unknown thrown value to an Error instance.
+ * Use in catch blocks to ensure the error field is always an Error object.
+ */
+export function toError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(String(err));
 }
 
 /**
@@ -141,8 +150,6 @@ export function isStackInProgressError(err: unknown): boolean {
 
 /**
  * Checks if an error indicates a CloudFormation changeset operation is in progress.
- * This typically occurs when multiple deploys race and one tries to create/delete
- * a changeset while another operation is already using it.
  */
 export function isChangesetInProgressError(err: unknown): boolean {
   const message = getErrorMessage(err).toLowerCase();

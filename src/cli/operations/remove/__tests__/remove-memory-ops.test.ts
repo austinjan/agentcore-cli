@@ -1,3 +1,4 @@
+import { ResourceNotFoundError } from '../../../errors';
 import { MemoryPrimitive } from '../../../primitives/MemoryPrimitive.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -84,7 +85,7 @@ describe('remove', () => {
 
     const result = await primitive.remove('Missing');
 
-    expect(result).toEqual({ success: false, error: 'Memory "Missing" not found.' });
+    expect(result).toEqual({ success: false, error: new ResourceNotFoundError('Memory "Missing" not found.') });
   });
 
   it('returns error on exception', async () => {
@@ -92,6 +93,6 @@ describe('remove', () => {
 
     const result = await primitive.remove('Mem1');
 
-    expect(result).toEqual({ success: false, error: 'read fail' });
+    expect(result).toEqual({ success: false, error: new Error('read fail') });
   });
 });

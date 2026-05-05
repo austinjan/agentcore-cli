@@ -27,3 +27,4 @@ export * from './utils';
 
 // Schema I/O utilities
 export * from './schemas/io';
+export { resultToJson, type Result } from './result';

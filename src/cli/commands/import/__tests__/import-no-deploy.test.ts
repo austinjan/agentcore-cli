@@ -5,6 +5,7 @@
  * that were created but never deployed (no agent_id/memory_id in YAML).
  */
 import { parseStarterToolkitYaml } from '../yaml-parser.js';
+import assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -488,7 +489,7 @@ agents:
       onProgress: (msg: string) => progressMessages.push(msg),
     });
 
-    expect(result.success).toBe(true);
+    assert(result.success);
     expect(result.importedAgents).toEqual([]);
     expect(result.importedMemories).toEqual([]);
     expect(result.stackName).toBeDefined();
@@ -645,6 +646,7 @@ agents:
     const { handleImport } = await import('../actions.js');
     const result = await handleImport({ source: yamlPath });
 
+    assert(result.success);
     expect(result.stackName).toBe('AgentCore-myproject-default');
   });
 });
@@ -724,7 +726,7 @@ agents:
 
     // No physical IDs means target resolution is skipped entirely.
     // The import succeeds -- config merge + source copy still happen.
-    expect(result.success).toBe(true);
+    assert(result.success);
     expect(result.importedAgents).toEqual([]);
     expect(result.importedMemories).toEqual([]);
   });
@@ -768,7 +770,7 @@ agents:
     const { handleImport } = await import('../actions.js');
     const result = await handleImport({ source: yamlPath });
 
-    expect(result.success).toBe(true);
+    assert(result.success);
     expect(result.importedAgents).toEqual([]);
     expect(result.importedMemories).toEqual([]);
   });
@@ -812,7 +814,7 @@ agents:
     const { handleImport } = await import('../actions.js');
     const result = await handleImport({ source: yamlPath });
 
-    expect(result.success).toBe(true);
+    assert(result.success);
     // No physical IDs means target is not written to disk
     expect(mockWriteAWSDeploymentTargets).not.toHaveBeenCalled();
     // But the stackName should still be computed using 'default' fallback

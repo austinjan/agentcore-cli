@@ -1,3 +1,4 @@
+import { ResourceNotFoundError } from '../../../errors';
 import { CredentialPrimitive } from '../../../primitives/CredentialPrimitive.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -93,7 +94,7 @@ describe('remove', () => {
 
     const result = await primitive.remove('Missing');
 
-    expect(result).toEqual({ success: false, error: 'Credential "Missing" not found.' });
+    expect(result).toEqual({ success: false, error: new ResourceNotFoundError('Credential "Missing" not found.') });
   });
 
   it('returns error on exception', async () => {
@@ -101,6 +102,6 @@ describe('remove', () => {
 
     const result = await primitive.remove('Cred1');
 
-    expect(result).toEqual({ success: false, error: 'read fail' });
+    expect(result).toEqual({ success: false, error: new Error('read fail') });
   });
 });

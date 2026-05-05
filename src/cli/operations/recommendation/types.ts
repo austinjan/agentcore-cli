@@ -56,17 +56,21 @@ export interface RunRecommendationCommandOptions {
   onStarted?: (info: { recommendationId: string; region: string }) => void;
 }
 
-export interface RunRecommendationCommandResult {
-  success: boolean;
-  error?: string;
+interface RecommendationResultBase {
   recommendationId?: string;
   status?: string;
-  /** The recommendation result from the API (populated on COMPLETED) */
-  result?: RecommendationResult;
-  /** Resolved AWS region used for the recommendation */
-  region?: string;
-  startedAt?: string;
-  completedAt?: string;
   /** Path to the execution log file */
   logFilePath?: string;
 }
+
+export type RunRecommendationCommandResult =
+  | (RecommendationResultBase & {
+      success: true;
+      /** The recommendation result from the API (populated on COMPLETED) */
+      result?: RecommendationResult;
+      /** Resolved AWS region used for the recommendation */
+      region?: string;
+      startedAt?: string;
+      completedAt?: string;
+    })
+  | (RecommendationResultBase & { success: false; error: Error });

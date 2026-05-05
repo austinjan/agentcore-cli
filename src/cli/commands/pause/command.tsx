@@ -1,4 +1,4 @@
-import { ConfigIO } from '../../../lib';
+import { ConfigIO, resultToJson } from '../../../lib';
 import { listABTests, updateABTest } from '../../aws/agentcore-ab-tests';
 import { stopBatchEvaluation } from '../../aws/agentcore-batch-evaluation';
 import { getErrorMessage } from '../../errors';
@@ -51,12 +51,12 @@ function registerOnlineEvalSubcommand(parent: Command, action: 'pause' | 'resume
         const result = await handlePauseResume(options, action);
 
         if (cliOptions.json) {
-          console.log(JSON.stringify(result));
+          console.log(resultToJson(result));
         } else if (result.success) {
           const displayName = cliOptions.arn ? result.configId : name;
           console.log(`${pastTense} online eval config "${displayName}" (status: ${result.executionStatus})`);
         } else {
-          render(<Text color="red">{result.error}</Text>);
+          render(<Text color="red">{result.error.message}</Text>);
         }
 
         process.exit(result.success ? 0 : 1);

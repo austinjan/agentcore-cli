@@ -1,5 +1,6 @@
 import { APP_DIR, ConfigIO, NoProjectError, findConfigRoot, setEnvVar } from '../../../../lib';
 import type { AgentEnvSpec, DirectoryPath, FilePath } from '../../../../schema';
+import { ConflictError } from '../../../errors';
 import { type PythonSetupResult, setupPythonProject } from '../../../operations';
 import { createConfigBundleForAgent } from '../../../operations/agent/config-bundle-defaults';
 import {
@@ -165,7 +166,7 @@ export function useAddAgent() {
         () => addAgentInner(config)
       );
       if (!result.success) {
-        return { ok: false, error: result.error };
+        return { ok: false, error: result.error.message };
       }
       return result.outcome;
     } finally {
@@ -182,24 +183,24 @@ export function useAddAgent() {
 
 type AddAgentInnerResult =
   | { success: true; outcome: AddAgentCreateResult | AddAgentByoResult }
-  | { success: false; error: string };
+  | { success: false; error: Error };
 
 async function addAgentInner(config: AddAgentConfig): Promise<AddAgentInnerResult> {
   const configBaseDir = findConfigRoot();
   if (!configBaseDir) {
-    return { success: false, error: new NoProjectError().message };
+    return { success: false, error: new NoProjectError() };
   }
 
   const configIO = new ConfigIO({ baseDir: configBaseDir });
 
   if (!configIO.configExists('project')) {
-    return { success: false, error: new NoProjectError().message };
+    return { success: false, error: new NoProjectError() };
   }
 
   const project = await configIO.readProjectSpec();
   const existingAgent = project.runtimes.find(agent => agent.name === config.name);
   if (existingAgent) {
-    return { success: false, error: `Agent "${config.name}" already exists in this project.` };
+    return { success: false, error: new ConflictError(`Agent "${config.name}" already exists in this project.`) };
   }
 
   let outcome: AddAgentCreateResult | AddAgentByoResult | AddAgentError;
@@ -212,7 +213,7 @@ async function addAgentInner(config: AddAgentConfig): Promise<AddAgentInnerResul
   }
 
   if (!outcome.ok) {
-    return { success: false, error: outcome.error };
+    return { success: false, error: new Error(outcome.error) };
   }
   return { success: true, outcome };
 }
@@ -344,7 +345,7 @@ async function handleImportPath(
   });
 
   if (!result.success) {
-    return { ok: false, error: result.error ?? 'Unknown error' };
+    return { ok: false, error: result.error.message ?? 'Unknown error' };
   }
 
   return {

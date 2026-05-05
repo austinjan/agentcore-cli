@@ -1,12 +1,12 @@
-import { findConfigRoot } from '../../lib';
+import { findConfigRoot, resultToJson } from '../../lib';
 import type { OnlineEvalConfig } from '../../schema';
 import { OnlineEvalConfigSchema } from '../../schema';
-import { getErrorMessage } from '../errors';
-import type { RemovalPreview, RemovalResult, SchemaChange } from '../operations/remove/types';
+import { ResourceNotFoundError, getErrorMessage, toError } from '../errors';
+import type { RemovalPreview, SchemaChange } from '../operations/remove/types';
 import { cliCommandRun } from '../telemetry/cli-command-run.js';
 import { requireTTY } from '../tui/guards/tty';
 import { BasePrimitive } from './BasePrimitive';
-import type { AddResult, AddScreenComponent, RemovableResource } from './types';
+import type { AddScreenComponent, RemovableResource, Result } from './types';
 import type { Command } from '@commander-js/extra-typings';
 
 export interface AddOnlineEvalConfigOptions {
@@ -29,22 +29,22 @@ export class OnlineEvalConfigPrimitive extends BasePrimitive<AddOnlineEvalConfig
   override readonly article = 'an';
   readonly primitiveSchema = OnlineEvalConfigSchema;
 
-  async add(options: AddOnlineEvalConfigOptions): Promise<AddResult<{ configName: string }>> {
+  async add(options: AddOnlineEvalConfigOptions): Promise<Result<{ configName: string }>> {
     try {
       const config = await this.createOnlineEvalConfig(options);
       return { success: true, configName: config.name };
     } catch (err) {
-      return { success: false, error: getErrorMessage(err) };
+      return { success: false, error: toError(err) };
     }
   }
 
-  async remove(configName: string): Promise<RemovalResult> {
+  async remove(configName: string): Promise<Result> {
     try {
       const project = await this.readProjectSpec();
 
       const index = project.onlineEvalConfigs.findIndex(c => c.name === configName);
       if (index === -1) {
-        return { success: false, error: `Online eval config "${configName}" not found.` };
+        return { success: false, error: new ResourceNotFoundError(`Online eval config "${configName}" not found.`) };
       }
 
       project.onlineEvalConfigs.splice(index, 1);
@@ -52,7 +52,7 @@ export class OnlineEvalConfigPrimitive extends BasePrimitive<AddOnlineEvalConfig
 
       return { success: true };
     } catch (err) {
-      return { success: false, error: getErrorMessage(err) };
+      return { success: false, error: toError(err) };
     }
   }
 
@@ -61,7 +61,7 @@ export class OnlineEvalConfigPrimitive extends BasePrimitive<AddOnlineEvalConfig
 
     const config = project.onlineEvalConfigs.find(c => c.name === configName);
     if (!config) {
-      throw new Error(`Online eval config "${configName}" not found.`);
+      throw new ResourceNotFoundError(`Online eval config "${configName}" not found.`);
     }
 
     const summary: string[] = [
@@ -159,11 +159,11 @@ export class OnlineEvalConfigPrimitive extends BasePrimitive<AddOnlineEvalConfig
               });
 
               if (!result.success) {
-                throw new Error(result.error);
+                throw result.error;
               }
 
               if (cliOptions.json) {
-                console.log(JSON.stringify(result));
+                console.log(resultToJson(result));
               } else {
                 console.log(`Added online eval config '${result.configName}'`);
               }
@@ -217,10 +217,10 @@ export class OnlineEvalConfigPrimitive extends BasePrimitive<AddOnlineEvalConfig
     if (options.endpoint) {
       const runtime = project.runtimes.find(r => r.name === options.agent);
       if (!runtime) {
-        throw new Error(`Runtime "${options.agent}" not found in project.`);
+        throw new ResourceNotFoundError(`Runtime "${options.agent}" not found in project.`);
       }
       if (!runtime.endpoints?.[options.endpoint]) {
-        throw new Error(
+        throw new ResourceNotFoundError(
           `Endpoint "${options.endpoint}" not found on runtime "${options.agent}". Available endpoints: ${
             runtime.endpoints ? Object.keys(runtime.endpoints).join(', ') : '(none)'
           }`

@@ -1,5 +1,7 @@
 import { ConfigIO } from '../../lib';
+import type { Result } from '../../lib/result';
 import type { AgentCoreProjectSpec, AwsDeploymentTargets, DeployedState } from '../../schema';
+import { ResourceNotFoundError, ValidationError } from '../errors';
 
 export interface DeployedProjectConfig {
   project: AgentCoreProjectSpec;
@@ -32,11 +34,11 @@ export async function loadDeployedProjectConfig(configIO: ConfigIO = new ConfigI
 export function resolveAgent(
   context: DeployedProjectConfig,
   options: { runtime?: string }
-): { success: true; agent: ResolvedAgent } | { success: false; error: string } {
+): Result<{ agent: ResolvedAgent }> {
   const { project, deployedState, awsTargets } = context;
 
   if (project.runtimes.length === 0) {
-    return { success: false, error: 'No runtimes defined in agentcore.json' };
+    return { success: false, error: new ValidationError('No runtimes defined in agentcore.json') };
   }
 
   // Resolve runtime
@@ -45,7 +47,7 @@ export function resolveAgent(
   if (!options.runtime && project.runtimes.length > 1) {
     return {
       success: false,
-      error: `Multiple runtimes found. Use --runtime to specify one: ${runtimeNames.join(', ')}`,
+      error: new ValidationError(`Multiple runtimes found. Use --runtime to specify one: ${runtimeNames.join(', ')}`),
     };
   }
 
@@ -54,18 +56,21 @@ export function resolveAgent(
   if (options.runtime && !agentSpec) {
     return {
       success: false,
-      error: `Runtime '${options.runtime}' not found. Available: ${runtimeNames.join(', ')}`,
+      error: new ResourceNotFoundError(`Runtime '${options.runtime}' not found. Available: ${runtimeNames.join(', ')}`),
     };
   }
 
   if (!agentSpec) {
-    return { success: false, error: 'No runtimes defined in agentcore.json' };
+    return { success: false, error: new ValidationError('No runtimes defined in agentcore.json') };
   }
 
   // Resolve target
   const targetNames = Object.keys(deployedState.targets);
   if (targetNames.length === 0) {
-    return { success: false, error: 'No deployed targets found. Run `agentcore deploy` first.' };
+    return {
+      success: false,
+      error: new ResourceNotFoundError('No deployed targets found. Run `agentcore deploy` first.'),
+    };
   }
   const selectedTargetName = targetNames[0]!;
 
@@ -73,7 +78,10 @@ export function resolveAgent(
   const targetConfig = awsTargets.find(t => t.name === selectedTargetName);
 
   if (!targetConfig) {
-    return { success: false, error: `Target config '${selectedTargetName}' not found in aws-targets` };
+    return {
+      success: false,
+      error: new ResourceNotFoundError(`Target config '${selectedTargetName}' not found in aws-targets`),
+    };
   }
 
   // Get the deployed state for this specific agent
@@ -82,7 +90,9 @@ export function resolveAgent(
   if (!agentState) {
     return {
       success: false,
-      error: `Runtime '${agentSpec.name}' is not deployed to target '${selectedTargetName}'. Run 'agentcore deploy' first.`,
+      error: new ResourceNotFoundError(
+        `Runtime '${agentSpec.name}' is not deployed to target '${selectedTargetName}'. Run 'agentcore deploy' first.`
+      ),
     };
   }
 

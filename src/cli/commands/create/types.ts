@@ -28,12 +28,13 @@ export interface CreateOptions extends VpcOptions {
   json?: boolean;
 }
 
-export interface CreateResult {
-  success: boolean;
-  projectPath?: string;
-  agentName?: string;
-  error?: string;
-  dryRun?: boolean;
-  wouldCreate?: string[];
-  warnings?: string[];
-}
+export type CreateResult =
+  | {
+      success: true;
+      projectPath?: string;
+      agentName?: string;
+      dryRun?: boolean;
+      wouldCreate?: string[];
+      warnings?: string[];
+    }
+  | { success: false; error: Error; warnings?: string[] };

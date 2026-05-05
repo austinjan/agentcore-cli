@@ -1,4 +1,4 @@
-import { findConfigRoot } from '../../lib';
+import { findConfigRoot, resultToJson } from '../../lib';
 import type {
   AgentCoreGateway,
   AgentCoreGatewayTarget,
@@ -10,8 +10,8 @@ import type {
 import { AgentCoreGatewaySchema, PolicyEngineModeSchema } from '../../schema';
 import type { AddGatewayOptions as CLIAddGatewayOptions } from '../commands/add/types';
 import { validateAddGatewayOptions } from '../commands/add/validate';
-import { getErrorMessage } from '../errors';
-import type { RemovalPreview, RemovalResult, SchemaChange } from '../operations/remove/types';
+import { ResourceNotFoundError, getErrorMessage, toError } from '../errors';
+import type { RemovalPreview, SchemaChange } from '../operations/remove/types';
 import { cliCommandRun } from '../telemetry/cli-command-run.js';
 import { AuthorizerType, PolicyEngineMode, standardize } from '../telemetry/schemas/common-shapes.js';
 import { requireTTY } from '../tui/guards/tty';
@@ -19,7 +19,7 @@ import type { AddGatewayConfig } from '../tui/screens/mcp/types';
 import { BasePrimitive } from './BasePrimitive';
 import { buildAuthorizerConfigFromJwtConfig, createManagedOAuthCredential } from './auth-utils';
 import { SOURCE_CODE_NOTE } from './constants';
-import type { AddResult, AddScreenComponent, RemovableResource } from './types';
+import type { AddScreenComponent, RemovableResource, Result } from './types';
 import type { Command } from '@commander-js/extra-typings';
 
 /**
@@ -61,24 +61,24 @@ export class GatewayPrimitive extends BasePrimitive<AddGatewayOptions, Removable
   readonly label = 'Gateway';
   readonly primitiveSchema = AgentCoreGatewaySchema;
 
-  async add(options: AddGatewayOptions): Promise<AddResult<{ gatewayName: string }>> {
+  async add(options: AddGatewayOptions): Promise<Result<{ gatewayName: string }>> {
     try {
       const config = this.buildGatewayConfig(options);
       const result = await this.createGatewayFromWizard(config);
       return { success: true, gatewayName: result.name };
     } catch (err) {
-      return { success: false, error: getErrorMessage(err) };
+      return { success: false, error: toError(err) };
     }
   }
 
-  async remove(gatewayName: string): Promise<RemovalResult> {
+  async remove(gatewayName: string): Promise<Result> {
     try {
       const project = await this.readProjectSpec();
       const mcpSpec = extractMcpSpec(project);
 
       const gateway = mcpSpec.agentCoreGateways.find(g => g.name === gatewayName);
       if (!gateway) {
-        return { success: false, error: `Gateway "${gatewayName}" not found.` };
+        return { success: false, error: new ResourceNotFoundError(`Gateway "${gatewayName}" not found.`) };
       }
 
       const newMcpSpec = this.computeRemovedGatewayMcpSpec(mcpSpec, gatewayName);
@@ -87,7 +87,7 @@ export class GatewayPrimitive extends BasePrimitive<AddGatewayOptions, Removable
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      return { success: false, error: message };
+      return { success: false, error: new Error(message) };
     }
   }
 
@@ -97,7 +97,7 @@ export class GatewayPrimitive extends BasePrimitive<AddGatewayOptions, Removable
 
     const gateway = mcpSpec.agentCoreGateways.find(g => g.name === gatewayName);
     if (!gateway) {
-      throw new Error(`Gateway "${gatewayName}" not found.`);
+      throw new ResourceNotFoundError(`Gateway "${gatewayName}" not found.`);
     }
 
     const summary: string[] = [`Removing gateway: ${gatewayName}`];
@@ -218,11 +218,11 @@ export class GatewayPrimitive extends BasePrimitive<AddGatewayOptions, Removable
           });
 
           if (!result.success) {
-            throw new Error(result.error);
+            throw result.error;
           }
 
           if (cliOptions.json) {
-            console.log(JSON.stringify(result));
+            console.log(resultToJson(result));
           } else {
             console.log(`Added gateway '${result.gatewayName}'`);
           }
@@ -270,7 +270,7 @@ export class GatewayPrimitive extends BasePrimitive<AddGatewayOptions, Removable
                 resourceName: cliOptions.name,
                 message: result.success ? `Removed gateway '${cliOptions.name}'` : undefined,
                 note: result.success ? SOURCE_CODE_NOTE : undefined,
-                error: !result.success ? result.error : undefined,
+                error: !result.success ? result.error.message : undefined,
               })
             );
             process.exit(result.success ? 0 : 1);

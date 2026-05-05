@@ -22,12 +22,21 @@ export interface InvokeOptions {
   bearerToken?: string;
 }
 
-export interface InvokeResult {
-  success: boolean;
-  agentName?: string;
-  targetName?: string;
-  response?: string;
-  sessionId?: string;
-  error?: string;
-  logFilePath?: string;
-}
+export type InvokeResult =
+  | {
+      success: true;
+      agentName?: string;
+      targetName?: string;
+      response?: string;
+      sessionId?: string;
+      logFilePath?: string;
+    }
+  | {
+      success: false;
+      error: Error;
+      agentName?: string;
+      targetName?: string;
+      response?: string;
+      sessionId?: string;
+      logFilePath?: string;
+    };

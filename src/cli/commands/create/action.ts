@@ -8,7 +8,7 @@ import type {
   SDKFramework,
   TargetLanguage,
 } from '../../../schema';
-import { getErrorMessage } from '../../errors';
+import { DependencyCheckError, GitInitError, toError } from '../../errors';
 import { checkCreateDependencies } from '../../external-requirements';
 import { initGitRepo, setupPythonProject, writeEnvFile, writeGitignore } from '../../operations';
 import { createConfigBundleForAgent } from '../../operations/agent/config-bundle-defaults';
@@ -57,7 +57,7 @@ export async function createProject(options: CreateProjectOptions): Promise<Crea
 
     // Fail on errors
     if (!depCheck.passed) {
-      return { success: false, error: depCheck.errors.join('\n'), warnings: depWarnings };
+      return { success: false, error: new DependencyCheckError(depCheck.errors), warnings: depWarnings };
     }
   }
 
@@ -93,7 +93,11 @@ export async function createProject(options: CreateProjectOptions): Promise<Crea
       const gitResult = await initGitRepo(projectRoot);
       if (gitResult.status === 'error') {
         onProgress?.('Initialize git repository', 'error');
-        return { success: false, error: gitResult.message, warnings: depWarnings };
+        return {
+          success: false,
+          error: new GitInitError(gitResult.message ?? 'Git initialization failed'),
+          warnings: depWarnings,
+        };
       }
       onProgress?.('Initialize git repository', 'done');
     }
@@ -104,7 +108,7 @@ export async function createProject(options: CreateProjectOptions): Promise<Crea
       warnings: depWarnings.length > 0 ? depWarnings : undefined,
     };
   } catch (err) {
-    return { success: false, error: getErrorMessage(err), warnings: depWarnings };
+    return { success: false, error: toError(err), warnings: depWarnings };
   }
 }
 
@@ -174,7 +178,7 @@ export async function createProjectWithAgent(options: CreateWithAgentOptions): P
 
   // Fail on errors
   if (!depCheck.passed) {
-    return { success: false, error: depCheck.errors.join('\n'), warnings: depWarnings };
+    return { success: false, error: new DependencyCheckError(depCheck.errors), warnings: depWarnings };
   }
 
   // First create the base project (skip dependency check since we already did it)
@@ -207,7 +211,7 @@ export async function createProjectWithAgent(options: CreateWithAgentOptions): P
       });
       if (!importResult.success) {
         onProgress?.('Import agent from Bedrock', 'error');
-        return { success: false, error: importResult.error, warnings: depWarnings };
+        return { ...importResult, warnings: depWarnings.length > 0 ? depWarnings : undefined };
       }
       onProgress?.('Import agent from Bedrock', 'done');
       return {
@@ -217,7 +221,7 @@ export async function createProjectWithAgent(options: CreateWithAgentOptions): P
         warnings: depWarnings.length > 0 ? depWarnings : undefined,
       };
     } catch (err) {
-      return { success: false, error: getErrorMessage(err), warnings: depWarnings };
+      return { success: false, error: toError(err), warnings: depWarnings };
     }
   }
 
@@ -310,7 +314,7 @@ export async function createProjectWithAgent(options: CreateWithAgentOptions): P
       warnings: depWarnings.length > 0 ? depWarnings : undefined,
     };
   } catch (err) {
-    return { success: false, error: getErrorMessage(err), warnings: depWarnings };
+    return { success: false, error: toError(err), warnings: depWarnings };
   }
 }
 

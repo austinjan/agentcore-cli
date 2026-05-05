@@ -1,3 +1,4 @@
+import { resultToJson } from '../../../lib';
 import { getErrorMessage } from '../../errors';
 import { COMMAND_DESCRIPTIONS } from '../../tui/copy';
 import { requireProject } from '../../tui/guards';
@@ -100,12 +101,12 @@ export const registerStatus = (program: Command) => {
           });
 
           if (cliOptions.json) {
-            console.log(JSON.stringify(result, null, 2));
+            console.log(resultToJson(result));
             return;
           }
 
           if (!result.success) {
-            render(<Text color="red">{result.error}</Text>);
+            render(<Text color="red">{result.error.message}</Text>);
             return;
           }
 
@@ -126,13 +127,17 @@ export const registerStatus = (program: Command) => {
         });
 
         if (cliOptions.json) {
-          const filtered = filterResources(result.resources, cliOptions);
-          console.log(JSON.stringify({ ...result, resources: filtered }, null, 2));
+          if (result.success) {
+            const filtered = filterResources(result.resources, cliOptions);
+            console.log(resultToJson({ ...result, resources: filtered }));
+          } else {
+            console.log(resultToJson(result));
+          }
           return;
         }
 
         if (!result.success) {
-          render(<Text color="red">{result.error}</Text>);
+          render(<Text color="red">{result.error.message}</Text>);
           return;
         }
 

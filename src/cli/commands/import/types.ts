@@ -89,27 +89,23 @@ export interface ResourceToImport {
 /**
  * Result of the import command.
  */
-export interface ImportResult {
-  success: boolean;
-  error?: string;
-  projectSpec?: AgentCoreProjectSpec;
-  importedAgents?: string[];
-  importedMemories?: string[];
-  stackName?: string;
-  logPath?: string;
-}
+export type ImportResult =
+  | {
+      success: true;
+      projectSpec?: AgentCoreProjectSpec;
+      importedAgents?: string[];
+      importedMemories?: string[];
+      stackName?: string;
+      logPath?: string;
+    }
+  | { success: false; error: Error; logPath?: string };
 
 /**
  * Result for single-resource import (runtime, memory, evaluator, etc.).
  */
-export interface ImportResourceResult {
-  success: boolean;
-  error?: string;
-  resourceType: ImportableResourceType;
-  resourceName: string;
-  resourceId?: string;
-  logPath?: string;
-}
+export type ImportResourceResult =
+  | { success: true; resourceType: ImportableResourceType; resourceName: string; resourceId?: string; logPath?: string }
+  | { success: false; error: Error; resourceType: ImportableResourceType; resourceName: string; logPath?: string };
 
 /**
  * Options shared across import subcommands.

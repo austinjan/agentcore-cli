@@ -1,17 +1,19 @@
 import { parseTimeString } from '../../../lib/utils';
+import { ValidationError } from '../../errors';
 import type { DeployedProjectConfig } from '../../operations/resolve-agent';
 import { resolveAgent } from '../../operations/resolve-agent';
 import { buildTraceConsoleUrl, getTrace, listTraces } from '../../operations/traces';
 import type { TracesGetOptions, TracesListOptions } from './types';
 
-export interface TracesListResult {
-  success: boolean;
-  agentName?: string;
-  targetName?: string;
-  consoleUrl?: string;
-  traces?: { traceId: string; timestamp: string; sessionId?: string }[];
-  error?: string;
-}
+export type TracesListResult =
+  | {
+      success: true;
+      agentName?: string;
+      targetName?: string;
+      consoleUrl?: string;
+      traces: { traceId: string; timestamp: string; sessionId?: string }[];
+    }
+  | { success: false; error: Error; consoleUrl?: string };
 
 export async function handleTracesList(
   context: DeployedProjectConfig,
@@ -33,7 +35,7 @@ export async function handleTracesList(
 
   const limit = options.limit ? parseInt(options.limit, 10) : 20;
   if (isNaN(limit)) {
-    return { success: false, error: '--limit must be a number' };
+    return { success: false, error: new ValidationError('--limit must be a number') };
   }
 
   // Parse time options
@@ -68,14 +70,9 @@ export async function handleTracesList(
   };
 }
 
-export interface TracesGetResult {
-  success: boolean;
-  agentName?: string;
-  targetName?: string;
-  consoleUrl?: string;
-  filePath?: string;
-  error?: string;
-}
+export type TracesGetResult =
+  | { success: true; agentName?: string; targetName?: string; consoleUrl?: string; filePath?: string }
+  | { success: false; error: Error; consoleUrl?: string };
 
 export async function handleTracesGet(
   context: DeployedProjectConfig,

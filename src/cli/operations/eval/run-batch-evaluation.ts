@@ -16,6 +16,7 @@ import type {
   SessionMetadataEntry,
 } from '../../aws/agentcore-batch-evaluation';
 import { detectRegion } from '../../aws/region';
+import { ValidationError, getErrorMessage, toError } from '../../errors';
 import { ExecLogger } from '../../logging/exec-logger';
 import { CloudWatchLogsClient, GetLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
 
@@ -54,9 +55,7 @@ export interface BatchEvaluationResult {
   error?: string;
 }
 
-export interface RunBatchEvaluationCommandResult {
-  success: boolean;
-  error?: string;
+interface BatchEvalResultBase {
   batchEvaluationId?: string;
   name?: string;
   status?: string;
@@ -66,6 +65,10 @@ export interface RunBatchEvaluationCommandResult {
   completedAt?: string;
   logFilePath?: string;
 }
+
+export type RunBatchEvaluationCommandResult =
+  | (BatchEvalResultBase & { success: true })
+  | (BatchEvalResultBase & { success: false; error: Error });
 
 // ============================================================================
 // Constants
@@ -116,7 +119,7 @@ export async function runBatchEvaluationCommand(
       logger?.log(error, 'error');
       logger?.endStep('error', error);
       logger?.finalize(false);
-      return { success: false, error, results: [], logFilePath: logger?.logFilePath };
+      return { success: false, error: new Error(error), results: [], logFilePath: logger?.logFilePath };
     }
 
     const runtimeId = agentState.runtimeId;
@@ -152,7 +155,9 @@ export async function runBatchEvaluationCommand(
       if (!/^[a-zA-Z][a-zA-Z0-9_]{0,47}$/.test(options.name)) {
         return {
           success: false,
-          error: `Batch evaluation name must start with a letter and contain only letters, digits, and underscores (max 48 chars). Got: "${options.name}"`,
+          error: new ValidationError(
+            `Batch evaluation name must start with a letter and contain only letters, digits, and underscores (max 48 chars). Got: "${options.name}"`
+          ),
           results: [],
           logFilePath: logger?.logFilePath,
         };
@@ -242,7 +247,7 @@ export async function runBatchEvaluationCommand(
       logger?.finalize(false);
       return {
         success: false,
-        error,
+        error: new Error(error),
         batchEvaluationId: startResult.batchEvaluationId,
         name: evalName,
         status: current.status,
@@ -284,10 +289,9 @@ export async function runBatchEvaluationCommand(
       logFilePath: logger?.logFilePath,
     };
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    logger?.log(error, 'error');
+    logger?.log(getErrorMessage(err), 'error');
     logger?.finalize(false);
-    return { success: false, error, results: [], logFilePath: logger?.logFilePath };
+    return { success: false, error: toError(err), results: [], logFilePath: logger?.logFilePath };
   }
 }
 

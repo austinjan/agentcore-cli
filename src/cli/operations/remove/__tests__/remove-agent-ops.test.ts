@@ -1,3 +1,4 @@
+import { ResourceNotFoundError } from '../../../errors';
 import { AgentPrimitive } from '../../../primitives/AgentPrimitive.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -87,7 +88,7 @@ describe('remove', () => {
 
     const result = await primitive.remove('Missing');
 
-    expect(result).toEqual({ success: false, error: 'Agent "Missing" not found.' });
+    expect(result).toEqual({ success: false, error: new ResourceNotFoundError('Agent "Missing" not found.') });
   });
 
   it('returns error on exception', async () => {
@@ -95,6 +96,6 @@ describe('remove', () => {
 
     const result = await primitive.remove('Agent1');
 
-    expect(result).toEqual({ success: false, error: 'read fail' });
+    expect(result).toEqual({ success: false, error: new Error('read fail') });
   });
 });

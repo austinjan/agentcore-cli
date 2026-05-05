@@ -10,6 +10,7 @@
 // ── Import the function under test AFTER mocks ────────────────────────────────
 import { handleImport } from '../actions';
 import type { ParsedStarterToolkitConfig } from '../types';
+import assert from 'node:assert';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Hoisted mock fns (available inside vi.mock factories) ─────────────────────
@@ -73,11 +74,15 @@ const {
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
-vi.mock('../../../../lib', () => ({
-  APP_DIR: 'app',
-  ConfigIO: MockConfigIOClass,
-  findConfigRoot: (...args: unknown[]) => mockFindConfigRoot(...args),
-}));
+vi.mock('../../../../lib', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../../lib')>();
+  return {
+    APP_DIR: 'app',
+    ConfigIO: MockConfigIOClass,
+    NoProjectError: actual.NoProjectError,
+    findConfigRoot: (...args: unknown[]) => mockFindConfigRoot(...args),
+  };
+});
 
 vi.mock('../../../aws/account', () => ({
   validateAwsCredentials: (...args: unknown[]) => mockValidateAwsCredentials(...args),
@@ -279,7 +284,7 @@ describe('Import Idempotency (Test Group 7)', () => {
 
       const result = await handleImport({ source: '/tmp/config.yaml' });
 
-      expect(result.success).toBe(true);
+      assert(result.success);
       expect(result.importedAgents).toContain('my-agent');
       expect(result.importedMemories).toContain('my-memory');
 
@@ -393,7 +398,7 @@ describe('Import Idempotency (Test Group 7)', () => {
 
       const result = await handleImport({ source: '/tmp/config.yaml' });
 
-      expect(result.success).toBe(true);
+      assert(result.success);
       expect(result.importedAgents).toEqual([]);
       expect(result.importedMemories).toEqual([]);
     });
@@ -610,8 +615,8 @@ describe('Import Idempotency (Test Group 7)', () => {
 
       const result = await handleImport({ source: '/tmp/config.yaml' });
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('No agents found');
+      assert(!result.success);
+      expect(result.error.message).toContain('No agents found');
     });
 
     it('returns error when no project found', async () => {
@@ -619,8 +624,8 @@ describe('Import Idempotency (Test Group 7)', () => {
 
       const result = await handleImport({ source: '/tmp/config.yaml' });
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('No agentcore project found');
+      assert(!result.success);
+      expect(result.error.message).toContain('No agentcore project found');
     });
   });
 

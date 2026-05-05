@@ -3,7 +3,7 @@ import type { AgentCoreProjectSpec, AwsDeploymentTargets, DeployedResourceState,
 import { getAgentRuntimeStatus } from '../../aws';
 import { getEvaluator, getOnlineEvaluationConfig } from '../../aws/agentcore-control';
 import { dnsSuffix } from '../../aws/partition';
-import { getErrorMessage } from '../../errors';
+import { getErrorMessage, toError } from '../../errors';
 import { ExecLogger } from '../../logging';
 import type { ResourceDeploymentState } from './constants';
 import { buildRuntimeInvocationUrl } from './constants';
@@ -32,15 +32,16 @@ export interface ResourceStatusEntry {
   invocationUrl?: string;
 }
 
-export interface ProjectStatusResult {
-  success: boolean;
-  projectName: string;
-  targetName: string;
-  targetRegion?: string;
-  resources: ResourceStatusEntry[];
-  error?: string;
-  logPath?: string;
-}
+export type ProjectStatusResult =
+  | {
+      success: true;
+      projectName: string;
+      targetName: string;
+      targetRegion?: string;
+      resources: ResourceStatusEntry[];
+      logPath?: string;
+    }
+  | { success: false; error: Error; logPath?: string };
 
 export interface StatusContext {
   project: AgentCoreProjectSpec;
@@ -48,14 +49,15 @@ export interface StatusContext {
   awsTargets: AwsDeploymentTargets;
 }
 
-export interface RuntimeLookupResult {
-  success: boolean;
-  targetName?: string;
-  runtimeId?: string;
-  runtimeStatus?: string;
-  error?: string;
-  logPath?: string;
-}
+export type RuntimeLookupResult =
+  | {
+      success: true;
+      targetName?: string;
+      runtimeId?: string;
+      runtimeStatus?: string;
+      logPath?: string;
+    }
+  | { success: false; error: Error; logPath?: string };
 
 /**
  * Loads configuration required for status check.
@@ -333,10 +335,7 @@ export async function handleProjectStatus(
     logger.finalize(false);
     return {
       success: false,
-      projectName: project.name,
-      targetName: options.targetName,
-      resources: [],
-      error,
+      error: new Error(error),
       logPath: logger.getRelativeLogPath(),
     };
   }
@@ -504,7 +503,7 @@ export async function handleRuntimeLookup(
     const error = 'No deployment targets found. Run `agentcore create` first.';
     logger.endStep('error', error);
     logger.finalize(false);
-    return { success: false, error, logPath: logger.getRelativeLogPath() };
+    return { success: false, error: new Error(error), logPath: logger.getRelativeLogPath() };
   }
 
   const selectedTargetName = options.targetName ?? targetNames[0]!;
@@ -513,7 +512,7 @@ export async function handleRuntimeLookup(
     const error = `Target '${options.targetName}' not found. Available: ${targetNames.join(', ')}`;
     logger.endStep('error', error);
     logger.finalize(false);
-    return { success: false, error, logPath: logger.getRelativeLogPath() };
+    return { success: false, error: new Error(error), logPath: logger.getRelativeLogPath() };
   }
 
   const targetConfig = awsTargets.find(target => target.name === selectedTargetName);
@@ -522,7 +521,7 @@ export async function handleRuntimeLookup(
     const error = `Target config '${selectedTargetName}' not found in aws-targets`;
     logger.endStep('error', error);
     logger.finalize(false);
-    return { success: false, error, logPath: logger.getRelativeLogPath() };
+    return { success: false, error: new Error(error), logPath: logger.getRelativeLogPath() };
   }
 
   logger.log(`Target: ${selectedTargetName} (${targetConfig.region})`);
@@ -550,6 +549,6 @@ export async function handleRuntimeLookup(
     const errorMsg = getErrorMessage(error);
     logger.endStep('error', errorMsg);
     logger.finalize(false);
-    return { success: false, error: errorMsg, logPath: logger.getRelativeLogPath() };
+    return { success: false, error: toError(error), logPath: logger.getRelativeLogPath() };
   }
 }

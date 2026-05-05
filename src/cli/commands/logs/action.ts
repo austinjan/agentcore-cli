@@ -1,6 +1,8 @@
+import type { Result } from '../../../lib/result';
 import { parseTimeString } from '../../../lib/utils';
 import { searchLogs, streamLogs } from '../../aws/cloudwatch';
 import { DEFAULT_ENDPOINT_NAME } from '../../constants';
+import { ValidationError, toError } from '../../errors';
 import type { DeployedProjectConfig } from '../../operations/resolve-agent';
 import { loadDeployedProjectConfig, resolveAgent } from '../../operations/resolve-agent';
 import { VALID_LEVELS, buildFilterPattern } from './filter-pattern';
@@ -15,11 +17,6 @@ export interface AgentContext {
   region: string;
   endpointName: string;
   logGroupName: string;
-}
-
-export interface LogsResult {
-  success: boolean;
-  error?: string;
 }
 
 /**
@@ -49,7 +46,7 @@ export function formatLogLine(event: { timestamp: number; message: string }, jso
 export function resolveAgentContext(
   context: DeployedProjectConfig,
   options: LogsOptions
-): { success: true; agentContext: AgentContext } | { success: false; error: string } {
+): Result<{ agentContext: AgentContext }> {
   const result = resolveAgent(context, options);
   if (!result.success) {
     return { success: false, error: result.error };
@@ -73,12 +70,12 @@ export function resolveAgentContext(
 /**
  * Main logs handler
  */
-export async function handleLogs(options: LogsOptions): Promise<LogsResult> {
+export async function handleLogs(options: LogsOptions): Promise<Result> {
   // Validate level early
   if (options.level && !VALID_LEVELS.includes(options.level.toLowerCase())) {
     return {
       success: false,
-      error: `Invalid log level: "${options.level}". Valid levels: ${VALID_LEVELS.join(', ')}`,
+      error: new ValidationError(`Invalid log level: "${options.level}". Valid levels: ${VALID_LEVELS.join(', ')}`),
     };
   }
 
@@ -96,7 +93,7 @@ export async function handleLogs(options: LogsOptions): Promise<LogsResult> {
   try {
     filterPattern = buildFilterPattern({ level: options.level, query: options.query });
   } catch (err) {
-    return { success: false, error: (err as Error).message };
+    return { success: false, error: toError(err) };
   }
 
   const mode = detectMode(options);
@@ -143,7 +140,7 @@ export async function handleLogs(options: LogsOptions): Promise<LogsResult> {
     if (errorName === 'ResourceNotFoundException') {
       return {
         success: false,
-        error: `No logs found for agent '${agentContext.agentName}'. Has the agent been invoked?`,
+        error: new Error(`No logs found for agent '${agentContext.agentName}'. Has the agent been invoked?`),
       };
     }
 

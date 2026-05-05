@@ -1,5 +1,5 @@
-import { ConfigIO } from '../../../lib';
-import { getErrorMessage } from '../../errors';
+import { ConfigIO, resultToJson } from '../../../lib';
+import { getErrorMessage, toError } from '../../errors';
 import { COMMAND_DESCRIPTIONS } from '../../tui/copy';
 import { requireProject, requireTTY } from '../../tui/guards';
 import { RemoveAllScreen, RemoveFlow } from '../../tui/screens/remove';
@@ -48,14 +48,14 @@ async function handleRemoveAll(_options: RemoveAllOptions): Promise<RemoveResult
       note: 'Your source code has not been modified. Run `agentcore deploy` to apply changes to AWS.',
     };
   } catch (err) {
-    return { success: false, error: getErrorMessage(err) };
+    return { success: false, error: toError(err) };
   }
 }
 
 async function handleRemoveAllCLI(options: RemoveAllOptions): Promise<void> {
   validateRemoveAllOptions(options);
   const result = await handleRemoveAll(options);
-  console.log(JSON.stringify(result));
+  console.log(resultToJson(result));
   process.exit(result.success ? 0 : 1);
 }
 
