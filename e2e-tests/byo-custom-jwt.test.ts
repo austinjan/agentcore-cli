@@ -48,7 +48,36 @@ const region = process.env.AWS_REGION ?? 'us-east-1';
  * Run the local CLI build without skipping install (needed for deploy).
  */
 function runLocalCLI(args: string[], cwd: string): Promise<RunResult> {
-  return runCLI(args, cwd, { skipInstall: false });
+  return runCLI(args, cwd, {
+    skipInstall: false,
+    env: {
+      AGENTCORE_E2E_TEST: '1',
+      AGENTCORE_E2E_CREATOR: process.env.AGENTCORE_E2E_CREATOR ?? 'github-actions',
+    },
+  });
+}
+
+async function deleteCognitoResourceWithRetry(
+  label: string,
+  op: () => Promise<unknown>,
+  attempts = 3,
+  delayMs = 5000
+): Promise<void> {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await op();
+      return;
+    } catch (err) {
+      const name = (err as { name?: string }).name ?? 'Unknown';
+      const msg = (err as { message?: string }).message ?? String(err);
+      if (attempt === attempts) {
+        console.error(`[cognito-cleanup] ${label} failed after ${attempts} attempts: [${name}] ${msg}`);
+        return;
+      }
+      console.warn(`[cognito-cleanup] ${label} attempt ${attempt}/${attempts} failed: [${name}] — retrying`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
 }
 
 describe.sequential('e2e: BYO agent with CUSTOM_JWT auth', () => {
@@ -201,21 +230,15 @@ describe.sequential('e2e: BYO agent with CUSTOM_JWT auth', () => {
 
     // ── Delete Cognito resources ──
     if (userPoolId) {
-      try {
-        await cognitoClient.send(new DeleteResourceServerCommand({ UserPoolId: userPoolId, Identifier: 'agentcore' }));
-      } catch {
-        /* best-effort */
-      }
-      try {
-        await cognitoClient.send(new DeleteUserPoolDomainCommand({ UserPoolId: userPoolId, Domain: domainPrefix }));
-      } catch {
-        /* best-effort */
-      }
-      try {
-        await cognitoClient.send(new DeleteUserPoolCommand({ UserPoolId: userPoolId }));
-      } catch {
-        /* best-effort */
-      }
+      await deleteCognitoResourceWithRetry('DeleteResourceServer', () =>
+        cognitoClient.send(new DeleteResourceServerCommand({ UserPoolId: userPoolId, Identifier: 'agentcore' }))
+      );
+      await deleteCognitoResourceWithRetry('DeleteUserPoolDomain', () =>
+        cognitoClient.send(new DeleteUserPoolDomainCommand({ UserPoolId: userPoolId, Domain: domainPrefix }))
+      );
+      await deleteCognitoResourceWithRetry('DeleteUserPool', () =>
+        cognitoClient.send(new DeleteUserPoolCommand({ UserPoolId: userPoolId }))
+      );
     }
 
     // ── Clean up temp directory ──

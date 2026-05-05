@@ -308,7 +308,10 @@ export function createE2ESuite(cfg: E2EConfig) {
 export { hasAws, baseCanRun };
 
 export function runAgentCoreCLI(args: string[], cwd: string): Promise<RunResult> {
-  return spawnAndCollect('agentcore', args, cwd);
+  return spawnAndCollect('agentcore', args, cwd, {
+    AGENTCORE_E2E_TEST: '1',
+    AGENTCORE_E2E_CREATOR: process.env.AGENTCORE_E2E_CREATOR ?? 'github-actions',
+  });
 }
 
 // TODO: Replace with `agentcore add target` once the CLI command is re-introduced
@@ -347,7 +350,7 @@ async function deleteCredentialProvider(client: BedrockAgentCoreControlClient, n
  * Runs in beforeAll to prevent accumulation from previous runs that
  * crashed or timed out before their afterAll teardown could execute.
  */
-export async function cleanupStaleCredentialProviders(maxAgeMs: number = 30 * 60 * 1000): Promise<void> {
+export async function cleanupStaleCredentialProviders(maxAgeMs: number = 5 * 60 * 1000): Promise<void> {
   const region = process.env.AWS_REGION ?? 'us-east-1';
   const client = new BedrockAgentCoreControlClient({ region });
   const cutoff = new Date(Date.now() - maxAgeMs);
@@ -365,16 +368,44 @@ export async function cleanupStaleCredentialProviders(maxAgeMs: number = 30 * 60
 }
 
 export async function teardownE2EProject(projectPath: string, agentName: string, modelProvider: string): Promise<void> {
-  await spawnAndCollect('agentcore', ['remove', 'all', '--json'], projectPath);
-  const result = await spawnAndCollect('agentcore', ['deploy', '--yes', '--json'], projectPath);
-  if (result.exitCode !== 0) {
-    console.log('Teardown stdout:', result.stdout);
-    console.log('Teardown stderr:', result.stderr);
+  const failures: string[] = [];
+
+  const removeResult = await runAgentCoreCLI(['remove', 'all', '--json'], projectPath);
+  if (removeResult.exitCode !== 0) {
+    console.error(`[teardown] remove all failed (exit ${removeResult.exitCode})`);
+    console.error('[teardown] remove stdout:', removeResult.stdout);
+    console.error('[teardown] remove stderr:', removeResult.stderr);
+    failures.push(`remove all: exit ${removeResult.exitCode}`);
   }
+
+  const MAX_DEPLOY_ATTEMPTS = 3;
+  let deploySucceeded = false;
+  for (let attempt = 1; attempt <= MAX_DEPLOY_ATTEMPTS; attempt++) {
+    const result = await runAgentCoreCLI(['deploy', '--yes', '--json'], projectPath);
+    if (result.exitCode === 0) {
+      deploySucceeded = true;
+      if (attempt > 1) console.error(`[teardown] deploy succeeded on attempt ${attempt}`);
+      break;
+    }
+    console.error(`[teardown] deploy attempt ${attempt}/${MAX_DEPLOY_ATTEMPTS} failed (exit ${result.exitCode})`);
+    console.error('[teardown] deploy stdout:', result.stdout);
+    console.error('[teardown] deploy stderr:', result.stderr);
+    if (attempt < MAX_DEPLOY_ATTEMPTS) {
+      await new Promise(resolve => setTimeout(resolve, 15000));
+    }
+  }
+  if (!deploySucceeded) {
+    failures.push(`deploy teardown failed after ${MAX_DEPLOY_ATTEMPTS} attempts`);
+  }
+
   if (modelProvider !== 'Bedrock' && agentName) {
     const region = process.env.AWS_REGION ?? 'us-east-1';
     const client = new BedrockAgentCoreControlClient({ region });
     await deleteCredentialProvider(client, `${agentName}${modelProvider}`);
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`E2E teardown failed: ${failures.join('; ')}`);
   }
 }
 

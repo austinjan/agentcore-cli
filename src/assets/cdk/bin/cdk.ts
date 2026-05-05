@@ -69,16 +69,26 @@ async function main() {
       | Record<string, { credentialProviderArn: string; clientSecretArn?: string }>
       | undefined;
 
+    const tags: Record<string, string> = {
+      'agentcore:project-name': spec.name,
+      'agentcore:target-name': target.name,
+    };
+
+    // Opt-in e2e test tagging via env vars. Used by the CLI's own e2e suite
+    // so an infra sweeper can identify and delete orphaned test stacks.
+    if (process.env.AGENTCORE_E2E_TEST === '1') {
+      tags.Environment = 'e2e-test';
+      tags.CreatedAt = new Date().toISOString();
+      tags.CreatedBy = process.env.AGENTCORE_E2E_CREATOR ?? 'github-actions';
+    }
+
     new AgentCoreStack(app, stackName, {
       spec,
       mcpSpec,
       credentials,
       env,
       description: `AgentCore stack for ${spec.name} deployed to ${target.name} (${target.region})`,
-      tags: {
-        'agentcore:project-name': spec.name,
-        'agentcore:target-name': target.name,
-      },
+      tags,
     });
   }
 
