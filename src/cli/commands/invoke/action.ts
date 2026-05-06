@@ -45,7 +45,7 @@ export async function loadInvokeConfig(configIO: ConfigIO = new ConfigIO()): Pro
  * Main invoke handler
  */
 export async function handleInvoke(context: InvokeContext, options: InvokeOptions = {}): Promise<InvokeResult> {
-  const { project, deployedState, awsTargets } = context;
+  const { deployedState, awsTargets } = context;
 
   // Resolve target
   const targetNames = Object.keys(deployedState.targets);
