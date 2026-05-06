@@ -2,7 +2,8 @@ import { ConfigIO, SecureCredentials } from '../../../lib';
 import type { AgentCoreMcpSpec, DeployedState } from '../../../schema';
 import { applyTargetRegionToEnv } from '../../aws';
 import { validateAwsCredentials } from '../../aws/account';
-import { createSwitchableIoHost } from '../../cdk/toolkit-lib';
+import { CdkToolkitWrapper, createSwitchableIoHost } from '../../cdk/toolkit-lib';
+import type { SwitchableIoHost } from '../../cdk/toolkit-lib';
 import {
   buildDeployedState,
   getStackOutputs,
@@ -41,6 +42,7 @@ import {
 import { setupHttpGateways } from '../../operations/deploy/post-deploy-http-gateways';
 import { enableOnlineEvalConfigs } from '../../operations/deploy/post-deploy-online-evals';
 import type { DeployResult } from './types';
+import { StackSelectionStrategy } from '@aws-cdk/toolkit-lib';
 
 export interface ValidatedDeployOptions {
   target: string;
@@ -54,6 +56,40 @@ export interface ValidatedDeployOptions {
 
 const AGENT_NEXT_STEPS = ['agentcore invoke', 'agentcore status'];
 const MEMORY_ONLY_NEXT_STEPS = ['agentcore add agent', 'agentcore status'];
+
+export async function runDiff(
+  toolkitWrapper: CdkToolkitWrapper,
+  targetName: string,
+  switchableIoHost?: SwitchableIoHost
+): Promise<void> {
+  const diffIoHost = switchableIoHost ?? createSwitchableIoHost();
+  let hasDiffContent = false;
+  diffIoHost.setOnRawMessage((code, _level, message) => {
+    if (!message) return;
+    // I4002: formatted diff per stack, I4001: overall diff summary
+    if (code === 'CDK_TOOLKIT_I4002' || code === 'CDK_TOOLKIT_I4001') {
+      hasDiffContent = true;
+      console.log(message);
+    }
+  });
+  diffIoHost.setVerbose(true);
+  // Stack names end with the target name — see src/assets/cdk/bin/cdk.ts toStackName()
+  await toolkitWrapper.diff({
+    stacks: { strategy: StackSelectionStrategy.PATTERN_MUST_MATCH, patterns: [`*-${targetName}`] },
+  });
+  if (!hasDiffContent) {
+    console.log('No stack differences detected.');
+  }
+  diffIoHost.setVerbose(false);
+  diffIoHost.setOnRawMessage(null);
+}
+
+export async function runDeploy(toolkitWrapper: CdkToolkitWrapper, targetName: string): Promise<void> {
+  // Stack names end with the target name — see src/assets/cdk/bin/cdk.ts toStackName()
+  await toolkitWrapper.deploy({
+    stacks: { strategy: StackSelectionStrategy.PATTERN_MUST_MATCH, patterns: [`*-${targetName}`] },
+  });
+}
 
 export async function handleDeploy(options: ValidatedDeployOptions): Promise<DeployResult> {
   let toolkitWrapper = null;
@@ -296,23 +332,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
     // Diff mode: run cdk diff and exit without deploying
     if (options.diff) {
       startStep('Run CDK diff');
-      const diffIoHost = switchableIoHost ?? createSwitchableIoHost();
-      let hasDiffContent = false;
-      diffIoHost.setOnRawMessage((code, _level, message) => {
-        if (!message) return;
-        // I4002: formatted diff per stack, I4001: overall diff summary
-        if (code === 'CDK_TOOLKIT_I4002' || code === 'CDK_TOOLKIT_I4001') {
-          hasDiffContent = true;
-          console.log(message);
-        }
-      });
-      diffIoHost.setVerbose(true);
-      await toolkitWrapper.diff();
-      if (!hasDiffContent) {
-        console.log('No stack differences detected.');
-      }
-      diffIoHost.setVerbose(false);
-      diffIoHost.setOnRawMessage(null);
+      await runDiff(toolkitWrapper, target.name, switchableIoHost);
       endStep('success');
 
       logger.finalize(true);
@@ -339,7 +359,7 @@ export async function handleDeploy(options: ValidatedDeployOptions): Promise<Dep
       switchableIoHost.setVerbose(true);
     }
 
-    await toolkitWrapper.deploy();
+    await runDeploy(toolkitWrapper, target.name);
 
     // Disable verbose output
     if (switchableIoHost) {
