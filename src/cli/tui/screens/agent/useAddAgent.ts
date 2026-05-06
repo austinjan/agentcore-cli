@@ -1,4 +1,4 @@
-import { APP_DIR, ConfigIO, NoProjectError, findConfigRoot, setEnvVar } from '../../../../lib';
+import { APP_DIR, ConfigIO, NoProjectError, findConfigRoot, getWorkingDirectory, setEnvVar } from '../../../../lib';
 import type { AgentEnvSpec, DirectoryPath, FilePath } from '../../../../schema';
 import { type PythonSetupResult, setupPythonProject } from '../../../operations';
 import { createConfigBundleForAgent } from '../../../operations/agent/config-bundle-defaults';
@@ -29,7 +29,7 @@ import { createRenderer } from '../../../templates';
 import type { GenerateConfig } from '../generate/types';
 import type { AddAgentConfig } from './types';
 import { copyFileSync, existsSync, mkdirSync } from 'fs';
-import { basename, dirname, join, resolve } from 'path';
+import { basename, dirname, isAbsolute, join, resolve } from 'path';
 import { useCallback, useState } from 'react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -261,8 +261,10 @@ async function handleCreatePath(
   await renderer.render({ outputDir: projectRoot });
 
   // If dockerfile is a path (contains /), copy it into the agent directory (overwriting template default)
-  if (generateConfig.dockerfile?.includes('/')) {
-    const sourcePath = resolve(projectRoot, generateConfig.dockerfile);
+  if (generateConfig.dockerfile && (isAbsolute(generateConfig.dockerfile) || generateConfig.dockerfile.includes('/'))) {
+    // Resolve relative paths against the user's invocation directory (not the project
+    // root), mirroring the `agentcore policy add --source <path>` behavior.
+    const sourcePath = resolve(getWorkingDirectory(), generateConfig.dockerfile);
     if (!existsSync(sourcePath)) {
       return { ok: false, error: `Dockerfile not found at ${sourcePath}` };
     }
@@ -371,8 +373,10 @@ async function handleByoPath(
 
   // If dockerfile is a path (contains /), copy it into the code directory and use the filename
   let dockerfileName = config.dockerfile;
-  if (dockerfileName?.includes('/')) {
-    const sourcePath = resolve(projectRoot, dockerfileName);
+  if (dockerfileName && (isAbsolute(dockerfileName) || dockerfileName.includes('/'))) {
+    // Resolve relative paths against the user's invocation directory (not the project
+    // root), mirroring the `agentcore policy add --source <path>` behavior.
+    const sourcePath = resolve(getWorkingDirectory(), dockerfileName);
     if (!existsSync(sourcePath)) {
       return { ok: false, error: `Dockerfile not found at ${sourcePath}` };
     }

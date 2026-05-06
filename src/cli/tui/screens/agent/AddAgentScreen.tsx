@@ -1,4 +1,4 @@
-import { APP_DIR, ConfigIO } from '../../../../lib';
+import { APP_DIR, ConfigIO, getWorkingDirectory } from '../../../../lib';
 import type { ModelProvider, NetworkMode, RuntimeAuthorizerType, SDKFramework } from '../../../../schema';
 import { AgentNameSchema, DEFAULT_MODEL_IDS, LIFECYCLE_TIMEOUT_MAX, LIFECYCLE_TIMEOUT_MIN } from '../../../../schema';
 import { listBedrockAgentAliases, listBedrockAgents } from '../../../aws/bedrock-import';
@@ -45,7 +45,7 @@ import {
 } from './types';
 import { Box, Text, useInput } from 'ink';
 import Spinner from 'ink-spinner';
-import { basename, resolve } from 'path';
+import { basename } from 'path';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Helper to get provider display name and env var name from ModelProvider
@@ -1086,12 +1086,15 @@ export function AddAgentScreen({ existingAgentNames, onComplete, onExit }: AddAg
         {byoStep === 'dockerfile' && (
           <PathInput
             placeholder="Select a Dockerfile"
-            basePath={resolve(project?.projectRoot ?? process.cwd(), byoConfig.codeLocation)}
+            basePath={getWorkingDirectory()}
             pathType="file"
             allowEmpty
             emptyHelpText="Press Enter to use the default Dockerfile"
             onSubmit={value => {
-              setByoConfig(c => ({ ...c, dockerfile: value ? basename(value) : '' }));
+              // Preserve the full path so downstream copy logic in useAddAgent can
+              // resolve it against the invocation cwd. The persisted spec only
+              // stores the basename (applied at serialization time).
+              setByoConfig(c => ({ ...c, dockerfile: value ?? '' }));
               goToNextByoStep('dockerfile');
             }}
             onCancel={handleByoBack}
@@ -1295,7 +1298,7 @@ export function AddAgentScreen({ existingAgentNames, onComplete, onExit }: AddAg
                 value: BUILD_TYPE_OPTIONS.find(o => o.id === byoConfig.buildType)?.title ?? byoConfig.buildType,
               },
               ...(byoConfig.buildType === 'Container' && byoConfig.dockerfile
-                ? [{ label: 'Dockerfile', value: byoConfig.dockerfile }]
+                ? [{ label: 'Dockerfile', value: basename(byoConfig.dockerfile) }]
                 : []),
               {
                 label: 'Model Provider',
