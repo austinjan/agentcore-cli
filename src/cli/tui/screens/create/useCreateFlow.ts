@@ -5,9 +5,11 @@ import { CreateLogger } from '../../../logging';
 import { initGitRepo, setupPythonProject, writeEnvFile, writeGitignore } from '../../../operations';
 import { createConfigBundleForAgent } from '../../../operations/agent/config-bundle-defaults';
 import {
+  isDockerfilePath,
   mapGenerateConfigToRenderConfig,
   mapModelProviderToCredentials,
   mapModelProviderToIdentityProviders,
+  resolveAndCopyDockerfile,
   writeAgentToProject,
 } from '../../../operations/agent/generate';
 import { executeImportAgent } from '../../../operations/agent/import';
@@ -309,6 +311,16 @@ export function useCreateFlow(cwd: string): CreateFlowState {
                 const renderer = createRenderer(renderConfig);
                 logger.logSubStep('Rendering agent template...');
                 await renderer.render({ outputDir: projectRoot });
+
+                // If user supplied a Dockerfile path, copy it into the agent's
+                // code directory (relative to the user's invocation CWD, NOT
+                // the new project root). See issue #1128.
+                if (generateConfig.dockerfile && isDockerfilePath(generateConfig.dockerfile)) {
+                  const agentDir = join(projectRoot, APP_DIR, addAgentConfig.name);
+                  logger.logSubStep(`Copying custom Dockerfile from ${generateConfig.dockerfile}...`);
+                  generateConfig.dockerfile = resolveAndCopyDockerfile(generateConfig.dockerfile, agentDir);
+                }
+
                 logger.logSubStep('Writing agent to project...');
 
                 if (strategy) {
@@ -373,9 +385,18 @@ export function useCreateFlow(cwd: string): CreateFlowState {
                 const codeDir = join(projectRoot, addAgentConfig.codeLocation.replace(/\/$/, ''));
                 await mkdir(codeDir, { recursive: true });
 
+                // If user supplied a Dockerfile path, copy it into the BYO
+                // code directory (relative to the user's invocation CWD).
+                // See issue #1128.
+                let byoDockerfile = addAgentConfig.dockerfile;
+                if (byoDockerfile && isDockerfilePath(byoDockerfile)) {
+                  logger.logSubStep(`Copying custom Dockerfile from ${byoDockerfile}...`);
+                  byoDockerfile = resolveAndCopyDockerfile(byoDockerfile, codeDir);
+                }
+
                 const configIO = new ConfigIO({ baseDir: configBaseDir });
                 const project = await configIO.readProjectSpec();
-                const agent = mapByoConfigToAgent(addAgentConfig);
+                const agent = mapByoConfigToAgent({ ...addAgentConfig, dockerfile: byoDockerfile });
                 project.runtimes.push(agent);
 
                 // Handle credentials for BYO (new project, so always project-scoped)

@@ -8,3 +8,4 @@ export {
   type GenerateConfigMappingResult,
 } from './schema-mapper';
 export { writeAgentToProject, type WriteAgentOptions } from './write-agent-to-project';
+export { resolveAndCopyDockerfile, isDockerfilePath } from './dockerfile-utils';

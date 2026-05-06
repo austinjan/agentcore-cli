@@ -3,9 +3,11 @@ import type { AgentEnvSpec, DirectoryPath, FilePath } from '../../../../schema';
 import { type PythonSetupResult, setupPythonProject } from '../../../operations';
 import { createConfigBundleForAgent } from '../../../operations/agent/config-bundle-defaults';
 import {
+  isDockerfilePath,
   mapGenerateConfigToRenderConfig,
   mapModelProviderToCredentials,
   mapModelProviderToIdentityProviders,
+  resolveAndCopyDockerfile,
   writeAgentToProject,
 } from '../../../operations/agent/generate';
 import { executeImportAgent } from '../../../operations/agent/import';
@@ -28,8 +30,8 @@ import {
 import { createRenderer } from '../../../templates';
 import type { GenerateConfig } from '../generate/types';
 import type { AddAgentConfig } from './types';
-import { copyFileSync, existsSync, mkdirSync } from 'fs';
-import { basename, dirname, join, resolve } from 'path';
+import { mkdirSync } from 'fs';
+import { dirname, join } from 'path';
 import { useCallback, useState } from 'react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -260,15 +262,16 @@ async function handleCreatePath(
   const renderer = createRenderer(renderConfig);
   await renderer.render({ outputDir: projectRoot });
 
-  // If dockerfile is a path (contains /), copy it into the agent directory (overwriting template default)
-  if (generateConfig.dockerfile?.includes('/')) {
-    const sourcePath = resolve(projectRoot, generateConfig.dockerfile);
-    if (!existsSync(sourcePath)) {
-      return { ok: false, error: `Dockerfile not found at ${sourcePath}` };
+  // If dockerfile is a path (contains a separator or is absolute), copy it
+  // into the agent directory (overwriting template default). The user-supplied
+  // path is resolved relative to the directory where the CLI was invoked
+  // (`getWorkingDirectory()`), NOT the project root — see issue #1128.
+  if (generateConfig.dockerfile && isDockerfilePath(generateConfig.dockerfile)) {
+    try {
+      generateConfig.dockerfile = resolveAndCopyDockerfile(generateConfig.dockerfile, agentPath);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
-    const filename = basename(sourcePath);
-    copyFileSync(sourcePath, join(agentPath, filename));
-    generateConfig.dockerfile = filename;
   }
 
   // Write agent to project config
@@ -369,15 +372,16 @@ async function handleByoPath(
   const codeDir = join(projectRoot, config.codeLocation.replace(/\/$/, ''));
   mkdirSync(codeDir, { recursive: true });
 
-  // If dockerfile is a path (contains /), copy it into the code directory and use the filename
+  // If dockerfile is a path (contains a separator or is absolute), copy it
+  // into the code directory and use the filename. Path is resolved relative
+  // to the user's invocation CWD (`getWorkingDirectory()`) — see issue #1128.
   let dockerfileName = config.dockerfile;
-  if (dockerfileName?.includes('/')) {
-    const sourcePath = resolve(projectRoot, dockerfileName);
-    if (!existsSync(sourcePath)) {
-      return { ok: false, error: `Dockerfile not found at ${sourcePath}` };
+  if (dockerfileName && isDockerfilePath(dockerfileName)) {
+    try {
+      dockerfileName = resolveAndCopyDockerfile(dockerfileName, codeDir);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
-    dockerfileName = basename(sourcePath);
-    copyFileSync(sourcePath, join(codeDir, dockerfileName));
   }
 
   const project = await configIO.readProjectSpec();
