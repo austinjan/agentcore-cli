@@ -32,13 +32,13 @@ def run_extract(
     for repo_name in [cli_name, cdk_name]:
         # Check if this repo has changes on the branch
         commit_log, _, exit_code = client.run_command(
-            session_id, f"cd {repo_name} && git log main..HEAD --oneline 2>/dev/null"
+            session_id, f"cd {repo_name} && git log origin/main..HEAD --oneline 2>/dev/null"
         )
         if exit_code != 0 or not commit_log.strip():
             continue
 
-        diff_stat, _, _ = client.run_command(session_id, f"cd {repo_name} && git diff main --stat")
-        full_diff, _, _ = client.run_command(session_id, f"cd {repo_name} && git diff main")
+        diff_stat, _, _ = client.run_command(session_id, f"cd {repo_name} && git diff origin/main --stat")
+        full_diff, _, _ = client.run_command(session_id, f"cd {repo_name} && git diff origin/main")
 
         all_diff_stat += diff_stat
         all_full_diff += full_diff

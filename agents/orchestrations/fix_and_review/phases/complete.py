@@ -39,7 +39,7 @@ def run_complete(
     for repo in affected_repos:
         repo_name = repo.split("/")[-1] if "/" in repo else repo
         stdout, _, exit_code = client.run_command(
-            session_id, f"cd {repo_name} && git log main..{branch_name} --oneline 2>/dev/null"
+            session_id, f"cd {repo_name} && git log origin/main..{branch_name} --oneline 2>/dev/null"
         )
         if exit_code == 0 and stdout.strip():
             full_repo = full_repo_map.get(repo, repo)
