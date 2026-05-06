@@ -71,7 +71,19 @@ export interface AddAgentConfig {
   entrypoint: string;
   language: TargetLanguage;
   buildType: BuildType;
-  /** Path to custom Dockerfile (copied into code directory at setup) or filename already in code directory. */
+  /**
+   * Custom Dockerfile reference. Has two distinct lifecycle states:
+   * - **During the wizard:** may be a relative or absolute filesystem path
+   *   entered by the user (resolved against the invocation cwd via
+   *   `resolveDockerfileSource`).
+   * - **After `handleCreatePath` / `handleByoPath`:** normalized to a bare
+   *   filename (basename) and persisted to the agent spec. The actual file
+   *   has been copied into the agent's code directory by that point.
+   *
+   * If the user enters a bare filename instead of a path, no copy is performed
+   * and the value is treated as a reference to a file already in the code
+   * directory.
+   */
   dockerfile?: string;
   /** Protocol (HTTP, MCP, A2A, AGUI). Defaults to HTTP. */
   protocol: ProtocolMode;

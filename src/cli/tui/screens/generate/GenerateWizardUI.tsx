@@ -1,3 +1,4 @@
+import { getWorkingDirectory } from '../../../../lib';
 import type { ModelProvider, NetworkMode, RuntimeAuthorizerType } from '../../../../schema';
 import {
   DEFAULT_MODEL_IDS,
@@ -229,6 +230,7 @@ export function GenerateWizardUI({
       {isDockerfileStep && (
         <PathInput
           placeholder="Select a Dockerfile to copy into your agent directory"
+          basePath={getWorkingDirectory()}
           pathType="file"
           allowEmpty
           emptyHelpText="Press Enter to use the default Dockerfile"

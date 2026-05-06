@@ -90,8 +90,10 @@ export function resolveDockerfileSource(
   }
   // Only treat as a path-to-copy when it contains a path separator or is
   // absolute. A bare filename (e.g. "Dockerfile") refers to the file already
-  // in place and should not trigger a copy.
-  if (!isAbsolute(value) && !value.includes('/')) {
+  // in place and should not trigger a copy. Detect both forward and
+  // backslash separators so users on Windows entering paths like
+  // 'subdir\\Dockerfile' aren't silently misclassified as bare filenames.
+  if (!isAbsolute(value) && !/[/\\]/.test(value)) {
     return { shouldCopy: false };
   }
   const sourcePath = resolve(cwd, value);
@@ -294,19 +296,28 @@ async function handleCreatePath(
     ];
   }
 
-  // Generate agent files with correct identity provider
-  const renderConfig = await mapGenerateConfigToRenderConfig(generateConfig, identityProviders);
-  const renderer = createRenderer(renderConfig);
-  await renderer.render({ outputDir: projectRoot });
-
-  // If dockerfile is a path (contains /), copy it into the agent directory (overwriting template default)
+  // Resolve the user-entered dockerfile path early (before rendering) so the
+  // render config sees only the basename. This keeps templates that reference
+  // `dockerfile` from accidentally interpolating an absolute or relative
+  // host path. The actual file copy happens after the renderer writes its
+  // template default, so we capture the source path here and apply it below.
   const resolvedDockerfile = resolveDockerfileSource(generateConfig.dockerfile);
   if (resolvedDockerfile.shouldCopy && resolvedDockerfile.sourcePath && resolvedDockerfile.filename) {
     if (!existsSync(resolvedDockerfile.sourcePath)) {
       return { ok: false, error: `Dockerfile not found at ${resolvedDockerfile.sourcePath}` };
     }
-    copyFileSync(resolvedDockerfile.sourcePath, join(agentPath, resolvedDockerfile.filename));
     generateConfig.dockerfile = resolvedDockerfile.filename;
+  }
+
+  // Generate agent files with correct identity provider
+  const renderConfig = await mapGenerateConfigToRenderConfig(generateConfig, identityProviders);
+  const renderer = createRenderer(renderConfig);
+  await renderer.render({ outputDir: projectRoot });
+
+  // If a user-supplied Dockerfile was resolved above, copy it into the agent
+  // directory (overwriting the template default written by the renderer).
+  if (resolvedDockerfile.shouldCopy && resolvedDockerfile.sourcePath && resolvedDockerfile.filename) {
+    copyFileSync(resolvedDockerfile.sourcePath, join(agentPath, resolvedDockerfile.filename));
   }
 
   // Write agent to project config
@@ -416,6 +427,16 @@ async function handleByoPath(
     }
     dockerfileName = resolvedDockerfile.filename;
     copyFileSync(resolvedDockerfile.sourcePath, join(codeDir, dockerfileName));
+  } else if (dockerfileName) {
+    // Bare-filename case: the user referenced a Dockerfile expected to already
+    // exist in their codeLocation. Surface a clear error here rather than
+    // letting it fail at deploy/build time with a less helpful message.
+    if (!existsSync(join(codeDir, dockerfileName))) {
+      return {
+        ok: false,
+        error: `Dockerfile "${dockerfileName}" not found in code location "${config.codeLocation}". Provide a path to a Dockerfile to copy in, or place the file at ${join(codeDir, dockerfileName)}.`,
+      };
+    }
   }
 
   const project = await configIO.readProjectSpec();

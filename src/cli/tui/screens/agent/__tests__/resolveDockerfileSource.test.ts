@@ -1,8 +1,12 @@
 import { resolveDockerfileSource } from '../useAddAgent';
 import { resolve } from 'path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('resolveDockerfileSource', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('returns shouldCopy=false when value is undefined', () => {
     expect(resolveDockerfileSource(undefined, '/some/cwd')).toEqual({ shouldCopy: false });
   });
@@ -53,12 +57,44 @@ describe('resolveDockerfileSource', () => {
     expect(result.filename).toBe('MyDocker.file');
   });
 
-  it('uses getWorkingDirectory() by default when no cwd is provided', () => {
-    // The default parameter should call getWorkingDirectory(), which falls back
-    // to process.cwd() when INIT_CWD is unset. We assert the resolved path
-    // matches resolution against process.cwd().
-    const result = resolveDockerfileSource('./local.Dockerfile');
-    expect(result.shouldCopy).toBe(true);
-    expect(result.sourcePath).toBe(resolve(process.env.INIT_CWD ?? process.cwd(), './local.Dockerfile'));
+  describe('cross-platform path-separator detection', () => {
+    it('treats backslash-containing relative paths as paths, not bare filenames', () => {
+      // On Windows, users may enter paths like 'subdir\\Dockerfile'.
+      // Without backslash detection, this would be misclassified as a bare
+      // filename and silently skip the copy step (data-loss bug).
+      const result = resolveDockerfileSource('subdir\\Dockerfile', '/cwd');
+      expect(result.shouldCopy).toBe(true);
+    });
+
+    it('treats dot-prefixed backslash paths as paths', () => {
+      const result = resolveDockerfileSource('.\\sub\\My.Dockerfile', '/cwd');
+      expect(result.shouldCopy).toBe(true);
+    });
+
+    it('still treats a bare filename with no separators as not-a-path', () => {
+      // Sanity check: backslash detection must not over-trigger on plain
+      // filenames containing dots.
+      expect(resolveDockerfileSource('Dockerfile.dev', '/cwd').shouldCopy).toBe(false);
+    });
+  });
+
+  describe('default cwd parameter (getWorkingDirectory)', () => {
+    it('uses INIT_CWD when set (npm/bun script invocation case)', () => {
+      // Stub INIT_CWD to a known sentinel and verify the helper actually
+      // routes through getWorkingDirectory() rather than process.cwd().
+      vi.stubEnv('INIT_CWD', '/sentinel/init/cwd');
+      const result = resolveDockerfileSource('./local.Dockerfile');
+      expect(result.shouldCopy).toBe(true);
+      expect(result.sourcePath).toBe(resolve('/sentinel/init/cwd', './local.Dockerfile'));
+    });
+
+    it('falls back to process.cwd() when INIT_CWD is unset', () => {
+      // When INIT_CWD is unset, getWorkingDirectory() falls back to
+      // process.cwd(). vi.stubEnv with undefined deletes the variable.
+      vi.stubEnv('INIT_CWD', undefined as unknown as string);
+      const result = resolveDockerfileSource('./local.Dockerfile');
+      expect(result.shouldCopy).toBe(true);
+      expect(result.sourcePath).toBe(resolve(process.cwd(), './local.Dockerfile'));
+    });
   });
 });
