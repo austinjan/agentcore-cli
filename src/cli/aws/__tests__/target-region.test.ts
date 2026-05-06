@@ -1,4 +1,5 @@
-import { applyTargetRegionToEnv, withTargetRegion } from '../target-region.js';
+import type { AwsDeploymentTarget } from '../../../schema';
+import { applyTargetRegionToEnv, runWithTargetRegion, withTargetRegion } from '../target-region.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 describe('target-region', () => {
@@ -94,6 +95,79 @@ describe('target-region', () => {
     it('returns the callback result', async () => {
       const result = await withTargetRegion('eu-west-2', () => Promise.resolve(42));
       expect(result).toBe(42);
+    });
+  });
+
+  describe('runWithTargetRegion', () => {
+    const makeTarget = (region: string): AwsDeploymentTarget => ({
+      name: 'default',
+      account: '123456789012',
+      region: region as AwsDeploymentTarget['region'],
+    });
+
+    it('applies the resolved target region inside fn and restores afterwards', async () => {
+      process.env.AWS_REGION = 'us-east-1';
+      let observed: string | undefined;
+
+      const result = await runWithTargetRegion(
+        () => Promise.resolve(makeTarget('ap-southeast-2')),
+        target => {
+          observed = process.env.AWS_REGION;
+          expect(target?.region).toBe('ap-southeast-2');
+          return Promise.resolve('ok');
+        }
+      );
+
+      expect(observed).toBe('ap-southeast-2');
+      expect(result).toBe('ok');
+      expect(process.env.AWS_REGION).toBe('us-east-1');
+    });
+
+    it('skips the override when no target is resolved and does not mutate env', async () => {
+      process.env.AWS_REGION = 'us-east-1';
+      let observedRegion: string | undefined;
+
+      await runWithTargetRegion(
+        () => Promise.resolve(undefined),
+        target => {
+          observedRegion = process.env.AWS_REGION;
+          expect(target).toBeUndefined();
+          return Promise.resolve();
+        }
+      );
+
+      expect(observedRegion).toBe('us-east-1');
+      expect(process.env.AWS_REGION).toBe('us-east-1');
+    });
+
+    it('restores env when fn throws', async () => {
+      process.env.AWS_REGION = 'us-east-1';
+
+      await expect(
+        runWithTargetRegion(
+          () => Promise.resolve(makeTarget('eu-west-1')),
+          () => {
+            expect(process.env.AWS_REGION).toBe('eu-west-1');
+            return Promise.reject(new Error('boom'));
+          }
+        )
+      ).rejects.toThrow('boom');
+
+      expect(process.env.AWS_REGION).toBe('us-east-1');
+    });
+
+    it('does not mutate env when the resolver itself throws', async () => {
+      process.env.AWS_REGION = 'us-east-1';
+
+      await expect(
+        runWithTargetRegion(
+          () => Promise.reject(new Error('resolve failed')),
+          () => Promise.resolve()
+        )
+      ).rejects.toThrow('resolve failed');
+
+      expect(process.env.AWS_REGION).toBe('us-east-1');
+      expect(process.env.AWS_DEFAULT_REGION).toBeUndefined();
     });
   });
 });
