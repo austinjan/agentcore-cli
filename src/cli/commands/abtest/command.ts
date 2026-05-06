@@ -23,32 +23,23 @@ import type { Command } from '@commander-js/extra-typings';
  *  3. AWS_DEFAULT_REGION / AWS_REGION env vars
  *  4. `us-east-1`
  *
- * As a side effect, also promotes the resolved region onto AWS_REGION /
- * AWS_DEFAULT_REGION so any downstream SDK client constructed without an
- * explicit `region` option behaves consistently. See
+ * Pure helper — does NOT mutate process.env. Callers that need the resolved
+ * region to be authoritative for downstream SDK clients constructed without an
+ * explicit `region` option must wrap their work with `applyTargetRegionToEnv`
+ * (or `withTargetRegion`) and restore in a `finally` block. See
  * https://github.com/aws/agentcore-cli/issues/924.
  */
 async function getRegion(cliRegion?: string): Promise<string> {
-  let region: string;
-  if (cliRegion) {
-    region = cliRegion;
-  } else {
-    let targetRegion: string | undefined;
-    try {
-      const configIO = new ConfigIO();
-      const targets = await configIO.resolveAWSDeploymentTargets();
-      if (targets.length > 0) targetRegion = targets[0]!.region;
-    } catch {
-      // Fall through to env vars
-    }
-    region = targetRegion ?? process.env.AWS_DEFAULT_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
+  if (cliRegion) return cliRegion;
+  let targetRegion: string | undefined;
+  try {
+    const configIO = new ConfigIO();
+    const targets = await configIO.resolveAWSDeploymentTargets();
+    if (targets.length > 0) targetRegion = targets[0]!.region;
+  } catch {
+    // Fall through to env vars
   }
-  // Intentionally not restored — the abtest command runs to completion and
-  // exits the process; restoring would require threading a teardown through
-  // every caller. The override is safe because it only sets env vars to the
-  // same region we'd otherwise pass explicitly to every SDK client below.
-  applyTargetRegionToEnv(region);
-  return region;
+  return targetRegion ?? process.env.AWS_DEFAULT_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
 }
 
 async function resolveABTestId(
@@ -176,8 +167,14 @@ export function registerABTestCommand(program: Command): void {
     .option('--region <region>', 'AWS region')
     .option('--json', 'Output as JSON')
     .action(async (name: string, cliOptions: { region?: string; json?: boolean }) => {
+      // Apply the resolved region to AWS_REGION / AWS_DEFAULT_REGION for the
+      // duration of the command body so any SDK client constructed without an
+      // explicit `region` option honors aws-targets.json. Restored in `finally`.
+      // See https://github.com/aws/agentcore-cli/issues/924.
+      let restoreEnv: (() => void) | null = null;
       try {
         const region = await getRegion(cliOptions.region);
+        restoreEnv = applyTargetRegionToEnv(region);
         const { abTestId, error } = await resolveABTestId(name, region);
         if (error) {
           if (cliOptions.json) {
@@ -185,30 +182,46 @@ export function registerABTestCommand(program: Command): void {
           } else {
             console.error(error);
           }
+          restoreEnv();
+          restoreEnv = null;
           process.exit(1);
         }
         const result = await getABTest({ region, abTestId });
 
         if (cliOptions.json) {
           console.log(JSON.stringify(result));
+          restoreEnv();
+          restoreEnv = null;
           process.exit(0);
         } else if (process.stdout.isTTY) {
-          // Render TUI detail screen with key bindings
+          // Render TUI detail screen with key bindings.
+          // The TUI process keeps running until the user exits; the env
+          // override is intentionally left in place for the lifetime of the
+          // TUI so any subsequent SDK calls inside the screen honor the
+          // resolved region. Clear our local handle so the outer `finally`
+          // doesn't restore underneath the TUI.
           const [{ render }, { default: React }, { ABTestDetailScreen }] = await Promise.all([
             import('ink'),
             import('react'),
             import('../../tui/screens/ab-test'),
           ]);
+          const localRestore = restoreEnv;
+          restoreEnv = null;
           render(
             React.createElement(ABTestDetailScreen, {
               abTestId,
               region,
-              onExit: () => process.exit(0),
+              onExit: () => {
+                localRestore?.();
+                process.exit(0);
+              },
             })
           );
           return;
         } else {
           console.log(formatABTestDetails(result));
+          restoreEnv();
+          restoreEnv = null;
           process.exit(0);
         }
       } catch (error) {
@@ -218,6 +231,10 @@ export function registerABTestCommand(program: Command): void {
           console.error(`Error: ${getErrorMessage(error)}`);
         }
         process.exit(1);
+      } finally {
+        // Restore env if we still own the handle (i.e., we didn't hand it off
+        // to the TUI and process.exit() didn't already happen above).
+        restoreEnv?.();
       }
     });
 }

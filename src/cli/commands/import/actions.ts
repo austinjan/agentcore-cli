@@ -7,7 +7,6 @@ import type {
   Credential,
   Memory,
 } from '../../../schema';
-import { applyTargetRegionToEnv } from '../../aws';
 import { validateAwsCredentials } from '../../aws/account';
 import { arnPrefix } from '../../aws/partition';
 import { ExecLogger } from '../../logging';
@@ -109,20 +108,36 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
   let configSnapshot: AgentCoreProjectSpec;
   let configWritten = false;
 
-  // Region env override — applied once we know the authoritative region
-  // (initially from YAML, later re-applied with the resolved target region).
-  // Restored in the outer `finally` block. See
-  // https://github.com/aws/agentcore-cli/issues/924.
-  // Typed as the union explicitly: TS would otherwise narrow to `null` because
-  // the only reassignment happens inside the `setRegionEnv` closure below.
-  let restoreEnv: (() => void) | null = null;
+  // Region env override for issue #924.
+  //
+  // We snapshot the original AWS_REGION / AWS_DEFAULT_REGION values once at
+  // function entry and restore them unconditionally in the outer `finally`
+  // block. setRegionEnv() simply mutates the env vars to the most
+  // authoritative region we've seen so far (YAML hint → resolved target).
+  //
+  // Why a single snapshot rather than chaining `applyTargetRegionToEnv`'s
+  // restore closures: any direct mutation of AWS_REGION between two
+  // setRegionEnv calls (e.g., by a helper) would otherwise be captured as
+  // the "previous" value by the next applyTargetRegionToEnv call, causing
+  // the outer restore to land on that intermediate value rather than the
+  // true original. See https://github.com/aws/agentcore-cli/issues/924.
+  const originalAwsRegion = process.env.AWS_REGION;
+  const originalAwsDefaultRegion = process.env.AWS_DEFAULT_REGION;
   const setRegionEnv = (region: string): void => {
-    // Replace any prior override so we always carry the most authoritative
-    // region forward; the inner restore would otherwise undo our latest set.
-    if (restoreEnv) {
-      restoreEnv();
+    process.env.AWS_REGION = region;
+    process.env.AWS_DEFAULT_REGION = region;
+  };
+  const restoreOriginalRegionEnv = (): void => {
+    if (originalAwsRegion === undefined) {
+      delete process.env.AWS_REGION;
+    } else {
+      process.env.AWS_REGION = originalAwsRegion;
     }
-    restoreEnv = applyTargetRegionToEnv(region);
+    if (originalAwsDefaultRegion === undefined) {
+      delete process.env.AWS_DEFAULT_REGION;
+    } else {
+      process.env.AWS_DEFAULT_REGION = originalAwsDefaultRegion;
+    }
   };
 
   const rollbackConfig = async () => {
@@ -294,16 +309,23 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
     } else {
       // No physical IDs — target is only needed for stackName computation.
       // Try to read existing targets gracefully; don't fail if none exist.
+      // If the YAML supplied a region, promote it onto the env first so the
+      // ConfigIO read below (which falls back to AWS_REGION when targets have
+      // no region) lands on the YAML-supplied region rather than whatever the
+      // shell happens to have. See https://github.com/aws/agentcore-cli/issues/924.
+      if (parsed.awsTarget.region) {
+        setRegionEnv(parsed.awsTarget.region);
+      }
       const targets = await configIO.readAWSDeploymentTargets().catch(() => [] as AwsDeploymentTarget[]);
       if (targets.length === 1) {
         target = targets[0];
       } else if (options.target) {
         target = targets.find(t => t.name === options.target);
       }
-      // If still no target, that's fine — we'll use 'default' for the stackName
+      // If we found a target, prefer its region (it may differ from YAML).
+      // Otherwise the YAML override above already set the env, which is the
+      // best signal we have on the light path.
       if (target?.region) {
-        // Promote target region onto env for any downstream SDK clients.
-        // See https://github.com/aws/agentcore-cli/issues/924.
         setRegionEnv(target.region);
       }
     }
@@ -691,9 +713,9 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
   } finally {
     // Restore any AWS_REGION / AWS_DEFAULT_REGION env vars we mutated above so
     // we don't leak the override to subsequent CLI work in the same process.
+    // Unconditional restore from the snapshot taken at function entry is
+    // robust even if intermediate code mutated the vars directly.
     // See https://github.com/aws/agentcore-cli/issues/924.
-    if (restoreEnv) {
-      restoreEnv();
-    }
+    restoreOriginalRegionEnv();
   }
 }
