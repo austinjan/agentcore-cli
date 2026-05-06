@@ -105,6 +105,54 @@ export function resolveDockerfileSource(
 }
 
 /**
+ * Result of validating that a user-supplied Dockerfile path actually exists
+ * on disk, ready to be consumed by handleCreatePath / handleByoPath.
+ *
+ * - `{ shouldCopy: false }` — caller should leave the dockerfile alone.
+ * - `{ shouldCopy: true, sourcePath, filename }` — caller should copy
+ *   `sourcePath` into the destination directory, then persist `filename`
+ *   into the agent spec.
+ * - `{ ok: false, error }` — surface the error to the user.
+ */
+export type ValidatedDockerfile =
+  | { ok: true; shouldCopy: false }
+  | { ok: true; shouldCopy: true; sourcePath: string; filename: string }
+  | { ok: false; error: string };
+
+/**
+ * Resolve a user-entered dockerfile reference and verify its existence on
+ * disk. Used by both handleCreatePath and handleByoPath; extracted to a
+ * pure(-ish, fs-only) function so the not-found error path is unit-testable
+ * without spinning up the full React hook.
+ *
+ * @param value      Raw user input (path or bare filename)
+ * @param cwd        Directory to resolve relative paths against (defaults to
+ *                   the user's invocation cwd via getWorkingDirectory())
+ * @param fileExists Injectable existence predicate, defaults to fs.existsSync.
+ *                   Accepting it as a parameter keeps this function trivial
+ *                   to test without mocking the fs module.
+ */
+export function validateDockerfileSource(
+  value: string | undefined,
+  cwd: string = getWorkingDirectory(),
+  fileExists: (path: string) => boolean = existsSync
+): ValidatedDockerfile {
+  const resolved = resolveDockerfileSource(value, cwd);
+  if (!resolved.shouldCopy) {
+    return { ok: true, shouldCopy: false };
+  }
+  // Type-narrow: when shouldCopy is true the helper always populates these.
+  const { sourcePath, filename } = resolved;
+  if (!sourcePath || !filename) {
+    return { ok: true, shouldCopy: false };
+  }
+  if (!fileExists(sourcePath)) {
+    return { ok: false, error: `Dockerfile not found at ${sourcePath}` };
+  }
+  return { ok: true, shouldCopy: true, sourcePath, filename };
+}
+
+/**
  * Maps AddAgentConfig (from BYO wizard) to v2 AgentEnvSpec for schema persistence.
  */
 export function mapByoConfigToAgent(config: AddAgentConfig): AgentEnvSpec {
@@ -301,12 +349,12 @@ async function handleCreatePath(
   // `dockerfile` from accidentally interpolating an absolute or relative
   // host path. The actual file copy happens after the renderer writes its
   // template default, so we capture the source path here and apply it below.
-  const resolvedDockerfile = resolveDockerfileSource(generateConfig.dockerfile);
-  if (resolvedDockerfile.shouldCopy && resolvedDockerfile.sourcePath && resolvedDockerfile.filename) {
-    if (!existsSync(resolvedDockerfile.sourcePath)) {
-      return { ok: false, error: `Dockerfile not found at ${resolvedDockerfile.sourcePath}` };
-    }
-    generateConfig.dockerfile = resolvedDockerfile.filename;
+  const validatedDockerfile = validateDockerfileSource(generateConfig.dockerfile);
+  if (!validatedDockerfile.ok) {
+    return { ok: false, error: validatedDockerfile.error };
+  }
+  if (validatedDockerfile.shouldCopy) {
+    generateConfig.dockerfile = validatedDockerfile.filename;
   }
 
   // Generate agent files with correct identity provider
@@ -316,8 +364,8 @@ async function handleCreatePath(
 
   // If a user-supplied Dockerfile was resolved above, copy it into the agent
   // directory (overwriting the template default written by the renderer).
-  if (resolvedDockerfile.shouldCopy && resolvedDockerfile.sourcePath && resolvedDockerfile.filename) {
-    copyFileSync(resolvedDockerfile.sourcePath, join(agentPath, resolvedDockerfile.filename));
+  if (validatedDockerfile.shouldCopy) {
+    copyFileSync(validatedDockerfile.sourcePath, join(agentPath, validatedDockerfile.filename));
   }
 
   // Write agent to project config
@@ -420,24 +468,19 @@ async function handleByoPath(
 
   // If dockerfile is a path (contains /), copy it into the code directory and use the filename
   let dockerfileName = config.dockerfile;
-  const resolvedDockerfile = resolveDockerfileSource(dockerfileName);
-  if (resolvedDockerfile.shouldCopy && resolvedDockerfile.sourcePath && resolvedDockerfile.filename) {
-    if (!existsSync(resolvedDockerfile.sourcePath)) {
-      return { ok: false, error: `Dockerfile not found at ${resolvedDockerfile.sourcePath}` };
-    }
-    dockerfileName = resolvedDockerfile.filename;
-    copyFileSync(resolvedDockerfile.sourcePath, join(codeDir, dockerfileName));
-  } else if (dockerfileName) {
-    // Bare-filename case: the user referenced a Dockerfile expected to already
-    // exist in their codeLocation. Surface a clear error here rather than
-    // letting it fail at deploy/build time with a less helpful message.
-    if (!existsSync(join(codeDir, dockerfileName))) {
-      return {
-        ok: false,
-        error: `Dockerfile "${dockerfileName}" not found in code location "${config.codeLocation}". Provide a path to a Dockerfile to copy in, or place the file at ${join(codeDir, dockerfileName)}.`,
-      };
-    }
+  const validatedDockerfile = validateDockerfileSource(dockerfileName);
+  if (!validatedDockerfile.ok) {
+    return { ok: false, error: validatedDockerfile.error };
   }
+  if (validatedDockerfile.shouldCopy) {
+    dockerfileName = validatedDockerfile.filename;
+    copyFileSync(validatedDockerfile.sourcePath, join(codeDir, dockerfileName));
+  }
+  // NOTE: a bare-filename dockerfile (no path separator) is intentionally NOT
+  // pre-validated against codeDir here. Users may legitimately add the agent
+  // config first and produce/place the Dockerfile in a separate step. The
+  // deploy/build path will surface a clear error if the file is still missing
+  // at that time.
 
   const project = await configIO.readProjectSpec();
   const agent = mapByoConfigToAgent({ ...config, dockerfile: dockerfileName });

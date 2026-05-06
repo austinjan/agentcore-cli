@@ -37,6 +37,7 @@ import {
 } from './types';
 import type { useGenerateWizard } from './useGenerateWizard';
 import { Box, Text, useInput } from 'ink';
+import { basename } from 'path';
 
 // Helper to get provider display name and env var name from ModelProvider
 function getProviderInfo(provider: ModelProvider): { name: string; envVarName: string } {
@@ -485,7 +486,7 @@ function ConfirmView({ config, credentialProjectName }: { config: GenerateConfig
         {config.buildType === 'Container' && config.dockerfile && (
           <Text>
             <Text dimColor>Dockerfile: </Text>
-            <Text>{config.dockerfile}</Text>
+            <Text>{basename(config.dockerfile)}</Text>
           </Text>
         )}
         <Text>
