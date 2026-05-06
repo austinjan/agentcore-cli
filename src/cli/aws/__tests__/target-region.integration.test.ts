@@ -48,12 +48,15 @@ describe('target-region integration with @aws-sdk', () => {
     }
   });
 
-  it('region override is reverted after the callback returns (env-default flow)', async () => {
+  it('region override is reverted after the callback returns', async () => {
+    process.env.AWS_REGION = 'us-east-2';
     process.env.AWS_DEFAULT_REGION = 'us-east-2';
     await withTargetRegion('ap-southeast-2', async () => {
-      const client = new BedrockAgentCoreControlClient({});
-      expect(await client.config.region()).toBe('ap-southeast-2');
+      const inner = new BedrockAgentCoreControlClient({});
+      expect(await inner.config.region()).toBe('ap-southeast-2');
     });
+    expect(process.env.AWS_REGION).toBe('us-east-2');
+    expect(process.env.AWS_DEFAULT_REGION).toBe('us-east-2');
     // After the override is restored, a freshly constructed client should pick
     // up the original env value.
     const client = new BedrockAgentCoreControlClient({});
