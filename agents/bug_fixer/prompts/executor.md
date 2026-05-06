@@ -5,19 +5,17 @@ The plan:
 
 Instructions:
 1. Follow the plan exactly. Make the code changes described.
-2. Run `npm run typecheck 2>&1 | tail -20` in each affected repo. Fix any type errors.
-3. Run ONLY the tests related to the files you changed. Use targeted test commands:
+2. COMMIT IMMEDIATELY after writing your changes: `git add -A && git commit -m "feat: {commit_message}"`
+3. Run `npm run typecheck 2>&1 | tail -20`. If there are type errors, fix them and commit again.
+4. Run ONLY targeted tests for files you changed:
    - `npx vitest run --project unit path/to/relevant.test.ts 2>&1 | tail -30`
-   - If you changed `src/cli/aws/account.ts`, run `npx vitest run --project unit src/cli/aws/__tests__/account.test.ts`
    - Run 1-5 targeted test files, NOT the full suite.
-4. If targeted tests fail, fix the code and re-run only those tests.
-5. Commit your changes: `git add -A && git commit -m "feat: {commit_message}"`
+5. If targeted tests fail, fix and commit again.
 6. Push to remote: `git push origin {branch_name}`
-7. If you need to deviate from the plan, document why in your commit message.
 
-IMPORTANT:
-- Do NOT run `npm run test:unit` (full suite). It takes too long. Only run targeted tests for files you changed.
+CRITICAL RULES:
+- COMMIT EARLY AND OFTEN. Your first commit should happen BEFORE running typecheck. Commit after every fix. A commit with typecheck errors is better than no commit at all.
+- If typecheck has more than 5 errors, fix the most critical ones, commit what you have, and move on. Do NOT spend more than 3 attempts fixing typecheck.
+- Do NOT run `npm run test:unit` (full suite). Only run targeted tests.
 - CI will run the full test suite after the PR is created.
-- Always pipe test output through `| tail -30` to avoid context overflow.
-
-Do not stop until typecheck and targeted tests pass. If tests fail, analyze the failure, fix the code, and try again.
+- Always pipe output through `| tail -30`.

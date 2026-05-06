@@ -49,7 +49,8 @@ def run_pipeline(
         branch_name = f"feature/{feature_name or 'unnamed'}"
     else:
         issue_number = issue_url.rstrip("/").split("/")[-1]
-        branch_name = f"fix/{issue_number}"
+        short_id = HarnessClient.new_session_id()[:8].lower()
+        branch_name = f"fix/{issue_number}-{short_id}"
 
     client = HarnessClient(config)
     session_id = HarnessClient.new_session_id()
@@ -146,6 +147,9 @@ def run_pipeline(
         f"Extracted diff: {len(extract.stats.changed_files)} files, "
         f"{extract.stats.total_lines} lines changed [{int(time.time()-t0)}s | total {elapsed()}]"
     )
+    if not extract.stats.changed_files:
+        print("\n=== Pipeline Failed — no changes were produced. Agent may have failed to commit. ===")
+        return 1
     print()
 
     # Review Loop
