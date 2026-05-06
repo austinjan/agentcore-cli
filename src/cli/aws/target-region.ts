@@ -15,6 +15,14 @@
 type RestoreEnv = () => void;
 
 /**
+ * Tracks the currently-active target region applied via {@link applyTargetRegionToEnv}.
+ * Set/cleared as part of apply/restore so deeply-nested code (e.g. tests, debug
+ * assertions) can verify which target's region is "active" without re-reading
+ * `process.env` (which may be transiently stomped by other code).
+ */
+let currentRegion: string | undefined;
+
+/**
  * Set AWS_REGION / AWS_DEFAULT_REGION to `region` and return a restore function.
  * Callers that cannot wrap their work in a callback (e.g. CLI entrypoints that
  * span many helpers) should use this, and invoke the returned function in a
@@ -23,9 +31,11 @@ type RestoreEnv = () => void;
 export function applyTargetRegionToEnv(region: string): RestoreEnv {
   const prevRegion = process.env.AWS_REGION;
   const prevDefaultRegion = process.env.AWS_DEFAULT_REGION;
+  const prevCurrent = currentRegion;
 
   process.env.AWS_REGION = region;
   process.env.AWS_DEFAULT_REGION = region;
+  currentRegion = region;
 
   return () => {
     if (prevRegion === undefined) {
@@ -38,6 +48,7 @@ export function applyTargetRegionToEnv(region: string): RestoreEnv {
     } else {
       process.env.AWS_DEFAULT_REGION = prevDefaultRegion;
     }
+    currentRegion = prevCurrent;
   };
 }
 
@@ -52,4 +63,15 @@ export async function withTargetRegion<T>(region: string, fn: () => Promise<T>):
   } finally {
     restore();
   }
+}
+
+/**
+ * Returns the currently-active target region applied via {@link applyTargetRegionToEnv}
+ * or {@link withTargetRegion}, or `undefined` if no override is active.
+ *
+ * Intended for diagnostics and tests — production code should generally read
+ * `target.region` directly rather than rely on this global.
+ */
+export function currentTargetRegion(): string | undefined {
+  return currentRegion;
 }

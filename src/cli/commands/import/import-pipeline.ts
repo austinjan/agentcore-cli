@@ -1,5 +1,6 @@
 import type { ConfigIO } from '../../../lib';
 import type { AwsDeploymentTarget } from '../../../schema';
+import { withTargetRegion } from '../../aws';
 import { LocalCdkProject } from '../../cdk/local-cdk-project';
 import { silentIoHost } from '../../cdk/toolkit-lib';
 import { bootstrapEnvironment, buildCdkProject, checkBootstrapNeeded, synthesizeCdk } from '../../operations/deploy';
@@ -41,6 +42,36 @@ export interface CdkImportPipelineResult {
  * and delegate the CDK/CloudFormation work to this function.
  */
 export async function executeCdkImportPipeline(input: CdkImportPipelineInput): Promise<CdkImportPipelineResult> {
+  const {
+    projectRoot,
+    stackName,
+    target,
+    configIO,
+    targetName,
+    onProgress,
+    buildResourcesToImport,
+    deployedStateEntries,
+  } = input;
+
+  // Defense-in-depth: callers entering the pipeline directly (e.g. future
+  // command surfaces) shouldn't have to remember to apply the target region to
+  // env. Toolkit-lib's internal SDK clients fall back to AWS_REGION /
+  // AWS_DEFAULT_REGION when no explicit region is configured. See #924.
+  return withTargetRegion(target.region, () =>
+    runImportPipeline({
+      projectRoot,
+      stackName,
+      target,
+      configIO,
+      targetName,
+      onProgress,
+      buildResourcesToImport,
+      deployedStateEntries,
+    })
+  );
+}
+
+async function runImportPipeline(input: CdkImportPipelineInput): Promise<CdkImportPipelineResult> {
   const {
     projectRoot,
     stackName,

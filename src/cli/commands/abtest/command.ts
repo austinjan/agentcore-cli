@@ -5,27 +5,17 @@
  * from the data plane API, including evaluation scores/metrics.
  */
 import { ConfigIO } from '../../../lib';
+import { applyTargetRegionToEnv } from '../../aws';
 import { getABTest, listABTests } from '../../aws/agentcore-ab-tests';
 import type { GetABTestResult } from '../../aws/agentcore-ab-tests';
 import { dnsSuffix } from '../../aws/partition';
 import { getErrorMessage } from '../../errors';
+import { getRegion } from '../shared/region-utils';
 import type { Command } from '@commander-js/extra-typings';
 
 // ============================================================================
 // Helpers
 // ============================================================================
-
-async function getRegion(cliRegion?: string): Promise<string> {
-  if (cliRegion) return cliRegion;
-  try {
-    const configIO = new ConfigIO();
-    const targets = await configIO.resolveAWSDeploymentTargets();
-    if (targets.length > 0) return targets[0]!.region;
-  } catch {
-    // Fall through to env vars
-  }
-  return process.env.AWS_DEFAULT_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
-}
 
 async function resolveABTestId(
   testName: string,
@@ -152,8 +142,13 @@ export function registerABTestCommand(program: Command): void {
     .option('--region <region>', 'AWS region')
     .option('--json', 'Output as JSON')
     .action(async (name: string, cliOptions: { region?: string; json?: boolean }) => {
+      let restoreRegionEnv: (() => void) | null = null;
       try {
         const region = await getRegion(cliOptions.region);
+        // Apply the resolved region to env so any indirect SDK call (telemetry,
+        // toolkit-lib, third-party libs) sees the same region we're targeting.
+        // See https://github.com/aws/agentcore-cli/issues/924.
+        restoreRegionEnv = applyTargetRegionToEnv(region);
         const { abTestId, error } = await resolveABTestId(name, region);
         if (error) {
           if (cliOptions.json) {
@@ -194,6 +189,8 @@ export function registerABTestCommand(program: Command): void {
           console.error(`Error: ${getErrorMessage(error)}`);
         }
         process.exit(1);
+      } finally {
+        restoreRegionEnv?.();
       }
     });
 }
