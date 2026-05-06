@@ -64,6 +64,45 @@ export type AddAgentOutcome = AddAgentCreateResult | AddAgentByoResult | AddAgen
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Result of resolving a user-entered Dockerfile path.
+ *
+ * - When `value` is empty/undefined or a bare filename (no path separators),
+ *   we return `{ shouldCopy: false }` and the caller should leave the existing
+ *   dockerfile untouched (template default or already-in-place file).
+ * - When `value` is a relative or absolute path, we resolve it against the
+ *   user's invocation directory (`getWorkingDirectory()`), mirroring the
+ *   `agentcore policy add --source <path>` pattern. The returned `sourcePath`
+ *   is the absolute path to copy from, and `filename` is the basename to
+ *   persist into the agent spec and copy into the agent code directory.
+ */
+export interface ResolvedDockerfile {
+  shouldCopy: boolean;
+  sourcePath?: string;
+  filename?: string;
+}
+
+export function resolveDockerfileSource(
+  value: string | undefined,
+  cwd: string = getWorkingDirectory()
+): ResolvedDockerfile {
+  if (!value) {
+    return { shouldCopy: false };
+  }
+  // Only treat as a path-to-copy when it contains a path separator or is
+  // absolute. A bare filename (e.g. "Dockerfile") refers to the file already
+  // in place and should not trigger a copy.
+  if (!isAbsolute(value) && !value.includes('/')) {
+    return { shouldCopy: false };
+  }
+  const sourcePath = resolve(cwd, value);
+  return {
+    shouldCopy: true,
+    sourcePath,
+    filename: basename(sourcePath),
+  };
+}
+
+/**
  * Maps AddAgentConfig (from BYO wizard) to v2 AgentEnvSpec for schema persistence.
  */
 export function mapByoConfigToAgent(config: AddAgentConfig): AgentEnvSpec {
@@ -261,16 +300,13 @@ async function handleCreatePath(
   await renderer.render({ outputDir: projectRoot });
 
   // If dockerfile is a path (contains /), copy it into the agent directory (overwriting template default)
-  if (generateConfig.dockerfile && (isAbsolute(generateConfig.dockerfile) || generateConfig.dockerfile.includes('/'))) {
-    // Resolve relative paths against the user's invocation directory (not the project
-    // root), mirroring the `agentcore policy add --source <path>` behavior.
-    const sourcePath = resolve(getWorkingDirectory(), generateConfig.dockerfile);
-    if (!existsSync(sourcePath)) {
-      return { ok: false, error: `Dockerfile not found at ${sourcePath}` };
+  const resolvedDockerfile = resolveDockerfileSource(generateConfig.dockerfile);
+  if (resolvedDockerfile.shouldCopy && resolvedDockerfile.sourcePath && resolvedDockerfile.filename) {
+    if (!existsSync(resolvedDockerfile.sourcePath)) {
+      return { ok: false, error: `Dockerfile not found at ${resolvedDockerfile.sourcePath}` };
     }
-    const filename = basename(sourcePath);
-    copyFileSync(sourcePath, join(agentPath, filename));
-    generateConfig.dockerfile = filename;
+    copyFileSync(resolvedDockerfile.sourcePath, join(agentPath, resolvedDockerfile.filename));
+    generateConfig.dockerfile = resolvedDockerfile.filename;
   }
 
   // Write agent to project config
@@ -373,15 +409,13 @@ async function handleByoPath(
 
   // If dockerfile is a path (contains /), copy it into the code directory and use the filename
   let dockerfileName = config.dockerfile;
-  if (dockerfileName && (isAbsolute(dockerfileName) || dockerfileName.includes('/'))) {
-    // Resolve relative paths against the user's invocation directory (not the project
-    // root), mirroring the `agentcore policy add --source <path>` behavior.
-    const sourcePath = resolve(getWorkingDirectory(), dockerfileName);
-    if (!existsSync(sourcePath)) {
-      return { ok: false, error: `Dockerfile not found at ${sourcePath}` };
+  const resolvedDockerfile = resolveDockerfileSource(dockerfileName);
+  if (resolvedDockerfile.shouldCopy && resolvedDockerfile.sourcePath && resolvedDockerfile.filename) {
+    if (!existsSync(resolvedDockerfile.sourcePath)) {
+      return { ok: false, error: `Dockerfile not found at ${resolvedDockerfile.sourcePath}` };
     }
-    dockerfileName = basename(sourcePath);
-    copyFileSync(sourcePath, join(codeDir, dockerfileName));
+    dockerfileName = resolvedDockerfile.filename;
+    copyFileSync(resolvedDockerfile.sourcePath, join(codeDir, dockerfileName));
   }
 
   const project = await configIO.readProjectSpec();
