@@ -7,10 +7,12 @@ import type {
   ConfigurationBundleVersionSummary,
   ListConfigurationBundleVersionsFilter,
 } from '../../aws/agentcore-config-bundles';
+import { withTargetRegion } from '../../aws/target-region';
 import { getErrorMessage } from '../../errors';
 import { deepDiff } from '../../operations/config-bundle/diff-versions';
 import { resolveBundleByName } from '../../operations/config-bundle/resolve-bundle';
 import { requireProject } from '../../tui/guards';
+import { getRegion } from '../shared/region-utils';
 import type { Command } from '@commander-js/extra-typings';
 import { Box, Text, render } from 'ink';
 
@@ -30,13 +32,22 @@ function formatTimestamp(ts: string): string {
 }
 
 async function resolveRegion(): Promise<string> {
+  // Prefer the shared helper so we honor the same priority everywhere
+  // (cliRegion → aws-targets.json → AWS_DEFAULT_REGION → AWS_REGION → us-east-1).
+  // We preserve the historical "no targets configured" hard error for the
+  // config-bundle commands by checking targets explicitly when no env vars are
+  // set, since these commands fundamentally need a deployed bundle to operate
+  // on. See https://github.com/aws/agentcore-cli/issues/924.
   const { ConfigIO } = await import('../../../lib');
   const configIO = new ConfigIO();
-  const targets = await configIO.resolveAWSDeploymentTargets();
+  const targets = await configIO.resolveAWSDeploymentTargets().catch(() => []);
   if (targets.length === 0) {
+    // Fall back to env var if explicitly set; otherwise raise a friendly error.
+    const envRegion = process.env.AWS_DEFAULT_REGION ?? process.env.AWS_REGION;
+    if (envRegion) return envRegion;
     throw new Error('No AWS deployment targets configured. Run `agentcore deploy` first.');
   }
-  return targets[0]!.region;
+  return getRegion(undefined);
 }
 
 // ============================================================================
@@ -52,33 +63,35 @@ async function handleVersions(options: {
   json?: boolean;
 }) {
   const region = options.region ?? (await resolveRegion());
-  const resolved = await resolveBundleByName(options.bundle, region);
+  return withTargetRegion(region, async () => {
+    const resolved = await resolveBundleByName(options.bundle, region);
 
-  const filter: ListConfigurationBundleVersionsFilter = {};
-  if (options.branch) filter.branchName = options.branch;
-  if (options.latestPerBranch) filter.latestPerBranch = true;
-  if (options.createdBy) filter.createdByName = options.createdBy;
-  const hasFilter = Object.keys(filter).length > 0;
+    const filter: ListConfigurationBundleVersionsFilter = {};
+    if (options.branch) filter.branchName = options.branch;
+    if (options.latestPerBranch) filter.latestPerBranch = true;
+    if (options.createdBy) filter.createdByName = options.createdBy;
+    const hasFilter = Object.keys(filter).length > 0;
 
-  // Paginate to collect all versions
-  const allVersions: ConfigurationBundleVersionSummary[] = [];
-  let nextToken: string | undefined;
-  do {
-    const result = await listConfigurationBundleVersions({
-      region,
-      bundleId: resolved.bundleId,
-      maxResults: 50,
-      nextToken,
-      ...(hasFilter && { filter }),
-    });
-    allVersions.push(...result.versions);
-    nextToken = result.nextToken;
-  } while (nextToken);
+    // Paginate to collect all versions
+    const allVersions: ConfigurationBundleVersionSummary[] = [];
+    let nextToken: string | undefined;
+    do {
+      const result = await listConfigurationBundleVersions({
+        region,
+        bundleId: resolved.bundleId,
+        maxResults: 50,
+        nextToken,
+        ...(hasFilter && { filter }),
+      });
+      allVersions.push(...result.versions);
+      nextToken = result.nextToken;
+    } while (nextToken);
 
-  // Sort by creation time, newest first
-  allVersions.sort((a, b) => Number(b.versionCreatedAt) - Number(a.versionCreatedAt));
+    // Sort by creation time, newest first
+    allVersions.sort((a, b) => Number(b.versionCreatedAt) - Number(a.versionCreatedAt));
 
-  return { versions: allVersions, bundleName: options.bundle, bundleId: resolved.bundleId };
+    return { versions: allVersions, bundleName: options.bundle, bundleId: resolved.bundleId };
+  });
 }
 
 // ============================================================================
@@ -87,16 +100,18 @@ async function handleVersions(options: {
 
 async function handleDiff(options: { bundle: string; from: string; to: string; region?: string }) {
   const region = options.region ?? (await resolveRegion());
-  const resolved = await resolveBundleByName(options.bundle, region);
+  return withTargetRegion(region, async () => {
+    const resolved = await resolveBundleByName(options.bundle, region);
 
-  const [fromVersion, toVersion] = await Promise.all([
-    getConfigurationBundleVersion({ region, bundleId: resolved.bundleId, versionId: options.from }),
-    getConfigurationBundleVersion({ region, bundleId: resolved.bundleId, versionId: options.to }),
-  ]);
+    const [fromVersion, toVersion] = await Promise.all([
+      getConfigurationBundleVersion({ region, bundleId: resolved.bundleId, versionId: options.from }),
+      getConfigurationBundleVersion({ region, bundleId: resolved.bundleId, versionId: options.to }),
+    ]);
 
-  const diffs = deepDiff(fromVersion.components, toVersion.components);
+    const diffs = deepDiff(fromVersion.components, toVersion.components);
 
-  return { fromVersion, toVersion, diffs };
+    return { fromVersion, toVersion, diffs };
+  });
 }
 
 // ============================================================================
@@ -280,44 +295,48 @@ export const registerConfigBundle = (program: Command) => {
         requireProject();
         try {
           const region = cliOptions.region ?? (await resolveRegion());
-          const resolved = await resolveBundleByName(cliOptions.bundle, region);
+          const result = await withTargetRegion(region, async () => {
+            const resolved = await resolveBundleByName(cliOptions.bundle, region);
 
-          // Determine parent version
-          let parentVersionId = cliOptions.from;
-          if (!parentVersionId) {
-            const versions = await listConfigurationBundleVersions({
+            // Determine parent version
+            let parentVersionId = cliOptions.from;
+            if (!parentVersionId) {
+              const versions = await listConfigurationBundleVersions({
+                region,
+                bundleId: resolved.bundleId,
+                maxResults: 50,
+              });
+              if (versions.versions.length === 0) {
+                throw new Error(`No versions found for bundle "${cliOptions.bundle}".`);
+              }
+              // Sort descending by creation time to get the latest version
+              const sorted = [...versions.versions].sort(
+                (a, b) => new Date(b.versionCreatedAt).getTime() - new Date(a.versionCreatedAt).getTime()
+              );
+              parentVersionId = sorted[0]!.versionId;
+            }
+
+            // Get the parent version's components to carry forward
+            const parentVersion = await getConfigurationBundleVersion({
               region,
               bundleId: resolved.bundleId,
-              maxResults: 50,
+              versionId: parentVersionId,
             });
-            if (versions.versions.length === 0) {
-              throw new Error(`No versions found for bundle "${cliOptions.bundle}".`);
-            }
-            // Sort descending by creation time to get the latest version
-            const sorted = [...versions.versions].sort(
-              (a, b) => new Date(b.versionCreatedAt).getTime() - new Date(a.versionCreatedAt).getTime()
-            );
-            parentVersionId = sorted[0]!.versionId;
-          }
 
-          // Get the parent version's components to carry forward
-          const parentVersion = await getConfigurationBundleVersion({
-            region,
-            bundleId: resolved.bundleId,
-            versionId: parentVersionId,
-          });
+            const updateResult = await updateConfigurationBundle({
+              region,
+              bundleId: resolved.bundleId,
+              components: parentVersion.components,
+              parentVersionIds: [parentVersionId],
+              branchName: cliOptions.branch,
+              commitMessage: cliOptions.commitMessage ?? `Create branch ${cliOptions.branch}`,
+            });
 
-          const result = await updateConfigurationBundle({
-            region,
-            bundleId: resolved.bundleId,
-            components: parentVersion.components,
-            parentVersionIds: [parentVersionId],
-            branchName: cliOptions.branch,
-            commitMessage: cliOptions.commitMessage ?? `Create branch ${cliOptions.branch}`,
+            return { updateResult, parentVersionId };
           });
 
           if (cliOptions.json) {
-            console.log(JSON.stringify(result, null, 2));
+            console.log(JSON.stringify(result.updateResult, null, 2));
             return;
           }
 
@@ -327,9 +346,9 @@ export const registerConfigBundle = (program: Command) => {
                 Branch &quot;{cliOptions.branch}&quot; created on bundle &quot;{cliOptions.bundle}&quot;
               </Text>
               <Text>
-                Version: <Text color="green">{result.versionId}</Text>
+                Version: <Text color="green">{result.updateResult.versionId}</Text>
               </Text>
-              <Text dimColor>Parent: {parentVersionId}</Text>
+              <Text dimColor>Parent: {result.parentVersionId}</Text>
             </Box>
           );
         } catch (error) {

@@ -8,24 +8,14 @@ import { ConfigIO } from '../../../lib';
 import { getABTest, listABTests } from '../../aws/agentcore-ab-tests';
 import type { GetABTestResult } from '../../aws/agentcore-ab-tests';
 import { dnsSuffix } from '../../aws/partition';
+import { withTargetRegion } from '../../aws/target-region';
 import { getErrorMessage } from '../../errors';
+import { getRegion } from '../shared/region-utils';
 import type { Command } from '@commander-js/extra-typings';
 
 // ============================================================================
 // Helpers
 // ============================================================================
-
-async function getRegion(cliRegion?: string): Promise<string> {
-  if (cliRegion) return cliRegion;
-  try {
-    const configIO = new ConfigIO();
-    const targets = await configIO.resolveAWSDeploymentTargets();
-    if (targets.length > 0) return targets[0]!.region;
-  } catch {
-    // Fall through to env vars
-  }
-  return process.env.AWS_DEFAULT_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
-}
 
 async function resolveABTestId(
   testName: string,
@@ -154,39 +144,44 @@ export function registerABTestCommand(program: Command): void {
     .action(async (name: string, cliOptions: { region?: string; json?: boolean }) => {
       try {
         const region = await getRegion(cliOptions.region);
-        const { abTestId, error } = await resolveABTestId(name, region);
-        if (error) {
-          if (cliOptions.json) {
-            console.log(JSON.stringify({ success: false, error }));
-          } else {
-            console.error(error);
+        // Make the resolved region authoritative for downstream SDK calls
+        // (including any indirect helpers that read process.env). See
+        // https://github.com/aws/agentcore-cli/issues/924.
+        await withTargetRegion(region, async () => {
+          const { abTestId, error } = await resolveABTestId(name, region);
+          if (error) {
+            if (cliOptions.json) {
+              console.log(JSON.stringify({ success: false, error }));
+            } else {
+              console.error(error);
+            }
+            process.exit(1);
           }
-          process.exit(1);
-        }
-        const result = await getABTest({ region, abTestId });
+          const result = await getABTest({ region, abTestId });
 
-        if (cliOptions.json) {
-          console.log(JSON.stringify(result));
-          process.exit(0);
-        } else if (process.stdout.isTTY) {
-          // Render TUI detail screen with key bindings
-          const [{ render }, { default: React }, { ABTestDetailScreen }] = await Promise.all([
-            import('ink'),
-            import('react'),
-            import('../../tui/screens/ab-test'),
-          ]);
-          render(
-            React.createElement(ABTestDetailScreen, {
-              abTestId,
-              region,
-              onExit: () => process.exit(0),
-            })
-          );
-          return;
-        } else {
-          console.log(formatABTestDetails(result));
-          process.exit(0);
-        }
+          if (cliOptions.json) {
+            console.log(JSON.stringify(result));
+            process.exit(0);
+          } else if (process.stdout.isTTY) {
+            // Render TUI detail screen with key bindings
+            const [{ render }, { default: React }, { ABTestDetailScreen }] = await Promise.all([
+              import('ink'),
+              import('react'),
+              import('../../tui/screens/ab-test'),
+            ]);
+            render(
+              React.createElement(ABTestDetailScreen, {
+                abTestId,
+                region,
+                onExit: () => process.exit(0),
+              })
+            );
+            return;
+          } else {
+            console.log(formatABTestDetails(result));
+            process.exit(0);
+          }
+        });
       } catch (error) {
         if (cliOptions.json) {
           console.log(JSON.stringify({ success: false, error: getErrorMessage(error) }));

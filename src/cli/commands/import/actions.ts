@@ -9,6 +9,7 @@ import type {
 } from '../../../schema';
 import { validateAwsCredentials } from '../../aws/account';
 import { arnPrefix } from '../../aws/partition';
+import { type RestoreEnv, applyTargetRegionToEnv } from '../../aws/target-region';
 import { ExecLogger } from '../../logging';
 import { setupPythonProject } from '../../operations/python/setup';
 import { executeCdkImportPipeline } from './import-pipeline';
@@ -108,6 +109,10 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
   let configSnapshot: AgentCoreProjectSpec;
   let configWritten = false;
 
+  // Track AWS_REGION/AWS_DEFAULT_REGION overrides so we always restore them on
+  // error, success, or early return — see https://github.com/aws/agentcore-cli/issues/924.
+  let restoreRegionEnv: RestoreEnv | undefined;
+
   const rollbackConfig = async () => {
     if (!configWritten || !configIO) return;
     try {
@@ -185,8 +190,8 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
       // because readAWSDeploymentTargets() overrides file-based regions with AWS_REGION.
       // The YAML region is authoritative — it's where the resources actually exist.
       if (parsed.awsTarget.region) {
-        process.env.AWS_REGION = parsed.awsTarget.region;
-        process.env.AWS_DEFAULT_REGION = parsed.awsTarget.region;
+        restoreRegionEnv?.();
+        restoreRegionEnv = applyTargetRegionToEnv(parsed.awsTarget.region);
       }
       let targets = await configIO.readAWSDeploymentTargets();
 
@@ -245,6 +250,14 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
       logger.log(`Using target: ${target.name} (${target.region}, ${target.account})`);
       onProgress?.(`Using target: ${target.name} (${target.region}, ${target.account})`);
 
+      // Make the resolved target's region authoritative for downstream SDK calls
+      // (CFN, STS, BedrockAgentCoreControl) — the chosen target wins over any
+      // YAML-only region hint applied above. See issue #924.
+      if (target.region) {
+        restoreRegionEnv?.();
+        restoreRegionEnv = applyTargetRegionToEnv(target.region);
+      }
+
       // Warn if YAML account/region differs from target
       if (parsed.awsTarget.account && parsed.awsTarget.account !== target.account) {
         logger.log(
@@ -275,6 +288,12 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
         target = targets[0];
       } else if (options.target) {
         target = targets.find(t => t.name === options.target);
+      }
+      // If a target was selected, apply its region to env so any indirect SDK
+      // calls (e.g. detectAccount via STS) honor aws-targets.json. See #924.
+      if (target?.region) {
+        restoreRegionEnv?.();
+        restoreRegionEnv = applyTargetRegionToEnv(target.region);
       }
       // If still no target, that's fine — we'll use 'default' for the stackName
     }
@@ -659,5 +678,9 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
     logger.log(message, 'error');
     logger.finalize(false);
     return { success: false, error: message, logPath: logger.getRelativeLogPath() };
+  } finally {
+    // Always restore AWS_REGION/AWS_DEFAULT_REGION even on early returns inside
+    // the try. See https://github.com/aws/agentcore-cli/issues/924.
+    restoreRegionEnv?.();
   }
 }

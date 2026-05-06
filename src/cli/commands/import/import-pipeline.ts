@@ -1,5 +1,6 @@
 import type { ConfigIO } from '../../../lib';
 import type { AwsDeploymentTarget } from '../../../schema';
+import { withTargetRegion } from '../../aws';
 import { LocalCdkProject } from '../../cdk/local-cdk-project';
 import { silentIoHost } from '../../cdk/toolkit-lib';
 import { bootstrapEnvironment, buildCdkProject, checkBootstrapNeeded, synthesizeCdk } from '../../operations/deploy';
@@ -41,6 +42,29 @@ export interface CdkImportPipelineResult {
  * and delegate the CDK/CloudFormation work to this function.
  */
 export async function executeCdkImportPipeline(input: CdkImportPipelineInput): Promise<CdkImportPipelineResult> {
+  const {
+    projectRoot,
+    stackName,
+    target,
+    configIO,
+    targetName,
+    onProgress,
+    buildResourcesToImport,
+    deployedStateEntries,
+  } = input;
+
+  // Defense-in-depth: ensure AWS_REGION/AWS_DEFAULT_REGION reflect the chosen
+  // target's region for the entire pipeline. Callers (handleImport) already
+  // apply this, but the pipeline can also be entered directly (e.g. from
+  // tests) and contains indirect SDK calls that read process.env. See
+  // https://github.com/aws/agentcore-cli/issues/924.
+  if (!target.region) {
+    return executeCdkImportPipelineInner(input);
+  }
+  return withTargetRegion(target.region, () => executeCdkImportPipelineInner(input));
+}
+
+async function executeCdkImportPipelineInner(input: CdkImportPipelineInput): Promise<CdkImportPipelineResult> {
   const {
     projectRoot,
     stackName,
