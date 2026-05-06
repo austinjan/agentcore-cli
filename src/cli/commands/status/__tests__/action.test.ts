@@ -10,6 +10,9 @@ const mockGetOnlineEvaluationConfig = vi.fn();
 
 vi.mock('../../../aws', () => ({
   getAgentRuntimeStatus: (...args: unknown[]) => mockGetAgentRuntimeStatus(...args),
+  // Pass-through: just invoke the callback. The real implementation mutates
+  // process.env which we don't want in unit tests.
+  withTargetRegion: <T>(_region: string, fn: () => Promise<T>): Promise<T> => fn(),
 }));
 
 vi.mock('../../../aws/agentcore-control', () => ({
