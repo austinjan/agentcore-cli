@@ -8,6 +8,7 @@ import { ConfigIO } from '../../../lib';
 import { getABTest, listABTests } from '../../aws/agentcore-ab-tests';
 import type { GetABTestResult } from '../../aws/agentcore-ab-tests';
 import { dnsSuffix } from '../../aws/partition';
+import { withTargetRegion } from '../../aws/target-region';
 import { getErrorMessage } from '../../errors';
 import type { Command } from '@commander-js/extra-typings';
 
@@ -154,39 +155,44 @@ export function registerABTestCommand(program: Command): void {
     .action(async (name: string, cliOptions: { region?: string; json?: boolean }) => {
       try {
         const region = await getRegion(cliOptions.region);
-        const { abTestId, error } = await resolveABTestId(name, region);
-        if (error) {
-          if (cliOptions.json) {
-            console.log(JSON.stringify({ success: false, error }));
-          } else {
-            console.error(error);
+        // Promote the resolved region to AWS_REGION/AWS_DEFAULT_REGION so any
+        // SDK clients constructed without an explicit region pick it up.
+        // See https://github.com/aws/agentcore-cli/issues/924.
+        await withTargetRegion(region, async () => {
+          const { abTestId, error } = await resolveABTestId(name, region);
+          if (error) {
+            if (cliOptions.json) {
+              console.log(JSON.stringify({ success: false, error }));
+            } else {
+              console.error(error);
+            }
+            process.exit(1);
           }
-          process.exit(1);
-        }
-        const result = await getABTest({ region, abTestId });
+          const result = await getABTest({ region, abTestId });
 
-        if (cliOptions.json) {
-          console.log(JSON.stringify(result));
-          process.exit(0);
-        } else if (process.stdout.isTTY) {
-          // Render TUI detail screen with key bindings
-          const [{ render }, { default: React }, { ABTestDetailScreen }] = await Promise.all([
-            import('ink'),
-            import('react'),
-            import('../../tui/screens/ab-test'),
-          ]);
-          render(
-            React.createElement(ABTestDetailScreen, {
-              abTestId,
-              region,
-              onExit: () => process.exit(0),
-            })
-          );
-          return;
-        } else {
-          console.log(formatABTestDetails(result));
-          process.exit(0);
-        }
+          if (cliOptions.json) {
+            console.log(JSON.stringify(result));
+            process.exit(0);
+          } else if (process.stdout.isTTY) {
+            // Render TUI detail screen with key bindings
+            const [{ render }, { default: React }, { ABTestDetailScreen }] = await Promise.all([
+              import('ink'),
+              import('react'),
+              import('../../tui/screens/ab-test'),
+            ]);
+            render(
+              React.createElement(ABTestDetailScreen, {
+                abTestId,
+                region,
+                onExit: () => process.exit(0),
+              })
+            );
+            return;
+          } else {
+            console.log(formatABTestDetails(result));
+            process.exit(0);
+          }
+        });
       } catch (error) {
         if (cliOptions.json) {
           console.log(JSON.stringify({ success: false, error: getErrorMessage(error) }));

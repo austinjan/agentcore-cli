@@ -1,4 +1,3 @@
-import { ConfigIO } from '../../lib';
 import { type AgentCoreRegion, AgentCoreRegionSchema } from '../../schema';
 import { loadSharedConfigFiles } from '@smithy/shared-ini-file-loader';
 
@@ -21,12 +20,17 @@ function isAgentCoreRegion(region: string): region is AgentCoreRegion {
  * Returns undefined if the project is not initialized, the file is missing,
  * or the file fails to parse — callers fall back to env/config in that case.
  *
+ * Uses a dynamic import to keep `region.ts` free of a top-level dependency on
+ * the larger `lib` barrel (which would import a lot of unrelated code) and to
+ * make this helper trivially mockable in tests via `vi.mock('../../lib')`.
+ *
  * See https://github.com/aws/agentcore-cli/issues/924 — the region in
  * aws-targets.json is the user's source of truth for where resources are
  * deployed, so it should win over ambient AWS_REGION/AWS_DEFAULT_REGION.
  */
 async function detectRegionFromAwsTargets(): Promise<AgentCoreRegion | undefined> {
   try {
+    const { ConfigIO } = await import('../../lib');
     const configIO = new ConfigIO();
     if (!configIO.configExists('awsTargets')) {
       return undefined;
