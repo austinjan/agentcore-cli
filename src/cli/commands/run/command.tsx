@@ -1,4 +1,5 @@
 import type { RecommendationType } from '../../aws/agentcore-recommendation';
+import { withTargetRegion } from '../../aws/target-region';
 import { getErrorMessage } from '../../errors';
 import { handleRunEval } from '../../operations/eval';
 import type { RunEvalOptions } from '../../operations/eval';
@@ -15,6 +16,7 @@ import {
 } from '../../operations/recommendation';
 import { COMMAND_DESCRIPTIONS } from '../../tui/copy';
 import { requireProject } from '../../tui/guards';
+import { getRegion } from '../shared/region-utils';
 import type { Command } from '@commander-js/extra-typings';
 import { Text, render } from 'ink';
 import React from 'react';
@@ -143,7 +145,11 @@ export const registerRun = (program: Command) => {
         };
 
         try {
-          const result = await handleRunEval(options);
+          // Resolve region from --region flag or aws-targets.json, then promote
+          // it into AWS_REGION/AWS_DEFAULT_REGION for the duration of the call
+          // so any downstream SDK client honours aws-targets.json. See #924.
+          const region = await getRegion(cliOptions.region);
+          const result = await withTargetRegion(region, () => handleRunEval({ ...options, region }));
 
           if (cliOptions.json) {
             console.log(JSON.stringify(result));
@@ -212,20 +218,23 @@ export const registerRun = (program: Command) => {
           }
 
           const lookbackDays = cliOptions.lookbackDays ? parseInt(cliOptions.lookbackDays, 10) : undefined;
-          const result = await runBatchEvaluationCommand({
-            agent: cliOptions.runtime,
-            evaluators: cliOptions.evaluator,
-            name: cliOptions.name,
-            region: cliOptions.region,
-            sessionIds: cliOptions.sessionIds,
-            lookbackDays: lookbackDays && !isNaN(lookbackDays) ? lookbackDays : undefined,
-            sessionMetadata,
-            onProgress: cliOptions.json
-              ? undefined
-              : (_status, message) => {
-                  console.log(message);
-                },
-          });
+          const region = await getRegion(cliOptions.region);
+          const result = await withTargetRegion(region, () =>
+            runBatchEvaluationCommand({
+              agent: cliOptions.runtime,
+              evaluators: cliOptions.evaluator,
+              name: cliOptions.name,
+              region,
+              sessionIds: cliOptions.sessionIds,
+              lookbackDays: lookbackDays && !isNaN(lookbackDays) ? lookbackDays : undefined,
+              sessionMetadata,
+              onProgress: cliOptions.json
+                ? undefined
+                : (_status, message) => {
+                    console.log(message);
+                  },
+            })
+          );
 
           // Save results locally
           if (result.success) {
@@ -374,30 +383,32 @@ export const registerRun = (program: Command) => {
             })
             .filter((p): p is { toolName: string; toolDescriptionJsonPath: string } => p !== undefined);
 
-          const result = await runRecommendationCommand({
-            type: recType,
-            agent,
-            evaluators: evaluator ? [evaluator] : [],
-            promptFile: cliOptions.promptFile,
-            inlineContent: cliOptions.inline,
-            bundleName: cliOptions.bundleName,
-            bundleVersion: cliOptions.bundleVersion,
-            systemPromptJsonPath: cliOptions.systemPromptJsonPath,
-            toolDescJsonPaths: toolDescJsonPaths?.length ? toolDescJsonPaths : undefined,
-            tools: cliOptions.tools,
-            lookbackDays: parseInt(cliOptions.lookback, 10),
-            sessionIds: cliOptions.sessionId,
-            spansFile: cliOptions.spansFile,
-            recommendationName: cliOptions.run,
-            region: cliOptions.region,
-            inputSource,
-            traceSource,
-            onProgress: cliOptions.json
-              ? undefined
-              : (_status, message) => {
-                  console.log(message);
-                },
-          });
+          const result = await withTargetRegion(await getRegion(cliOptions.region), () =>
+            runRecommendationCommand({
+              type: recType,
+              agent,
+              evaluators: evaluator ? [evaluator] : [],
+              promptFile: cliOptions.promptFile,
+              inlineContent: cliOptions.inline,
+              bundleName: cliOptions.bundleName,
+              bundleVersion: cliOptions.bundleVersion,
+              systemPromptJsonPath: cliOptions.systemPromptJsonPath,
+              toolDescJsonPaths: toolDescJsonPaths?.length ? toolDescJsonPaths : undefined,
+              tools: cliOptions.tools,
+              lookbackDays: parseInt(cliOptions.lookback, 10),
+              sessionIds: cliOptions.sessionId,
+              spansFile: cliOptions.spansFile,
+              recommendationName: cliOptions.run,
+              region: cliOptions.region,
+              inputSource,
+              traceSource,
+              onProgress: cliOptions.json
+                ? undefined
+                : (_status, message) => {
+                    console.log(message);
+                  },
+            })
+          );
 
           if (!result.success) {
             if (cliOptions.json) {
@@ -456,11 +467,13 @@ export const registerRun = (program: Command) => {
             // Sync local config bundle after server-side recommendation apply
             if (inputSource === 'config-bundle' && cliOptions.bundleName && result.result && result.region) {
               try {
-                const applyResult = await applyRecommendationToBundle({
-                  bundleName: cliOptions.bundleName,
-                  result: result.result,
-                  region: result.region,
-                });
+                const applyResult = await withTargetRegion(result.region, () =>
+                  applyRecommendationToBundle({
+                    bundleName: cliOptions.bundleName!,
+                    result: result.result!,
+                    region: result.region!,
+                  })
+                );
                 if (applyResult.success) {
                   console.log(
                     `\nA new config bundle version (${applyResult.newVersionId}) was created with the recommended changes.`

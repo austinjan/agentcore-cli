@@ -1,3 +1,4 @@
+import { withTargetRegion } from '../../aws';
 import {
   getConfigurationBundleVersion,
   listConfigurationBundleVersions,
@@ -29,7 +30,12 @@ function formatTimestamp(ts: string): string {
     .replace(/\.\d+Z$/, 'Z');
 }
 
-async function resolveRegion(): Promise<string> {
+/**
+ * Resolve the region from --region flag or aws-targets.json.
+ * Throws when no region can be resolved (no flag, no targets).
+ */
+async function resolveRegion(cliRegion?: string): Promise<string> {
+  if (cliRegion) return cliRegion;
   const { ConfigIO } = await import('../../../lib');
   const configIO = new ConfigIO();
   const targets = await configIO.resolveAWSDeploymentTargets();
@@ -48,10 +54,10 @@ async function handleVersions(options: {
   branch?: string;
   latestPerBranch?: boolean;
   createdBy?: string;
-  region?: string;
+  region: string;
   json?: boolean;
 }) {
-  const region = options.region ?? (await resolveRegion());
+  const { region } = options;
   const resolved = await resolveBundleByName(options.bundle, region);
 
   const filter: ListConfigurationBundleVersionsFilter = {};
@@ -85,8 +91,8 @@ async function handleVersions(options: {
 // Diff
 // ============================================================================
 
-async function handleDiff(options: { bundle: string; from: string; to: string; region?: string }) {
-  const region = options.region ?? (await resolveRegion());
+async function handleDiff(options: { bundle: string; from: string; to: string; region: string }) {
+  const { region } = options;
   const resolved = await resolveBundleByName(options.bundle, region);
 
   const [fromVersion, toVersion] = await Promise.all([
@@ -130,64 +136,69 @@ export const registerConfigBundle = (program: Command) => {
       }) => {
         requireProject();
         try {
-          const result = await handleVersions(cliOptions);
+          const region = await resolveRegion(cliOptions.region);
+          // Promote aws-targets.json region into env so any client built
+          // without an explicit region honours it. See issue #924.
+          await withTargetRegion(region, async () => {
+            const result = await handleVersions({ ...cliOptions, region });
 
-          if (cliOptions.json) {
-            console.log(JSON.stringify(result, null, 2));
-            return;
-          }
+            if (cliOptions.json) {
+              console.log(JSON.stringify(result, null, 2));
+              return;
+            }
 
-          if (result.versions.length === 0) {
-            render(<Text color="yellow">No versions found for bundle &quot;{cliOptions.bundle}&quot;.</Text>);
-            return;
-          }
+            if (result.versions.length === 0) {
+              render(<Text color="yellow">No versions found for bundle &quot;{cliOptions.bundle}&quot;.</Text>);
+              return;
+            }
 
-          // Group by branch
-          const byBranch = new Map<string, ConfigurationBundleVersionSummary[]>();
-          for (const v of result.versions) {
-            const branch = v.lineageMetadata?.branchName ?? 'unknown';
-            if (!byBranch.has(branch)) byBranch.set(branch, []);
-            byBranch.get(branch)!.push(v);
-          }
+            // Group by branch
+            const byBranch = new Map<string, ConfigurationBundleVersionSummary[]>();
+            for (const v of result.versions) {
+              const branch = v.lineageMetadata?.branchName ?? 'unknown';
+              if (!byBranch.has(branch)) byBranch.set(branch, []);
+              byBranch.get(branch)!.push(v);
+            }
 
-          render(
-            <Box flexDirection="column">
-              <Text bold>
-                {result.bundleName} — {result.versions.length} version(s)
-              </Text>
-              <Text> </Text>
-              {[...byBranch.entries()].map(([branch, versions]) => (
-                <Box key={branch} flexDirection="column" marginBottom={1}>
-                  <Text bold color="cyan">
-                    Branch: {branch}
-                  </Text>
-                  {versions.map((v, i) => {
-                    const meta = v.lineageMetadata;
-                    const creator = meta?.createdBy?.name ?? 'unknown';
-                    const message = meta?.commitMessage ?? '';
-                    const isLast = i === versions.length - 1;
-                    const connector = isLast ? '└' : '├';
-                    return (
-                      <Box key={v.versionId} flexDirection="column">
-                        <Text>
-                          {connector} <Text color="green">{v.versionId}</Text>{' '}
-                          <Text dimColor>{formatTimestamp(v.versionCreatedAt)}</Text>{' '}
-                          {message && <Text>&quot;{message}&quot;</Text>}
-                        </Text>
-                        <Text>
-                          {isLast ? ' ' : '│'} <Text dimColor>by: {creator}</Text>
-                          {meta?.parentVersionIds?.length ? (
-                            <Text dimColor> (parent: {meta.parentVersionIds.join(', ')})</Text>
-                          ) : null}
-                        </Text>
-                      </Box>
-                    );
-                  })}
-                </Box>
-              ))}
-              <Text dimColor>Use --json for complete output</Text>
-            </Box>
-          );
+            render(
+              <Box flexDirection="column">
+                <Text bold>
+                  {result.bundleName} — {result.versions.length} version(s)
+                </Text>
+                <Text> </Text>
+                {[...byBranch.entries()].map(([branch, versions]) => (
+                  <Box key={branch} flexDirection="column" marginBottom={1}>
+                    <Text bold color="cyan">
+                      Branch: {branch}
+                    </Text>
+                    {versions.map((v, i) => {
+                      const meta = v.lineageMetadata;
+                      const creator = meta?.createdBy?.name ?? 'unknown';
+                      const message = meta?.commitMessage ?? '';
+                      const isLast = i === versions.length - 1;
+                      const connector = isLast ? '└' : '├';
+                      return (
+                        <Box key={v.versionId} flexDirection="column">
+                          <Text>
+                            {connector} <Text color="green">{v.versionId}</Text>{' '}
+                            <Text dimColor>{formatTimestamp(v.versionCreatedAt)}</Text>{' '}
+                            {message && <Text>&quot;{message}&quot;</Text>}
+                          </Text>
+                          <Text>
+                            {isLast ? ' ' : '│'} <Text dimColor>by: {creator}</Text>
+                            {meta?.parentVersionIds?.length ? (
+                              <Text dimColor> (parent: {meta.parentVersionIds.join(', ')})</Text>
+                            ) : null}
+                          </Text>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                ))}
+                <Text dimColor>Use --json for complete output</Text>
+              </Box>
+            );
+          });
         } catch (error) {
           render(<Text color="red">Error: {getErrorMessage(error)}</Text>);
           process.exit(1);
@@ -207,51 +218,55 @@ export const registerConfigBundle = (program: Command) => {
     .action(async (cliOptions: { bundle: string; from: string; to: string; region?: string; json?: boolean }) => {
       requireProject();
       try {
-        const result = await handleDiff(cliOptions);
+        const region = await resolveRegion(cliOptions.region);
+        await withTargetRegion(region, async () => {
+          const result = await handleDiff({ ...cliOptions, region });
 
-        if (cliOptions.json) {
-          console.log(JSON.stringify(result, null, 2));
-          return;
-        }
+          if (cliOptions.json) {
+            console.log(JSON.stringify(result, null, 2));
+            return;
+          }
 
-        const fromMeta = result.fromVersion.lineageMetadata;
-        const toMeta = result.toVersion.lineageMetadata;
+          const fromMeta = result.fromVersion.lineageMetadata;
+          const toMeta = result.toVersion.lineageMetadata;
 
-        render(
-          <Box flexDirection="column">
-            <Text bold>
-              Diff: {result.fromVersion.versionId} → {result.toVersion.versionId}
-            </Text>
-            <Text dimColor>
-              From: {fromMeta?.commitMessage ?? '(no message)'} ({formatTimestamp(result.fromVersion.versionCreatedAt)})
-            </Text>
-            <Text dimColor>
-              To: {toMeta?.commitMessage ?? '(no message)'} ({formatTimestamp(result.toVersion.versionCreatedAt)})
-            </Text>
-            <Text> </Text>
-            {result.diffs.length === 0 ? (
-              <Text color="green">No differences found.</Text>
-            ) : (
-              <>
-                <Text>{result.diffs.length} change(s):</Text>
-                <Text> </Text>
-                {result.diffs.map((d, i) => (
-                  <Box key={i} flexDirection="column" marginBottom={1}>
-                    <Text bold>{d.path}</Text>
-                    {d.type === 'added' && <Text color="green">+ {JSON.stringify(d.newValue)}</Text>}
-                    {d.type === 'removed' && <Text color="red">- {JSON.stringify(d.oldValue)}</Text>}
-                    {d.type === 'changed' && (
-                      <>
-                        <Text color="red">- {JSON.stringify(d.oldValue)}</Text>
-                        <Text color="green">+ {JSON.stringify(d.newValue)}</Text>
-                      </>
-                    )}
-                  </Box>
-                ))}
-              </>
-            )}
-          </Box>
-        );
+          render(
+            <Box flexDirection="column">
+              <Text bold>
+                Diff: {result.fromVersion.versionId} → {result.toVersion.versionId}
+              </Text>
+              <Text dimColor>
+                From: {fromMeta?.commitMessage ?? '(no message)'} (
+                {formatTimestamp(result.fromVersion.versionCreatedAt)})
+              </Text>
+              <Text dimColor>
+                To: {toMeta?.commitMessage ?? '(no message)'} ({formatTimestamp(result.toVersion.versionCreatedAt)})
+              </Text>
+              <Text> </Text>
+              {result.diffs.length === 0 ? (
+                <Text color="green">No differences found.</Text>
+              ) : (
+                <>
+                  <Text>{result.diffs.length} change(s):</Text>
+                  <Text> </Text>
+                  {result.diffs.map((d, i) => (
+                    <Box key={i} flexDirection="column" marginBottom={1}>
+                      <Text bold>{d.path}</Text>
+                      {d.type === 'added' && <Text color="green">+ {JSON.stringify(d.newValue)}</Text>}
+                      {d.type === 'removed' && <Text color="red">- {JSON.stringify(d.oldValue)}</Text>}
+                      {d.type === 'changed' && (
+                        <>
+                          <Text color="red">- {JSON.stringify(d.oldValue)}</Text>
+                          <Text color="green">+ {JSON.stringify(d.newValue)}</Text>
+                        </>
+                      )}
+                    </Box>
+                  ))}
+                </>
+              )}
+            </Box>
+          );
+        });
       } catch (error) {
         render(<Text color="red">Error: {getErrorMessage(error)}</Text>);
         process.exit(1);
@@ -279,59 +294,61 @@ export const registerConfigBundle = (program: Command) => {
       }) => {
         requireProject();
         try {
-          const region = cliOptions.region ?? (await resolveRegion());
-          const resolved = await resolveBundleByName(cliOptions.bundle, region);
+          const region = await resolveRegion(cliOptions.region);
+          await withTargetRegion(region, async () => {
+            const resolved = await resolveBundleByName(cliOptions.bundle, region);
 
-          // Determine parent version
-          let parentVersionId = cliOptions.from;
-          if (!parentVersionId) {
-            const versions = await listConfigurationBundleVersions({
+            // Determine parent version
+            let parentVersionId = cliOptions.from;
+            if (!parentVersionId) {
+              const versions = await listConfigurationBundleVersions({
+                region,
+                bundleId: resolved.bundleId,
+                maxResults: 50,
+              });
+              if (versions.versions.length === 0) {
+                throw new Error(`No versions found for bundle "${cliOptions.bundle}".`);
+              }
+              // Sort descending by creation time to get the latest version
+              const sorted = [...versions.versions].sort(
+                (a, b) => new Date(b.versionCreatedAt).getTime() - new Date(a.versionCreatedAt).getTime()
+              );
+              parentVersionId = sorted[0]!.versionId;
+            }
+
+            // Get the parent version's components to carry forward
+            const parentVersion = await getConfigurationBundleVersion({
               region,
               bundleId: resolved.bundleId,
-              maxResults: 50,
+              versionId: parentVersionId,
             });
-            if (versions.versions.length === 0) {
-              throw new Error(`No versions found for bundle "${cliOptions.bundle}".`);
+
+            const result = await updateConfigurationBundle({
+              region,
+              bundleId: resolved.bundleId,
+              components: parentVersion.components,
+              parentVersionIds: [parentVersionId],
+              branchName: cliOptions.branch,
+              commitMessage: cliOptions.commitMessage ?? `Create branch ${cliOptions.branch}`,
+            });
+
+            if (cliOptions.json) {
+              console.log(JSON.stringify(result, null, 2));
+              return;
             }
-            // Sort descending by creation time to get the latest version
-            const sorted = [...versions.versions].sort(
-              (a, b) => new Date(b.versionCreatedAt).getTime() - new Date(a.versionCreatedAt).getTime()
+
+            render(
+              <Box flexDirection="column">
+                <Text bold color="green">
+                  Branch &quot;{cliOptions.branch}&quot; created on bundle &quot;{cliOptions.bundle}&quot;
+                </Text>
+                <Text>
+                  Version: <Text color="green">{result.versionId}</Text>
+                </Text>
+                <Text dimColor>Parent: {parentVersionId}</Text>
+              </Box>
             );
-            parentVersionId = sorted[0]!.versionId;
-          }
-
-          // Get the parent version's components to carry forward
-          const parentVersion = await getConfigurationBundleVersion({
-            region,
-            bundleId: resolved.bundleId,
-            versionId: parentVersionId,
           });
-
-          const result = await updateConfigurationBundle({
-            region,
-            bundleId: resolved.bundleId,
-            components: parentVersion.components,
-            parentVersionIds: [parentVersionId],
-            branchName: cliOptions.branch,
-            commitMessage: cliOptions.commitMessage ?? `Create branch ${cliOptions.branch}`,
-          });
-
-          if (cliOptions.json) {
-            console.log(JSON.stringify(result, null, 2));
-            return;
-          }
-
-          render(
-            <Box flexDirection="column">
-              <Text bold color="green">
-                Branch &quot;{cliOptions.branch}&quot; created on bundle &quot;{cliOptions.bundle}&quot;
-              </Text>
-              <Text>
-                Version: <Text color="green">{result.versionId}</Text>
-              </Text>
-              <Text dimColor>Parent: {parentVersionId}</Text>
-            </Box>
-          );
         } catch (error) {
           if (cliOptions.json) {
             console.log(JSON.stringify({ success: false, error: getErrorMessage(error) }));
