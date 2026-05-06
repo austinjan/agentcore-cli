@@ -1,11 +1,20 @@
 import { getRegion, resolveTargetForRegion, withResolvedTarget } from '../region-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Per-method `vi.fn()` so adding a new ConfigIO call from region-utils.ts
+// fails loudly with a clear "X is not a function" rather than a silent
+// undefined return through a plain partial mock.
 const mockResolveAWSDeploymentTargets = vi.fn();
+const mockReadAWSDeploymentTargets = vi.fn(() => {
+  throw new Error('region-utils should call resolveAWSDeploymentTargets, not readAWSDeploymentTargets');
+});
 
 vi.mock('../../../../lib', () => ({
   ConfigIO: function () {
-    return { resolveAWSDeploymentTargets: () => mockResolveAWSDeploymentTargets() };
+    return {
+      resolveAWSDeploymentTargets: mockResolveAWSDeploymentTargets,
+      readAWSDeploymentTargets: mockReadAWSDeploymentTargets,
+    };
   },
 }));
 
@@ -17,6 +26,10 @@ describe('region-utils — resolveTargetForRegion / withResolvedTarget', () => {
     delete process.env.AWS_DEFAULT_REGION;
     delete process.env.AWS_REGION;
     vi.clearAllMocks();
+    // Re-install the readAWSDeploymentTargets guard after clearAllMocks().
+    mockReadAWSDeploymentTargets.mockImplementation(() => {
+      throw new Error('region-utils should call resolveAWSDeploymentTargets, not readAWSDeploymentTargets');
+    });
   });
 
   afterEach(() => {
@@ -102,6 +115,11 @@ describe('region-utils — resolveTargetForRegion / withResolvedTarget', () => {
   });
 
   describe('withResolvedTarget', () => {
+    // These tests rely on the real `withTargetRegion` implementation from
+    // ../../aws/target-region.ts to verify end-to-end env-mutation behaviour.
+    // If `withTargetRegion` is ever refactored (e.g. to use AsyncLocalStorage),
+    // these assertions should move into target-region.test.ts and this suite
+    // should mock `../../aws` to spy on invocation arguments only.
     it('applies the resolved region to env for the duration of fn', async () => {
       mockResolveAWSDeploymentTargets.mockResolvedValue([
         { name: 'default', region: 'ap-northeast-1', account: '111111111111' },
@@ -116,7 +134,10 @@ describe('region-utils — resolveTargetForRegion / withResolvedTarget', () => {
 
       expect(envInside).toBe('ap-northeast-1');
       expect(result).toBe(42);
-      expect(process.env.AWS_REGION).toBeUndefined();
+      // Use `in` to assert the env var was deleted (not just set to "undefined"
+      // string), pinning the contract that withTargetRegion deletes when the
+      // original was unset.
+      expect('AWS_REGION' in process.env).toBe(false);
     });
 
     it('restores env even when fn throws', async () => {

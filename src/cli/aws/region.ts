@@ -25,12 +25,21 @@ function isAgentCoreRegion(region: string): region is AgentCoreRegion {
  * be created (see https://github.com/aws/agentcore-cli/issues/924). When
  * available it is consulted first so callers that have not been wrapped in
  * `withTargetRegion` still observe the correct region.
+ *
+ * NOTE: This function performs disk I/O on every invocation
+ * (`ConfigIO().resolveAWSDeploymentTargets()` reads aws-targets.json). Hot paths
+ * that call AWS clients should resolve the region once at the action boundary
+ * (e.g. via `AwsContext` or by wrapping with `withTargetRegion`) rather than
+ * calling `detectRegion()` per request.
  */
 export async function detectRegion(): Promise<RegionDetectionResult> {
   // Prefer aws-targets.json when present and parseable.
+  // Use resolveAWSDeploymentTargets() (the unmutated file view) rather than
+  // readAWSDeploymentTargets() so AWS_REGION cannot override the file-based
+  // region — that env-overrides-file behaviour is exactly what #924 fixes.
   try {
     const configIO = new ConfigIO();
-    const targets = await configIO.readAWSDeploymentTargets();
+    const targets = await configIO.resolveAWSDeploymentTargets();
     const targetRegion = targets[0]?.region;
     if (targetRegion && isAgentCoreRegion(targetRegion)) {
       return { region: targetRegion, source: 'aws-targets' };

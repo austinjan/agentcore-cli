@@ -383,7 +383,8 @@ export const registerRun = (program: Command) => {
             })
             .filter((p): p is { toolName: string; toolDescriptionJsonPath: string } => p !== undefined);
 
-          const result = await withTargetRegion(await getRegion(cliOptions.region), () =>
+          const region = await getRegion(cliOptions.region);
+          const result = await withTargetRegion(region, () =>
             runRecommendationCommand({
               type: recType,
               agent,
@@ -399,7 +400,7 @@ export const registerRun = (program: Command) => {
               sessionIds: cliOptions.sessionId,
               spansFile: cliOptions.spansFile,
               recommendationName: cliOptions.run,
-              region: cliOptions.region,
+              region,
               inputSource,
               traceSource,
               onProgress: cliOptions.json

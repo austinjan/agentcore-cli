@@ -8,6 +8,10 @@ import { detectRegion } from './region';
 export interface AwsContext {
   accountId: string | null;
   region: AgentCoreRegion;
+  /**
+   * Where the region came from. `'aws-targets'` was added in #924 — any new
+   * exhaustive `switch`/`if` chain on this field MUST handle that case.
+   */
   regionSource: 'aws-targets' | 'env' | 'config' | 'default';
 }
 

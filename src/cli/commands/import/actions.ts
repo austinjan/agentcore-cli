@@ -7,7 +7,6 @@ import type {
   Credential,
   Memory,
 } from '../../../schema';
-import { type RestoreEnv, applyTargetRegionToEnv } from '../../aws';
 import { validateAwsCredentials } from '../../aws/account';
 import { arnPrefix } from '../../aws/partition';
 import { ExecLogger } from '../../logging';
@@ -109,13 +108,35 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
   let configSnapshot: AgentCoreProjectSpec;
   let configWritten = false;
 
-  // Region promotion: replace direct process.env mutation with applyTargetRegionToEnv
-  // so the prior values are restored on every return path (including early returns
-  // and thrown errors). See https://github.com/aws/agentcore-cli/issues/924.
-  let restoreRegionEnv: RestoreEnv | null = null;
+  // Region promotion: replace direct process.env mutation with a captured
+  // snapshot + try/finally restore so the prior values are restored on every
+  // return path (including early returns and thrown errors).
+  // We capture the *original* env once and only restore in the outer `finally`.
+  // `applyRegion` simply overwrites AWS_REGION/AWS_DEFAULT_REGION; this avoids
+  // losing intermediate mutations made by sub-helpers (e.g. CDK toolkit-lib)
+  // that the previous restore-then-apply pattern would have clobbered.
+  // See https://github.com/aws/agentcore-cli/issues/924.
+  const originalAwsRegion = process.env.AWS_REGION;
+  const originalAwsDefaultRegion = process.env.AWS_DEFAULT_REGION;
+  let regionApplied = false;
   const applyRegion = (region: string) => {
-    if (restoreRegionEnv) restoreRegionEnv();
-    restoreRegionEnv = applyTargetRegionToEnv(region);
+    process.env.AWS_REGION = region;
+    process.env.AWS_DEFAULT_REGION = region;
+    regionApplied = true;
+  };
+  const restoreRegionEnv = () => {
+    if (!regionApplied) return;
+    if (originalAwsRegion === undefined) {
+      delete process.env.AWS_REGION;
+    } else {
+      process.env.AWS_REGION = originalAwsRegion;
+    }
+    if (originalAwsDefaultRegion === undefined) {
+      delete process.env.AWS_DEFAULT_REGION;
+    } else {
+      process.env.AWS_DEFAULT_REGION = originalAwsDefaultRegion;
+    }
+    regionApplied = false;
   };
 
   const rollbackConfig = async () => {
@@ -677,9 +698,6 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
     logger.finalize(false);
     return { success: false, error: message, logPath: logger.getRelativeLogPath() };
   } finally {
-    if (restoreRegionEnv) {
-      restoreRegionEnv();
-      restoreRegionEnv = null;
-    }
+    restoreRegionEnv();
   }
 }

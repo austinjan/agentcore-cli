@@ -18,12 +18,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 describe('target-region (integration with AWS SDK)', () => {
   let savedRegion: string | undefined;
   let savedDefaultRegion: string | undefined;
+  let savedProfile: string | undefined;
 
   beforeEach(() => {
     savedRegion = process.env.AWS_REGION;
     savedDefaultRegion = process.env.AWS_DEFAULT_REGION;
+    // Also clear AWS_PROFILE so a developer with a profile-pinned region
+    // doesn't pollute these tests via the SDK's INI fallback. Mirrors the
+    // pattern used in src/cli/aws/__tests__/region.test.ts.
+    savedProfile = process.env.AWS_PROFILE;
     delete process.env.AWS_REGION;
     delete process.env.AWS_DEFAULT_REGION;
+    delete process.env.AWS_PROFILE;
   });
 
   afterEach(() => {
@@ -31,6 +37,8 @@ describe('target-region (integration with AWS SDK)', () => {
     else delete process.env.AWS_REGION;
     if (savedDefaultRegion !== undefined) process.env.AWS_DEFAULT_REGION = savedDefaultRegion;
     else delete process.env.AWS_DEFAULT_REGION;
+    if (savedProfile !== undefined) process.env.AWS_PROFILE = savedProfile;
+    else delete process.env.AWS_PROFILE;
   });
 
   it('STSClient constructed inside withTargetRegion picks up the wrapped region', async () => {
@@ -46,7 +54,7 @@ describe('target-region (integration with AWS SDK)', () => {
     expect(resolvedRegion).toBe('eu-west-2');
   });
 
-  it('applyTargetRegionToEnv affects clients built before restore is called', async () => {
+  it('applyTargetRegionToEnv affects clients constructed while it is active', async () => {
     const restore = applyTargetRegionToEnv('ap-northeast-1');
     try {
       const client = new STSClient({});
