@@ -2,6 +2,7 @@ import { getCredentialProvider } from '../../aws';
 import { evaluate } from '../../aws/agentcore';
 import type { EvaluationReferenceInput } from '../../aws/agentcore';
 import { getEvaluator } from '../../aws/agentcore-control';
+import { withTargetRegion } from '../../aws/target-region';
 import { DEFAULT_ENDPOINT_NAME } from '../../constants';
 import type { DeployedProjectConfig } from '../resolve-agent';
 import { loadDeployedProjectConfig, resolveAgent } from '../resolve-agent';
@@ -574,191 +575,196 @@ export async function handleRunEval(options: RunEvalOptions): Promise<RunEvalRes
 
   const { ctx } = resolution;
 
-  // Fetch spans grouped by session
-  let sessions = await fetchSessionSpans({
-    runtimeId: ctx.runtimeId,
-    runtimeLogGroup: ctx.runtimeLogGroup,
-    region: ctx.region,
-    lookbackDays: options.days,
-    sessionId: options.sessionId,
-    traceId: options.traceId,
-  });
+  // Promote the resolved region to AWS_REGION/AWS_DEFAULT_REGION so any
+  // SDK clients constructed below without an explicit region pick it up.
+  // See https://github.com/aws/agentcore-cli/issues/924.
+  return withTargetRegion(ctx.region, async () => {
+    // Fetch spans grouped by session
+    let sessions = await fetchSessionSpans({
+      runtimeId: ctx.runtimeId,
+      runtimeLogGroup: ctx.runtimeLogGroup,
+      region: ctx.region,
+      lookbackDays: options.days,
+      sessionId: options.sessionId,
+      traceId: options.traceId,
+    });
 
-  // Filter to selected session IDs if provided (from TUI multi-select)
-  if (options.sessionIds && options.sessionIds.length > 0) {
-    const selected = new Set(options.sessionIds);
-    sessions = sessions.filter(s => selected.has(s.sessionId));
-  }
-
-  if (sessions.length === 0) {
-    return {
-      success: false,
-      error: `No session spans found for agent "${ctx.agentLabel}" in the last ${options.days} day(s). Has the agent been invoked?`,
-    };
-  }
-
-  // Resolve evaluator levels to determine how to send spans
-  const evaluatorLevels = await resolveEvaluatorLevels(ctx.evaluatorIds, ctx.region);
-
-  // Build evaluationReferenceInputs if ground truth was provided
-  const hasRefInputs =
-    (options.assertions?.length ?? 0) > 0 ||
-    (options.expectedTrajectory?.length ?? 0) > 0 ||
-    !!options.expectedResponse;
-
-  let evaluationReferenceInputs: EvaluationReferenceInput[] | undefined;
-  if (hasRefInputs && sessions.length !== 1) {
-    return {
-      success: false,
-      error:
-        'Ground truth flags (-A, --expected-trajectory, --expected-response) require exactly one session. Use -s/--session-id to target a single session.',
-    };
-  }
-  if (hasRefInputs) {
-    const refInputs: EvaluationReferenceInput[] = [];
-    const firstSession = sessions[0]!;
-
-    // Session-level: expectedTrajectory + assertions (one entry per session)
-    const sessionRef: EvaluationReferenceInput = {
-      context: { spanContext: { sessionId: firstSession.sessionId } },
-    };
-    let hasSessionRef = false;
-
-    if (options.expectedTrajectory && options.expectedTrajectory.length > 0) {
-      sessionRef.expectedTrajectory = { toolNames: options.expectedTrajectory };
-      hasSessionRef = true;
-    }
-    if (options.assertions && options.assertions.length > 0) {
-      sessionRef.assertions = options.assertions.map(a => ({ text: a }));
-      hasSessionRef = true;
-    }
-    if (hasSessionRef) {
-      refInputs.push(sessionRef);
+    // Filter to selected session IDs if provided (from TUI multi-select)
+    if (options.sessionIds && options.sessionIds.length > 0) {
+      const selected = new Set(options.sessionIds);
+      sessions = sessions.filter(s => selected.has(s.sessionId));
     }
 
-    // Per-trace: expectedResponse (targets a specific trace)
-    if (options.expectedResponse) {
-      const traceId = options.traceId ?? extractTraceIds(firstSession.spans).at(-1);
-      if (!traceId) {
-        return {
-          success: false,
-          error: 'Expected response provided but no trace IDs found in session spans. Use -t/--trace-id to specify.',
-        };
+    if (sessions.length === 0) {
+      return {
+        success: false,
+        error: `No session spans found for agent "${ctx.agentLabel}" in the last ${options.days} day(s). Has the agent been invoked?`,
+      };
+    }
+
+    // Resolve evaluator levels to determine how to send spans
+    const evaluatorLevels = await resolveEvaluatorLevels(ctx.evaluatorIds, ctx.region);
+
+    // Build evaluationReferenceInputs if ground truth was provided
+    const hasRefInputs =
+      (options.assertions?.length ?? 0) > 0 ||
+      (options.expectedTrajectory?.length ?? 0) > 0 ||
+      !!options.expectedResponse;
+
+    let evaluationReferenceInputs: EvaluationReferenceInput[] | undefined;
+    if (hasRefInputs && sessions.length !== 1) {
+      return {
+        success: false,
+        error:
+          'Ground truth flags (-A, --expected-trajectory, --expected-response) require exactly one session. Use -s/--session-id to target a single session.',
+      };
+    }
+    if (hasRefInputs) {
+      const refInputs: EvaluationReferenceInput[] = [];
+      const firstSession = sessions[0]!;
+
+      // Session-level: expectedTrajectory + assertions (one entry per session)
+      const sessionRef: EvaluationReferenceInput = {
+        context: { spanContext: { sessionId: firstSession.sessionId } },
+      };
+      let hasSessionRef = false;
+
+      if (options.expectedTrajectory && options.expectedTrajectory.length > 0) {
+        sessionRef.expectedTrajectory = { toolNames: options.expectedTrajectory };
+        hasSessionRef = true;
       }
-      refInputs.push({
-        context: { spanContext: { sessionId: firstSession.sessionId, traceId } },
-        expectedResponse: { text: options.expectedResponse },
+      if (options.assertions && options.assertions.length > 0) {
+        sessionRef.assertions = options.assertions.map(a => ({ text: a }));
+        hasSessionRef = true;
+      }
+      if (hasSessionRef) {
+        refInputs.push(sessionRef);
+      }
+
+      // Per-trace: expectedResponse (targets a specific trace)
+      if (options.expectedResponse) {
+        const traceId = options.traceId ?? extractTraceIds(firstSession.spans).at(-1);
+        if (!traceId) {
+          return {
+            success: false,
+            error: 'Expected response provided but no trace IDs found in session spans. Use -t/--trace-id to specify.',
+          };
+        }
+        refInputs.push({
+          context: { spanContext: { sessionId: firstSession.sessionId, traceId } },
+          expectedResponse: { text: options.expectedResponse },
+        });
+      }
+
+      if (refInputs.length > 0) {
+        evaluationReferenceInputs = refInputs;
+      }
+    }
+
+    // Run each evaluator against each session with level-appropriate targeting
+    const results: EvalEvaluatorResult[] = [];
+
+    for (let i = 0; i < ctx.evaluatorIds.length; i++) {
+      const evaluatorId = ctx.evaluatorIds[i]!;
+      const evaluatorName = ctx.evaluatorLabels[i] ?? evaluatorId;
+      const level = evaluatorLevels.get(evaluatorId) ?? 'SESSION';
+
+      const sessionScores: EvalSessionScore[] = [];
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+      let totalTokens = 0;
+
+      for (const session of sessions) {
+        // Build evaluation target based on evaluator level
+        let targetTraceIds: string[] | undefined;
+        let targetSpanIds: string[] | undefined;
+
+        if (level === 'TRACE') {
+          targetTraceIds = extractTraceIds(session.spans);
+          if (targetTraceIds.length === 0) continue;
+        } else if (level === 'TOOL_CALL') {
+          targetSpanIds = extractToolCallSpanIds(session.spans);
+          if (targetSpanIds.length === 0) continue;
+        }
+
+        // The Evaluate API limits targetSpanIds and targetTraceIds to 10 per call.
+        // Batch into chunks and merge results.
+        const batches = batchTargetIds(targetTraceIds, targetSpanIds);
+
+        for (const batch of batches) {
+          const response = await evaluate({
+            region: ctx.region,
+            evaluatorId,
+            sessionSpans: session.spans,
+            targetTraceIds: batch.traceIds,
+            targetSpanIds: batch.spanIds,
+            evaluationReferenceInputs,
+          });
+
+          for (const r of response.evaluationResults) {
+            sessionScores.push({
+              sessionId: r.context?.sessionId ?? session.sessionId,
+              traceId: r.context?.traceId,
+              spanId: r.context?.spanId,
+              value: r.value ?? 0,
+              label: r.label,
+              explanation: r.explanation,
+              errorMessage: r.errorMessage,
+            });
+
+            totalInputTokens += r.tokenUsage?.inputTokens ?? 0;
+            totalOutputTokens += r.tokenUsage?.outputTokens ?? 0;
+            totalTokens += r.tokenUsage?.totalTokens ?? 0;
+          }
+        }
+      }
+
+      const validScores = sessionScores.filter(s => !s.errorMessage);
+      const aggregateScore =
+        validScores.length > 0 ? validScores.reduce((sum, s) => sum + s.value, 0) / validScores.length : 0;
+
+      results.push({
+        evaluator: evaluatorName,
+        aggregateScore,
+        sessionScores,
+        tokenUsage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens, totalTokens },
       });
     }
 
-    if (refInputs.length > 0) {
-      evaluationReferenceInputs = refInputs;
-    }
-  }
+    // Build run result
+    const timestamp = new Date().toISOString();
+    const run: EvalRunResult = {
+      timestamp,
+      agent: ctx.agentLabel,
+      evaluators: ctx.evaluatorLabels,
+      lookbackDays: options.days,
+      sessionCount: sessions.length,
+      results,
+      ...(hasRefInputs
+        ? {
+            referenceInputs: {
+              ...(options.assertions?.length ? { assertions: options.assertions } : {}),
+              ...(options.expectedTrajectory?.length ? { expectedTrajectory: options.expectedTrajectory } : {}),
+              ...(options.expectedResponse ? { expectedResponse: options.expectedResponse } : {}),
+            },
+          }
+        : {}),
+    };
 
-  // Run each evaluator against each session with level-appropriate targeting
-  const results: EvalEvaluatorResult[] = [];
-
-  for (let i = 0; i < ctx.evaluatorIds.length; i++) {
-    const evaluatorId = ctx.evaluatorIds[i]!;
-    const evaluatorName = ctx.evaluatorLabels[i] ?? evaluatorId;
-    const level = evaluatorLevels.get(evaluatorId) ?? 'SESSION';
-
-    const sessionScores: EvalSessionScore[] = [];
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    let totalTokens = 0;
-
-    for (const session of sessions) {
-      // Build evaluation target based on evaluator level
-      let targetTraceIds: string[] | undefined;
-      let targetSpanIds: string[] | undefined;
-
-      if (level === 'TRACE') {
-        targetTraceIds = extractTraceIds(session.spans);
-        if (targetTraceIds.length === 0) continue;
-      } else if (level === 'TOOL_CALL') {
-        targetSpanIds = extractToolCallSpanIds(session.spans);
-        if (targetSpanIds.length === 0) continue;
-      }
-
-      // The Evaluate API limits targetSpanIds and targetTraceIds to 10 per call.
-      // Batch into chunks and merge results.
-      const batches = batchTargetIds(targetTraceIds, targetSpanIds);
-
-      for (const batch of batches) {
-        const response = await evaluate({
-          region: ctx.region,
-          evaluatorId,
-          sessionSpans: session.spans,
-          targetTraceIds: batch.traceIds,
-          targetSpanIds: batch.spanIds,
-          evaluationReferenceInputs,
-        });
-
-        for (const r of response.evaluationResults) {
-          sessionScores.push({
-            sessionId: r.context?.sessionId ?? session.sessionId,
-            traceId: r.context?.traceId,
-            spanId: r.context?.spanId,
-            value: r.value ?? 0,
-            label: r.label,
-            explanation: r.explanation,
-            errorMessage: r.errorMessage,
-          });
-
-          totalInputTokens += r.tokenUsage?.inputTokens ?? 0;
-          totalOutputTokens += r.tokenUsage?.outputTokens ?? 0;
-          totalTokens += r.tokenUsage?.totalTokens ?? 0;
-        }
-      }
+    // Save to disk
+    let filePath: string;
+    if (options.output) {
+      writeFileSync(options.output, JSON.stringify(run, null, 2));
+      filePath = options.output;
+    } else if (options.agentArn) {
+      // ARN mode may not have a project directory — save to cwd
+      const fallbackPath = join(process.cwd(), `${generateFilename(timestamp)}.json`);
+      writeFileSync(fallbackPath, JSON.stringify(run, null, 2));
+      filePath = fallbackPath;
+    } else {
+      filePath = saveEvalRun(run);
     }
 
-    const validScores = sessionScores.filter(s => !s.errorMessage);
-    const aggregateScore =
-      validScores.length > 0 ? validScores.reduce((sum, s) => sum + s.value, 0) / validScores.length : 0;
-
-    results.push({
-      evaluator: evaluatorName,
-      aggregateScore,
-      sessionScores,
-      tokenUsage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens, totalTokens },
-    });
-  }
-
-  // Build run result
-  const timestamp = new Date().toISOString();
-  const run: EvalRunResult = {
-    timestamp,
-    agent: ctx.agentLabel,
-    evaluators: ctx.evaluatorLabels,
-    lookbackDays: options.days,
-    sessionCount: sessions.length,
-    results,
-    ...(hasRefInputs
-      ? {
-          referenceInputs: {
-            ...(options.assertions?.length ? { assertions: options.assertions } : {}),
-            ...(options.expectedTrajectory?.length ? { expectedTrajectory: options.expectedTrajectory } : {}),
-            ...(options.expectedResponse ? { expectedResponse: options.expectedResponse } : {}),
-          },
-        }
-      : {}),
-  };
-
-  // Save to disk
-  let filePath: string;
-  if (options.output) {
-    writeFileSync(options.output, JSON.stringify(run, null, 2));
-    filePath = options.output;
-  } else if (options.agentArn) {
-    // ARN mode may not have a project directory — save to cwd
-    const fallbackPath = join(process.cwd(), `${generateFilename(timestamp)}.json`);
-    writeFileSync(fallbackPath, JSON.stringify(run, null, 2));
-    filePath = fallbackPath;
-  } else {
-    filePath = saveEvalRun(run);
-  }
-
-  return { success: true, run, filePath };
+    return { success: true, run, filePath };
+  });
 }

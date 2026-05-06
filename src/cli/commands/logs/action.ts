@@ -1,5 +1,6 @@
 import { parseTimeString } from '../../../lib/utils';
 import { searchLogs, streamLogs } from '../../aws/cloudwatch';
+import { withTargetRegion } from '../../aws/target-region';
 import { DEFAULT_ENDPOINT_NAME } from '../../constants';
 import type { DeployedProjectConfig } from '../../operations/resolve-agent';
 import { loadDeployedProjectConfig, resolveAgent } from '../../operations/resolve-agent';
@@ -106,53 +107,58 @@ export async function handleLogs(options: LogsOptions): Promise<LogsResult> {
   const onSignal = () => ac.abort();
   process.on('SIGINT', onSignal);
 
-  try {
-    if (mode === 'search') {
-      const startTimeMs = options.since ? parseTimeString(options.since) : Date.now() - 3_600_000;
-      const endTimeMs = options.until ? parseTimeString(options.until) : Date.now();
-      const limit = options.limit ? parseInt(options.limit, 10) : undefined;
+  // Promote the resolved agent's region to AWS_REGION/AWS_DEFAULT_REGION so any
+  // SDK clients constructed without an explicit region pick it up.
+  // See https://github.com/aws/agentcore-cli/issues/924.
+  return withTargetRegion(agentContext.region, async () => {
+    try {
+      if (mode === 'search') {
+        const startTimeMs = options.since ? parseTimeString(options.since) : Date.now() - 3_600_000;
+        const endTimeMs = options.until ? parseTimeString(options.until) : Date.now();
+        const limit = options.limit ? parseInt(options.limit, 10) : undefined;
 
-      for await (const event of searchLogs({
-        logGroupName: agentContext.logGroupName,
-        region: agentContext.region,
-        startTimeMs,
-        endTimeMs,
-        filterPattern,
-        limit,
-      })) {
-        console.log(formatLogLine(event, isJson));
+        for await (const event of searchLogs({
+          logGroupName: agentContext.logGroupName,
+          region: agentContext.region,
+          startTimeMs,
+          endTimeMs,
+          filterPattern,
+          limit,
+        })) {
+          console.log(formatLogLine(event, isJson));
+        }
+      } else {
+        console.error(`Streaming logs for ${agentContext.agentName}... (Ctrl+C to stop)`);
+
+        for await (const event of streamLogs({
+          logGroupName: agentContext.logGroupName,
+          region: agentContext.region,
+          accountId: agentContext.accountId,
+          filterPattern,
+          abortSignal: ac.signal,
+        })) {
+          console.log(formatLogLine(event, isJson));
+        }
       }
-    } else {
-      console.error(`Streaming logs for ${agentContext.agentName}... (Ctrl+C to stop)`);
 
-      for await (const event of streamLogs({
-        logGroupName: agentContext.logGroupName,
-        region: agentContext.region,
-        accountId: agentContext.accountId,
-        filterPattern,
-        abortSignal: ac.signal,
-      })) {
-        console.log(formatLogLine(event, isJson));
-      }
-    }
-
-    return { success: true };
-  } catch (err: unknown) {
-    const errorName = (err as { name?: string })?.name;
-
-    if (errorName === 'ResourceNotFoundException') {
-      return {
-        success: false,
-        error: `No logs found for agent '${agentContext.agentName}'. Has the agent been invoked?`,
-      };
-    }
-
-    if (errorName === 'AbortError' || ac.signal.aborted) {
       return { success: true };
-    }
+    } catch (err: unknown) {
+      const errorName = (err as { name?: string })?.name;
 
-    throw err;
-  } finally {
-    process.removeListener('SIGINT', onSignal);
-  }
+      if (errorName === 'ResourceNotFoundException') {
+        return {
+          success: false,
+          error: `No logs found for agent '${agentContext.agentName}'. Has the agent been invoked?`,
+        };
+      }
+
+      if (errorName === 'AbortError' || ac.signal.aborted) {
+        return { success: true };
+      }
+
+      throw err;
+    } finally {
+      process.removeListener('SIGINT', onSignal);
+    }
+  });
 }

@@ -1,4 +1,5 @@
 import { parseTimeString } from '../../../lib/utils';
+import { withTargetRegion } from '../../aws/target-region';
 import type { DeployedProjectConfig } from '../../operations/resolve-agent';
 import { resolveAgent } from '../../operations/resolve-agent';
 import { buildTraceConsoleUrl, getTrace, listTraces } from '../../operations/traces';
@@ -24,48 +25,53 @@ export async function handleTracesList(
 
   const { agent } = resolved;
 
-  const consoleUrl = buildTraceConsoleUrl({
-    region: agent.region,
-    accountId: agent.accountId,
-    runtimeId: agent.runtimeId,
-    agentName: agent.agentName,
+  // Promote the resolved agent's region to AWS_REGION/AWS_DEFAULT_REGION so
+  // any SDK clients constructed without an explicit region pick it up.
+  // See https://github.com/aws/agentcore-cli/issues/924.
+  return withTargetRegion(agent.region, async () => {
+    const consoleUrl = buildTraceConsoleUrl({
+      region: agent.region,
+      accountId: agent.accountId,
+      runtimeId: agent.runtimeId,
+      agentName: agent.agentName,
+    });
+
+    const limit = options.limit ? parseInt(options.limit, 10) : 20;
+    if (isNaN(limit)) {
+      return { success: false, error: '--limit must be a number' };
+    }
+
+    // Parse time options
+    let startTime: number | undefined;
+    let endTime: number | undefined;
+    if (options.since) {
+      startTime = parseTimeString(options.since);
+    }
+    if (options.until) {
+      endTime = parseTimeString(options.until);
+    }
+
+    const result = await listTraces({
+      region: agent.region,
+      runtimeId: agent.runtimeId,
+      agentName: agent.agentName,
+      limit,
+      startTime,
+      endTime,
+    });
+
+    if (!result.success) {
+      return { success: false, error: result.error, consoleUrl };
+    }
+
+    return {
+      success: true,
+      agentName: agent.agentName,
+      targetName: agent.targetName,
+      consoleUrl,
+      traces: result.traces,
+    };
   });
-
-  const limit = options.limit ? parseInt(options.limit, 10) : 20;
-  if (isNaN(limit)) {
-    return { success: false, error: '--limit must be a number' };
-  }
-
-  // Parse time options
-  let startTime: number | undefined;
-  let endTime: number | undefined;
-  if (options.since) {
-    startTime = parseTimeString(options.since);
-  }
-  if (options.until) {
-    endTime = parseTimeString(options.until);
-  }
-
-  const result = await listTraces({
-    region: agent.region,
-    runtimeId: agent.runtimeId,
-    agentName: agent.agentName,
-    limit,
-    startTime,
-    endTime,
-  });
-
-  if (!result.success) {
-    return { success: false, error: result.error, consoleUrl };
-  }
-
-  return {
-    success: true,
-    agentName: agent.agentName,
-    targetName: agent.targetName,
-    consoleUrl,
-    traces: result.traces,
-  };
 }
 
 export interface TracesGetResult {
@@ -89,42 +95,47 @@ export async function handleTracesGet(
 
   const { agent } = resolved;
 
-  const consoleUrl = buildTraceConsoleUrl({
-    region: agent.region,
-    accountId: agent.accountId,
-    runtimeId: agent.runtimeId,
-    agentName: agent.agentName,
+  // Promote the resolved agent's region to AWS_REGION/AWS_DEFAULT_REGION so
+  // any SDK clients constructed without an explicit region pick it up.
+  // See https://github.com/aws/agentcore-cli/issues/924.
+  return withTargetRegion(agent.region, async () => {
+    const consoleUrl = buildTraceConsoleUrl({
+      region: agent.region,
+      accountId: agent.accountId,
+      runtimeId: agent.runtimeId,
+      agentName: agent.agentName,
+    });
+
+    // Parse time options
+    let startTime: number | undefined;
+    let endTime: number | undefined;
+    if (options.since) {
+      startTime = parseTimeString(options.since);
+    }
+    if (options.until) {
+      endTime = parseTimeString(options.until);
+    }
+
+    const result = await getTrace({
+      region: agent.region,
+      runtimeId: agent.runtimeId,
+      agentName: agent.agentName,
+      traceId,
+      outputPath: options.output,
+      startTime,
+      endTime,
+    });
+
+    if (!result.success) {
+      return { success: false, error: result.error, consoleUrl };
+    }
+
+    return {
+      success: true,
+      agentName: agent.agentName,
+      targetName: agent.targetName,
+      consoleUrl,
+      filePath: result.filePath,
+    };
   });
-
-  // Parse time options
-  let startTime: number | undefined;
-  let endTime: number | undefined;
-  if (options.since) {
-    startTime = parseTimeString(options.since);
-  }
-  if (options.until) {
-    endTime = parseTimeString(options.until);
-  }
-
-  const result = await getTrace({
-    region: agent.region,
-    runtimeId: agent.runtimeId,
-    agentName: agent.agentName,
-    traceId,
-    outputPath: options.output,
-    startTime,
-    endTime,
-  });
-
-  if (!result.success) {
-    return { success: false, error: result.error, consoleUrl };
-  }
-
-  return {
-    success: true,
-    agentName: agent.agentName,
-    targetName: agent.targetName,
-    consoleUrl,
-    filePath: result.filePath,
-  };
 }

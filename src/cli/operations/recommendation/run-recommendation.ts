@@ -17,6 +17,7 @@ import type {
 import { getRecommendation, startRecommendation } from '../../aws/agentcore-recommendation';
 import { arnPrefix } from '../../aws/partition';
 import { detectRegion } from '../../aws/region';
+import { withTargetRegion } from '../../aws/target-region';
 import { ExecLogger } from '../../logging/exec-logger';
 import { DEFAULT_POLL_INTERVAL_MS, MAX_POLL_DURATION_MS, MAX_POLL_RETRIES, TERMINAL_STATUSES } from './constants';
 import { fetchSessionSpans } from './fetch-session-spans';
@@ -51,279 +52,287 @@ export async function runRecommendationCommand(
     logger?.log(`Region: ${region}, Stage: ${stage}`);
     logger?.endStep('success');
 
-    // 2. Resolve agent from deployed state (needed for log group ARNs)
-    logger?.startStep('Resolve agent and evaluators');
-    const agentState = resolveAgentState(deployedState, options.agent);
-    if (!agentState) {
-      logger?.log(`Agent "${options.agent}" not found in deployed state`, 'error');
-      logger?.endStep('error', `Agent "${options.agent}" not deployed`);
-      logger?.finalize(false);
-      return {
-        success: false,
-        error: `Agent "${options.agent}" not deployed. Run \`agentcore deploy\` first.`,
-        logFilePath: logger?.logFilePath,
-      };
-    }
-    logger?.log(`Agent: ${options.agent} (runtime: ${agentState.runtimeId})`);
-
-    // 3. Resolve evaluator ID/ARN (API accepts exactly one for system-prompt, none for tool-desc)
-    const evaluatorIds: string[] = [];
-    for (const evaluator of options.evaluators) {
-      const evaluatorId = resolveEvaluatorId(deployedState, evaluator, region);
-      if (!evaluatorId) {
-        return {
-          success: false,
-          error: `Evaluator "${evaluator}" not found in deployed state. Use a Builtin.* name, a full ARN, or deploy a custom evaluator first.`,
-          logFilePath: logger?.logFilePath,
-        };
-      }
-      evaluatorIds.push(evaluatorId);
-    }
-    if (options.type === 'SYSTEM_PROMPT_RECOMMENDATION' && evaluatorIds.length !== 1) {
-      return {
-        success: false,
-        error: 'System prompt recommendations require exactly one evaluator.',
-        logFilePath: logger?.logFilePath,
-      };
-    }
-    logger?.log(`Evaluators: ${evaluatorIds.join(', ') || '(none)'}`);
-    logger?.endStep('success');
-
-    // 4. Read input content (if from file)
-    let inlineContent: string | undefined;
-    if (options.inputSource === 'file' && options.promptFile) {
-      inlineContent = readFileSync(options.promptFile, 'utf-8');
-    } else if (options.inputSource === 'inline') {
-      inlineContent = options.inlineContent;
-    }
-
-    // Validate that system prompt content is non-empty (API rejects empty text)
-    if (
-      options.type === 'SYSTEM_PROMPT_RECOMMENDATION' &&
-      options.inputSource !== 'config-bundle' &&
-      !inlineContent?.trim()
-    ) {
-      return {
-        success: false,
-        error: 'System prompt content is required. Provide via --inline, --prompt-file, or --bundle-name.',
-        logFilePath: logger?.logFilePath,
-      };
-    }
-
-    // 5. Extract account ID from agent runtime ARN
-    const accountId = extractAccountIdFromArn(agentState.runtimeArn);
-
-    // 5b. Resolve config bundle ARN from deployed state (if using config bundle)
-    let bundleArn: string | undefined;
-    if (options.inputSource === 'config-bundle' && options.bundleName) {
-      if (options.bundleName.startsWith('arn:')) {
-        // Already an ARN (e.g. from TUI which stores the ARN directly)
-        bundleArn = options.bundleName;
-      } else {
-        // Human-readable name (e.g. from CLI --bundle-name flag) — resolve from deployed state
-        for (const targetName of Object.keys(deployedState.targets ?? {})) {
-          const target = deployedState.targets?.[targetName];
-          const bundle = target?.resources?.configBundles?.[options.bundleName];
-          if (bundle?.bundleArn) {
-            bundleArn = bundle.bundleArn;
-            break;
-          }
-        }
-        if (!bundleArn) {
-          return {
-            success: false,
-            error: `Config bundle "${options.bundleName}" not found in deployed state. Run \`agentcore deploy\` first.`,
-            logFilePath: logger?.logFilePath,
-          };
-        }
-      }
-      logger?.log(`Resolved bundle ARN: ${bundleArn}`);
-    }
-
-    // 5c. Resolve short-form systemPromptJsonPath (e.g. "systemPrompt") to full JSONPath
-    let resolvedSystemPromptJsonPath = options.systemPromptJsonPath;
-    if (
-      options.inputSource === 'config-bundle' &&
-      options.bundleName &&
-      resolvedSystemPromptJsonPath &&
-      !resolvedSystemPromptJsonPath.startsWith('$')
-    ) {
-      // User provided a short field name like "systemPrompt" — resolve from agentcore.json
-      const bundleName = options.bundleName.startsWith('arn:')
-        ? // Find bundle name from ARN by matching deployed state
-          Object.values(deployedState.targets)
-            .flatMap(t => Object.entries(t.resources?.configBundles ?? {}))
-            .find(([, b]) => b.bundleArn === options.bundleName)?.[0]
-        : options.bundleName;
-
-      if (bundleName) {
-        const projBundle = projectSpec.configBundles?.find(b => b.name === bundleName);
-        if (projBundle?.components) {
-          const subPath = resolvedSystemPromptJsonPath;
-          // Use the first component key, resolved to a real ARN
-          const firstComponentKey = Object.keys(projBundle.components)[0];
-          if (firstComponentKey) {
-            const resolvedKey = resolveComponentKeyForJsonPath(firstComponentKey, deployedState);
-            resolvedSystemPromptJsonPath = `$.${resolvedKey}.configuration.${subPath}`;
-            logger?.log(`Resolved short JSONPath "${subPath}" → "${resolvedSystemPromptJsonPath}"`);
-          }
-        }
-      }
-    }
-
-    // 6. Build recommendationConfig based on type
-    const recommendationConfig = await buildRecommendationConfig({
-      type: options.type,
-      inlineContent,
-      bundleArn,
-      bundleVersion: options.bundleVersion,
-      systemPromptJsonPath: resolvedSystemPromptJsonPath,
-      toolDescJsonPaths: options.toolDescJsonPaths,
-      inputSource: options.inputSource,
-      tools: options.tools,
-      traceSource: options.traceSource,
-      lookbackDays: options.lookbackDays,
-      sessionIds: options.sessionIds,
-      spansFile: options.spansFile,
-      runtimeId: agentState.runtimeId,
-      accountId,
-      region,
-      evaluatorIds,
-      onProgress,
-      logger,
-    });
-
-    // 7. Start the recommendation
-    logger?.startStep('Start recommendation');
-    const recommendationName = options.recommendationName ?? `${projectSpec.name}_${options.agent}_${Date.now()}`;
-    onProgress?.('starting', `Starting recommendation "${recommendationName}"...`);
-
-    const startPayload = {
-      region,
-      name: recommendationName,
-      type: options.type,
-      recommendationConfig,
-    };
-    logger?.log(`Request payload:\n${JSON.stringify(startPayload, null, 2)}`);
-
-    const startResult = await startRecommendation(startPayload);
-
-    logger?.log(`Response: ${JSON.stringify(startResult, null, 2)}`);
-    logger?.endStep('success');
-    onProgress?.('started', `Recommendation created: ${startResult.recommendationId} (status: ${startResult.status})`);
-    options.onStarted?.({ recommendationId: startResult.recommendationId, region });
-
-    // 8. Poll GetRecommendation until terminal status
-    logger?.startStep('Poll for completion');
-    const maxDurationMs = options.maxPollDurationMs ?? MAX_POLL_DURATION_MS;
-    const pollStartTime = Date.now();
-    let currentStatus = startResult.status;
-    let consecutiveFailures = 0;
-
-    while (!TERMINAL_STATUSES.has(currentStatus)) {
-      await sleep(pollIntervalMs);
-
-      // Check max poll duration
-      if (Date.now() - pollStartTime > maxDurationMs) {
-        logger?.log(`Max poll duration (${maxDurationMs}ms) exceeded`, 'error');
-        logger?.endStep('error', 'Poll timeout');
+    // Promote the resolved region to AWS_REGION/AWS_DEFAULT_REGION so any
+    // SDK clients constructed below without an explicit region pick it up.
+    // See https://github.com/aws/agentcore-cli/issues/924.
+    return await withTargetRegion(region, async () => {
+      // 2. Resolve agent from deployed state (needed for log group ARNs)
+      logger?.startStep('Resolve agent and evaluators');
+      const agentState = resolveAgentState(deployedState, options.agent);
+      if (!agentState) {
+        logger?.log(`Agent "${options.agent}" not found in deployed state`, 'error');
+        logger?.endStep('error', `Agent "${options.agent}" not deployed`);
         logger?.finalize(false);
         return {
           success: false,
-          error: `Polling timed out after ${Math.round(maxDurationMs / 60000)} minutes. The recommendation may still be running server-side.\nRecommendation ID: ${startResult.recommendationId}`,
-          recommendationId: startResult.recommendationId,
-          status: currentStatus,
+          error: `Agent "${options.agent}" not deployed. Run \`agentcore deploy\` first.`,
+          logFilePath: logger?.logFilePath,
+        };
+      }
+      logger?.log(`Agent: ${options.agent} (runtime: ${agentState.runtimeId})`);
+
+      // 3. Resolve evaluator ID/ARN (API accepts exactly one for system-prompt, none for tool-desc)
+      const evaluatorIds: string[] = [];
+      for (const evaluator of options.evaluators) {
+        const evaluatorId = resolveEvaluatorId(deployedState, evaluator, region);
+        if (!evaluatorId) {
+          return {
+            success: false,
+            error: `Evaluator "${evaluator}" not found in deployed state. Use a Builtin.* name, a full ARN, or deploy a custom evaluator first.`,
+            logFilePath: logger?.logFilePath,
+          };
+        }
+        evaluatorIds.push(evaluatorId);
+      }
+      if (options.type === 'SYSTEM_PROMPT_RECOMMENDATION' && evaluatorIds.length !== 1) {
+        return {
+          success: false,
+          error: 'System prompt recommendations require exactly one evaluator.',
+          logFilePath: logger?.logFilePath,
+        };
+      }
+      logger?.log(`Evaluators: ${evaluatorIds.join(', ') || '(none)'}`);
+      logger?.endStep('success');
+
+      // 4. Read input content (if from file)
+      let inlineContent: string | undefined;
+      if (options.inputSource === 'file' && options.promptFile) {
+        inlineContent = readFileSync(options.promptFile, 'utf-8');
+      } else if (options.inputSource === 'inline') {
+        inlineContent = options.inlineContent;
+      }
+
+      // Validate that system prompt content is non-empty (API rejects empty text)
+      if (
+        options.type === 'SYSTEM_PROMPT_RECOMMENDATION' &&
+        options.inputSource !== 'config-bundle' &&
+        !inlineContent?.trim()
+      ) {
+        return {
+          success: false,
+          error: 'System prompt content is required. Provide via --inline, --prompt-file, or --bundle-name.',
           logFilePath: logger?.logFilePath,
         };
       }
 
-      // Poll with retry for transient failures
-      let pollResult;
-      try {
-        pollResult = await getRecommendation({
-          region,
-          recommendationId: startResult.recommendationId,
-        });
-        consecutiveFailures = 0;
-      } catch (pollErr) {
-        consecutiveFailures++;
-        const pollErrMsg = pollErr instanceof Error ? pollErr.message : String(pollErr);
-        logger?.log(`Poll attempt failed (${consecutiveFailures}/${MAX_POLL_RETRIES}): ${pollErrMsg}`, 'error');
+      // 5. Extract account ID from agent runtime ARN
+      const accountId = extractAccountIdFromArn(agentState.runtimeArn);
 
-        if (consecutiveFailures >= MAX_POLL_RETRIES) {
-          logger?.endStep('error', `${MAX_POLL_RETRIES} consecutive poll failures`);
+      // 5b. Resolve config bundle ARN from deployed state (if using config bundle)
+      let bundleArn: string | undefined;
+      if (options.inputSource === 'config-bundle' && options.bundleName) {
+        if (options.bundleName.startsWith('arn:')) {
+          // Already an ARN (e.g. from TUI which stores the ARN directly)
+          bundleArn = options.bundleName;
+        } else {
+          // Human-readable name (e.g. from CLI --bundle-name flag) — resolve from deployed state
+          for (const targetName of Object.keys(deployedState.targets ?? {})) {
+            const target = deployedState.targets?.[targetName];
+            const bundle = target?.resources?.configBundles?.[options.bundleName];
+            if (bundle?.bundleArn) {
+              bundleArn = bundle.bundleArn;
+              break;
+            }
+          }
+          if (!bundleArn) {
+            return {
+              success: false,
+              error: `Config bundle "${options.bundleName}" not found in deployed state. Run \`agentcore deploy\` first.`,
+              logFilePath: logger?.logFilePath,
+            };
+          }
+        }
+        logger?.log(`Resolved bundle ARN: ${bundleArn}`);
+      }
+
+      // 5c. Resolve short-form systemPromptJsonPath (e.g. "systemPrompt") to full JSONPath
+      let resolvedSystemPromptJsonPath = options.systemPromptJsonPath;
+      if (
+        options.inputSource === 'config-bundle' &&
+        options.bundleName &&
+        resolvedSystemPromptJsonPath &&
+        !resolvedSystemPromptJsonPath.startsWith('$')
+      ) {
+        // User provided a short field name like "systemPrompt" — resolve from agentcore.json
+        const bundleName = options.bundleName.startsWith('arn:')
+          ? // Find bundle name from ARN by matching deployed state
+            Object.values(deployedState.targets)
+              .flatMap(t => Object.entries(t.resources?.configBundles ?? {}))
+              .find(([, b]) => b.bundleArn === options.bundleName)?.[0]
+          : options.bundleName;
+
+        if (bundleName) {
+          const projBundle = projectSpec.configBundles?.find(b => b.name === bundleName);
+          if (projBundle?.components) {
+            const subPath = resolvedSystemPromptJsonPath;
+            // Use the first component key, resolved to a real ARN
+            const firstComponentKey = Object.keys(projBundle.components)[0];
+            if (firstComponentKey) {
+              const resolvedKey = resolveComponentKeyForJsonPath(firstComponentKey, deployedState);
+              resolvedSystemPromptJsonPath = `$.${resolvedKey}.configuration.${subPath}`;
+              logger?.log(`Resolved short JSONPath "${subPath}" → "${resolvedSystemPromptJsonPath}"`);
+            }
+          }
+        }
+      }
+
+      // 6. Build recommendationConfig based on type
+      const recommendationConfig = await buildRecommendationConfig({
+        type: options.type,
+        inlineContent,
+        bundleArn,
+        bundleVersion: options.bundleVersion,
+        systemPromptJsonPath: resolvedSystemPromptJsonPath,
+        toolDescJsonPaths: options.toolDescJsonPaths,
+        inputSource: options.inputSource,
+        tools: options.tools,
+        traceSource: options.traceSource,
+        lookbackDays: options.lookbackDays,
+        sessionIds: options.sessionIds,
+        spansFile: options.spansFile,
+        runtimeId: agentState.runtimeId,
+        accountId,
+        region,
+        evaluatorIds,
+        onProgress,
+        logger,
+      });
+
+      // 7. Start the recommendation
+      logger?.startStep('Start recommendation');
+      const recommendationName = options.recommendationName ?? `${projectSpec.name}_${options.agent}_${Date.now()}`;
+      onProgress?.('starting', `Starting recommendation "${recommendationName}"...`);
+
+      const startPayload = {
+        region,
+        name: recommendationName,
+        type: options.type,
+        recommendationConfig,
+      };
+      logger?.log(`Request payload:\n${JSON.stringify(startPayload, null, 2)}`);
+
+      const startResult = await startRecommendation(startPayload);
+
+      logger?.log(`Response: ${JSON.stringify(startResult, null, 2)}`);
+      logger?.endStep('success');
+      onProgress?.(
+        'started',
+        `Recommendation created: ${startResult.recommendationId} (status: ${startResult.status})`
+      );
+      options.onStarted?.({ recommendationId: startResult.recommendationId, region });
+
+      // 8. Poll GetRecommendation until terminal status
+      logger?.startStep('Poll for completion');
+      const maxDurationMs = options.maxPollDurationMs ?? MAX_POLL_DURATION_MS;
+      const pollStartTime = Date.now();
+      let currentStatus = startResult.status;
+      let consecutiveFailures = 0;
+
+      while (!TERMINAL_STATUSES.has(currentStatus)) {
+        await sleep(pollIntervalMs);
+
+        // Check max poll duration
+        if (Date.now() - pollStartTime > maxDurationMs) {
+          logger?.log(`Max poll duration (${maxDurationMs}ms) exceeded`, 'error');
+          logger?.endStep('error', 'Poll timeout');
           logger?.finalize(false);
           return {
             success: false,
-            error: `Polling failed after ${MAX_POLL_RETRIES} consecutive errors: ${pollErrMsg}\nThe recommendation may still be running server-side.\nRecommendation ID: ${startResult.recommendationId}`,
+            error: `Polling timed out after ${Math.round(maxDurationMs / 60000)} minutes. The recommendation may still be running server-side.\nRecommendation ID: ${startResult.recommendationId}`,
             recommendationId: startResult.recommendationId,
             status: currentStatus,
             logFilePath: logger?.logFilePath,
           };
         }
-        onProgress?.('polling', `Poll error, retrying (${consecutiveFailures}/${MAX_POLL_RETRIES})...`);
-        continue;
-      }
 
-      currentStatus = pollResult.status;
-      onProgress?.('polling', `Status: ${currentStatus}`);
-
-      if (TERMINAL_STATUSES.has(currentStatus)) {
-        if (currentStatus === 'COMPLETED' || currentStatus === 'SUCCEEDED') {
-          logger?.log(`Completed. Result:\n${JSON.stringify(pollResult.recommendationResult, null, 2)}`);
-          logger?.endStep('success');
-          logger?.finalize(true);
-          return {
-            success: true,
-            recommendationId: startResult.recommendationId,
-            status: currentStatus,
-            result: pollResult.recommendationResult,
+        // Poll with retry for transient failures
+        let pollResult;
+        try {
+          pollResult = await getRecommendation({
             region,
-            startedAt: pollResult.createdAt,
-            completedAt: pollResult.completedAt,
+            recommendationId: startResult.recommendationId,
+          });
+          consecutiveFailures = 0;
+        } catch (pollErr) {
+          consecutiveFailures++;
+          const pollErrMsg = pollErr instanceof Error ? pollErr.message : String(pollErr);
+          logger?.log(`Poll attempt failed (${consecutiveFailures}/${MAX_POLL_RETRIES}): ${pollErrMsg}`, 'error');
+
+          if (consecutiveFailures >= MAX_POLL_RETRIES) {
+            logger?.endStep('error', `${MAX_POLL_RETRIES} consecutive poll failures`);
+            logger?.finalize(false);
+            return {
+              success: false,
+              error: `Polling failed after ${MAX_POLL_RETRIES} consecutive errors: ${pollErrMsg}\nThe recommendation may still be running server-side.\nRecommendation ID: ${startResult.recommendationId}`,
+              recommendationId: startResult.recommendationId,
+              status: currentStatus,
+              logFilePath: logger?.logFilePath,
+            };
+          }
+          onProgress?.('polling', `Poll error, retrying (${consecutiveFailures}/${MAX_POLL_RETRIES})...`);
+          continue;
+        }
+
+        currentStatus = pollResult.status;
+        onProgress?.('polling', `Status: ${currentStatus}`);
+
+        if (TERMINAL_STATUSES.has(currentStatus)) {
+          if (currentStatus === 'COMPLETED' || currentStatus === 'SUCCEEDED') {
+            logger?.log(`Completed. Result:\n${JSON.stringify(pollResult.recommendationResult, null, 2)}`);
+            logger?.endStep('success');
+            logger?.finalize(true);
+            return {
+              success: true,
+              recommendationId: startResult.recommendationId,
+              status: currentStatus,
+              result: pollResult.recommendationResult,
+              region,
+              startedAt: pollResult.createdAt,
+              completedAt: pollResult.completedAt,
+              logFilePath: logger?.logFilePath,
+            };
+          }
+
+          // Extract error details from the FAILED response
+          const failureDetails = extractFailureDetails(pollResult);
+          logger?.log(`Terminal status: ${currentStatus}`, 'error');
+          logger?.log(`Full poll response:\n${JSON.stringify(pollResult, null, 2)}`, 'error');
+          if (failureDetails) logger?.log(`Failure details: ${failureDetails}`, 'error');
+          logger?.endStep('error', `Status: ${currentStatus}`);
+          logger?.finalize(false);
+          // Log request IDs for debugging (only in log file, not shown in TUI)
+          const requestIds = [
+            startResult.requestId ? `Start: ${startResult.requestId}` : '',
+            pollResult.requestId ? `Poll: ${pollResult.requestId}` : '',
+          ]
+            .filter(Boolean)
+            .join(', ');
+          if (requestIds) logger?.log(`Request IDs: ${requestIds}`, 'error');
+
+          return {
+            success: false,
+            error: failureDetails
+              ? `Recommendation failed: ${failureDetails}`
+              : `Recommendation finished with status: ${currentStatus}`,
+            recommendationId: startResult.recommendationId,
+            status: currentStatus,
             logFilePath: logger?.logFilePath,
           };
         }
-
-        // Extract error details from the FAILED response
-        const failureDetails = extractFailureDetails(pollResult);
-        logger?.log(`Terminal status: ${currentStatus}`, 'error');
-        logger?.log(`Full poll response:\n${JSON.stringify(pollResult, null, 2)}`, 'error');
-        if (failureDetails) logger?.log(`Failure details: ${failureDetails}`, 'error');
-        logger?.endStep('error', `Status: ${currentStatus}`);
-        logger?.finalize(false);
-        // Log request IDs for debugging (only in log file, not shown in TUI)
-        const requestIds = [
-          startResult.requestId ? `Start: ${startResult.requestId}` : '',
-          pollResult.requestId ? `Poll: ${pollResult.requestId}` : '',
-        ]
-          .filter(Boolean)
-          .join(', ');
-        if (requestIds) logger?.log(`Request IDs: ${requestIds}`, 'error');
-
-        return {
-          success: false,
-          error: failureDetails
-            ? `Recommendation failed: ${failureDetails}`
-            : `Recommendation finished with status: ${currentStatus}`,
-          recommendationId: startResult.recommendationId,
-          status: currentStatus,
-          logFilePath: logger?.logFilePath,
-        };
       }
-    }
 
-    // Should not reach here, but handle gracefully
-    logger?.log(`Unexpected terminal status: ${currentStatus}`, 'error');
-    logger?.endStep('error', `Unexpected status: ${currentStatus}`);
-    logger?.finalize(false);
-    return {
-      success: false,
-      error: `Recommendation ended with unexpected status: ${currentStatus}`,
-      recommendationId: startResult.recommendationId,
-      status: currentStatus,
-      logFilePath: logger?.logFilePath,
-    };
+      // Should not reach here, but handle gracefully
+      logger?.log(`Unexpected terminal status: ${currentStatus}`, 'error');
+      logger?.endStep('error', `Unexpected status: ${currentStatus}`);
+      logger?.finalize(false);
+      return {
+        success: false,
+        error: `Recommendation ended with unexpected status: ${currentStatus}`,
+        recommendationId: startResult.recommendationId,
+        status: currentStatus,
+        logFilePath: logger?.logFilePath,
+      };
+    });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     logger?.log(`Error: ${errorMsg}`, 'error');

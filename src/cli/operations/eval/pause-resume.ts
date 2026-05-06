@@ -1,5 +1,6 @@
 import type { OnlineEvalExecutionStatus } from '../../aws/agentcore-control';
 import { updateOnlineEvalExecutionStatus } from '../../aws/agentcore-control';
+import { withTargetRegion } from '../../aws/target-region';
 import { loadDeployedProjectConfig } from '../resolve-agent';
 import type { OnlineEvalActionOptions } from './types';
 
@@ -93,19 +94,24 @@ export async function handlePauseResume(
 
   const executionStatus: OnlineEvalExecutionStatus = action === 'pause' ? 'DISABLED' : 'ENABLED';
 
-  try {
-    const result = await updateOnlineEvalExecutionStatus({
-      region: resolution.region,
-      onlineEvaluationConfigId: resolution.configId,
-      executionStatus,
-    });
+  // Promote the resolved region to AWS_REGION/AWS_DEFAULT_REGION so any
+  // SDK client constructed without an explicit region picks it up.
+  // See https://github.com/aws/agentcore-cli/issues/924.
+  return withTargetRegion(resolution.region, async () => {
+    try {
+      const result = await updateOnlineEvalExecutionStatus({
+        region: resolution.region,
+        onlineEvaluationConfigId: resolution.configId,
+        executionStatus,
+      });
 
-    return {
-      success: true,
-      configId: result.configId,
-      executionStatus: result.executionStatus,
-    };
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
+      return {
+        success: true,
+        configId: result.configId,
+        executionStatus: result.executionStatus,
+      };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
 }
