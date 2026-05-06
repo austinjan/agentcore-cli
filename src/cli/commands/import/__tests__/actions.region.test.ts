@@ -29,6 +29,19 @@ vi.mock('../yaml-parser', () => ({
   parseStarterToolkitYaml: vi.fn(),
 }));
 
+// ExecLogger creates a logs directory on construction; stub it out.
+vi.mock('../../../logging', () => ({
+  ExecLogger: class {
+    startStep() {}
+    endStep() {}
+    log() {}
+    finalize() {}
+    getRelativeLogPath() {
+      return '/tmp/exec.log';
+    }
+  },
+}));
+
 vi.mock('../../../../lib', async () => {
   const findConfigRoot = vi.fn();
   return {
@@ -72,7 +85,7 @@ describe('handleImport — region env promotion / restore', () => {
     // findConfigRoot returns undefined → handleImport returns early before any
     // region apply happens. Env should be untouched.
     const { findConfigRoot } = await import('../../../../lib');
-    vi.mocked(findConfigRoot).mockReturnValue(undefined);
+    vi.mocked(findConfigRoot).mockReturnValue(null);
 
     const result = await handleImport({ source: '/nonexistent.yaml' });
     expect(result.success).toBe(false);
@@ -85,7 +98,7 @@ describe('handleImport — region env promotion / restore', () => {
     process.env.AWS_DEFAULT_REGION = 'us-east-1';
 
     const { findConfigRoot } = await import('../../../../lib');
-    vi.mocked(findConfigRoot).mockReturnValue(undefined); // early-return path
+    vi.mocked(findConfigRoot).mockReturnValue(null); // early-return path
 
     await handleImport({ source: '/nonexistent.yaml' });
 
