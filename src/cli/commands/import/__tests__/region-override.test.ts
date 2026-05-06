@@ -158,9 +158,11 @@ ${physicalIdLines}    memory:
     // resolved target's region must win.
     mockReadAWSDeploymentTargets.mockResolvedValue([{ name: 'default', account: '111122223333', region: 'eu-west-2' }]);
 
-    let observedDuringPipeline: string | undefined;
+    let observedRegion: string | undefined;
+    let observedDefaultRegion: string | undefined;
     mockExecuteCdkImportPipeline.mockImplementation(() => {
-      observedDuringPipeline = process.env.AWS_REGION;
+      observedRegion = process.env.AWS_REGION;
+      observedDefaultRegion = process.env.AWS_DEFAULT_REGION;
       // Force-stop the pipeline so we don't have to mock CDK output parsing.
       return Promise.reject(new Error('forced-stop-after-region-check'));
     });
@@ -168,7 +170,8 @@ ${physicalIdLines}    memory:
     const result = await handleImport({ source: yamlPath });
 
     expect(result.success).toBe(false);
-    expect(observedDuringPipeline).toBe('eu-west-2');
+    expect(observedRegion).toBe('eu-west-2');
+    expect(observedDefaultRegion).toBe('eu-west-2');
     // Env must be restored to its prior value.
     expect(process.env.AWS_REGION).toBe('us-east-1');
     expect(process.env.AWS_DEFAULT_REGION).toBeUndefined();
@@ -189,15 +192,43 @@ ${physicalIdLines}    memory:
   });
 
   it('also propagates region in the no-physical-IDs (light) path when a target is present', async () => {
-    writeYaml('ap-southeast-2', /* withPhysicalIds */ false);
+    // YAML region differs from the resolved target's region so we can
+    // distinguish which one wins in each phase of the light path.
+    writeYaml('eu-west-3', /* withPhysicalIds */ false);
 
-    mockReadAWSDeploymentTargets.mockResolvedValue([
-      { name: 'default', account: '111122223333', region: 'ap-southeast-2' },
-    ]);
+    // Observe env at two points along the light path:
+    //  - readAWSDeploymentTargets() runs *after* the YAML region was applied
+    //    but *before* the resolved target's region is applied, so it should
+    //    see the YAML region.
+    //  - writeProjectSpec() runs *after* the resolved target region was
+    //    applied, so it should see the target region.
+    let observedAtTargetsRead: { region?: string; defaultRegion?: string } = {};
+    mockReadAWSDeploymentTargets.mockImplementation(() => {
+      observedAtTargetsRead = {
+        region: process.env.AWS_REGION,
+        defaultRegion: process.env.AWS_DEFAULT_REGION,
+      };
+      return Promise.resolve([{ name: 'default', account: '111122223333', region: 'ap-southeast-2' }]);
+    });
 
-    // The light path should not invoke the import pipeline; it just merges
-    // config and exits successfully. Capture env before that exit.
+    let observedAtConfigWrite: { region?: string; defaultRegion?: string } = {};
+    mockWriteProjectSpec.mockImplementation(() => {
+      observedAtConfigWrite = {
+        region: process.env.AWS_REGION,
+        defaultRegion: process.env.AWS_DEFAULT_REGION,
+      };
+      return Promise.resolve();
+    });
+
     const result = await handleImport({ source: yamlPath });
+
+    // Phase 1: YAML region was promoted before reading targets.
+    expect(observedAtTargetsRead.region).toBe('eu-west-3');
+    expect(observedAtTargetsRead.defaultRegion).toBe('eu-west-3');
+
+    // Phase 2: resolved target region overrides the YAML hint.
+    expect(observedAtConfigWrite.region).toBe('ap-southeast-2');
+    expect(observedAtConfigWrite.defaultRegion).toBe('ap-southeast-2');
 
     // Env must be restored at the end either way.
     expect(process.env.AWS_REGION).toBe('us-east-1');

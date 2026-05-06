@@ -107,18 +107,24 @@ describe('target-region', () => {
 
     it('applies the resolved target region inside fn and restores afterwards', async () => {
       process.env.AWS_REGION = 'us-east-1';
-      let observed: string | undefined;
+      let observedRegion: string | undefined;
+      let observedDefaultRegion: string | undefined;
 
       const result = await runWithTargetRegion(
         () => Promise.resolve(makeTarget('ap-southeast-2')),
         target => {
-          observed = process.env.AWS_REGION;
+          observedRegion = process.env.AWS_REGION;
+          observedDefaultRegion = process.env.AWS_DEFAULT_REGION;
           expect(target?.region).toBe('ap-southeast-2');
           return Promise.resolve('ok');
         }
       );
 
-      expect(observed).toBe('ap-southeast-2');
+      expect(observedRegion).toBe('ap-southeast-2');
+      // applyTargetRegionToEnv sets BOTH env vars; assert the second one too
+      // so a regression that drops AWS_DEFAULT_REGION inside the override
+      // window would be caught by this test.
+      expect(observedDefaultRegion).toBe('ap-southeast-2');
       expect(result).toBe('ok');
       expect(process.env.AWS_REGION).toBe('us-east-1');
     });
@@ -138,6 +144,40 @@ describe('target-region', () => {
 
       expect(observedRegion).toBe('us-east-1');
       expect(process.env.AWS_REGION).toBe('us-east-1');
+    });
+
+    it('skips the override when the resolved target has a falsy region', async () => {
+      process.env.AWS_REGION = 'us-east-1';
+      // Cast through unknown — at runtime the schema requires a non-empty
+      // region, but the implementation guards `!target?.region` so this
+      // case should be handled defensively.
+      const targetWithEmptyRegion = {
+        name: 'default',
+        account: '123456789012',
+        region: '',
+      } as unknown as AwsDeploymentTarget;
+
+      let observedRegion: string | undefined;
+      let observedDefaultRegion: string | undefined;
+      let receivedTarget: AwsDeploymentTarget | undefined;
+
+      await runWithTargetRegion(
+        () => Promise.resolve(targetWithEmptyRegion),
+        target => {
+          observedRegion = process.env.AWS_REGION;
+          observedDefaultRegion = process.env.AWS_DEFAULT_REGION;
+          receivedTarget = target;
+          return Promise.resolve();
+        }
+      );
+
+      // fn still receives the target object even though its region was falsy.
+      expect(receivedTarget).toBe(targetWithEmptyRegion);
+      // Env was not mutated by the override.
+      expect(observedRegion).toBe('us-east-1');
+      expect(observedDefaultRegion).toBeUndefined();
+      expect(process.env.AWS_REGION).toBe('us-east-1');
+      expect(process.env.AWS_DEFAULT_REGION).toBeUndefined();
     });
 
     it('restores env when fn throws', async () => {
