@@ -1,4 +1,3 @@
-import { ConfigIO } from '../../../lib';
 import { detectRegion } from '../region.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,21 +9,13 @@ vi.mock('@smithy/shared-ini-file-loader', () => ({
   loadSharedConfigFiles: mockLoadConfig,
 }));
 
-vi.mock('../../../lib', () => ({
-  ConfigIO: vi.fn(),
-}));
+const mockReadAWSDeploymentTargets = vi.fn();
 
-function mockTargets(targets: { name: string; region: string; account: string }[] | Error) {
-  vi.mocked(ConfigIO).mockImplementation(
-    () =>
-      ({
-        readAWSDeploymentTargets: vi.fn().mockImplementation(() => {
-          if (targets instanceof Error) return Promise.reject(targets);
-          return Promise.resolve(targets);
-        }),
-      }) as unknown as ConfigIO
-  );
-}
+vi.mock('../../../lib', () => ({
+  ConfigIO: function () {
+    return { readAWSDeploymentTargets: () => mockReadAWSDeploymentTargets() };
+  },
+}));
 
 describe('detectRegion', () => {
   const savedRegion = process.env.AWS_REGION;
@@ -37,7 +28,7 @@ describe('detectRegion', () => {
     delete process.env.AWS_DEFAULT_REGION;
     delete process.env.AWS_PROFILE;
     // Default: no aws-targets — most existing tests assume env-based detection
-    mockTargets(new Error('no project'));
+    mockReadAWSDeploymentTargets.mockRejectedValue(new Error('no project'));
   });
 
   afterEach(() => {
@@ -51,7 +42,9 @@ describe('detectRegion', () => {
 
   describe('aws-targets precedence', () => {
     it('returns region from aws-targets.json when present', async () => {
-      mockTargets([{ name: 'default', region: 'ap-southeast-2', account: '111111111111' }]);
+      mockReadAWSDeploymentTargets.mockResolvedValue([
+        { name: 'default', region: 'ap-southeast-2', account: '111111111111' },
+      ]);
 
       const result = await detectRegion();
       expect(result.region).toBe('ap-southeast-2');
@@ -59,7 +52,9 @@ describe('detectRegion', () => {
     });
 
     it('aws-targets.json takes precedence over AWS_REGION env var', async () => {
-      mockTargets([{ name: 'default', region: 'ap-southeast-2', account: '111111111111' }]);
+      mockReadAWSDeploymentTargets.mockResolvedValue([
+        { name: 'default', region: 'ap-southeast-2', account: '111111111111' },
+      ]);
       process.env.AWS_REGION = 'us-east-1';
 
       const result = await detectRegion();
@@ -68,7 +63,7 @@ describe('detectRegion', () => {
     });
 
     it('falls back to env when aws-targets.json is empty', async () => {
-      mockTargets([]);
+      mockReadAWSDeploymentTargets.mockResolvedValue([]);
       process.env.AWS_REGION = 'eu-west-1';
 
       const result = await detectRegion();
@@ -77,7 +72,7 @@ describe('detectRegion', () => {
     });
 
     it('falls back to env when ConfigIO throws (no project)', async () => {
-      mockTargets(new Error('no project'));
+      mockReadAWSDeploymentTargets.mockRejectedValue(new Error('no project'));
       process.env.AWS_REGION = 'eu-west-1';
 
       const result = await detectRegion();
