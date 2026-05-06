@@ -1,6 +1,5 @@
 import type { ConfigIO } from '../../../lib';
 import type { AwsDeploymentTarget } from '../../../schema';
-import { withTargetRegion } from '../../aws';
 import { LocalCdkProject } from '../../cdk/local-cdk-project';
 import { silentIoHost } from '../../cdk/toolkit-lib';
 import { bootstrapEnvironment, buildCdkProject, checkBootstrapNeeded, synthesizeCdk } from '../../operations/deploy';
@@ -53,99 +52,100 @@ export async function executeCdkImportPipeline(input: CdkImportPipelineInput): P
     deployedStateEntries,
   } = input;
 
-  // Defense-in-depth: ensure aws-targets.json is authoritative for any SDK
-  // client built inside this pipeline (CDK toolkit-lib, CFN, S3 asset publish).
+  // NOTE: Region promotion is owned by the caller (`handleImport` in
+  // actions.ts), which captures the original env at function entry and
+  // restores once in its outer `finally`. We intentionally do not wrap
+  // again here to avoid double-mutating env on every import.
   // See https://github.com/aws/agentcore-cli/issues/924.
-  return withTargetRegion(target.region, async () => {
-    // 1. Build CDK project
-    onProgress('Building CDK project...');
-    const cdkProject = new LocalCdkProject(projectRoot);
-    await buildCdkProject(cdkProject);
 
-    // 2. Synthesize CloudFormation template
-    onProgress('Synthesizing CloudFormation template...');
-    const synthResult = await synthesizeCdk(cdkProject, { ioHost: silentIoHost });
-    const { toolkitWrapper } = synthResult;
+  // 1. Build CDK project
+  onProgress('Building CDK project...');
+  const cdkProject = new LocalCdkProject(projectRoot);
+  await buildCdkProject(cdkProject);
 
-    const synthInfo = await toolkitWrapper.synth();
-    const assemblyDirectory = synthInfo.assemblyDirectory;
-    const synthTemplatePath = path.join(assemblyDirectory, `${stackName}.template.json`);
+  // 2. Synthesize CloudFormation template
+  onProgress('Synthesizing CloudFormation template...');
+  const synthResult = await synthesizeCdk(cdkProject, { ioHost: silentIoHost });
+  const { toolkitWrapper } = synthResult;
 
-    let synthTemplate: CfnTemplate;
-    try {
-      synthTemplate = JSON.parse(fs.readFileSync(synthTemplatePath, 'utf-8')) as CfnTemplate;
-    } catch {
-      const files = fs.readdirSync(assemblyDirectory).filter((f: string) => f.endsWith('.template.json'));
-      if (files.length === 0) {
-        await toolkitWrapper.dispose();
-        return { success: false, error: 'No CloudFormation template found in CDK assembly' };
-      }
-      synthTemplate = JSON.parse(fs.readFileSync(path.join(assemblyDirectory, files[0]!), 'utf-8')) as CfnTemplate;
+  const synthInfo = await toolkitWrapper.synth();
+  const assemblyDirectory = synthInfo.assemblyDirectory;
+  const synthTemplatePath = path.join(assemblyDirectory, `${stackName}.template.json`);
+
+  let synthTemplate: CfnTemplate;
+  try {
+    synthTemplate = JSON.parse(fs.readFileSync(synthTemplatePath, 'utf-8')) as CfnTemplate;
+  } catch {
+    const files = fs.readdirSync(assemblyDirectory).filter((f: string) => f.endsWith('.template.json'));
+    if (files.length === 0) {
+      await toolkitWrapper.dispose();
+      return { success: false, error: 'No CloudFormation template found in CDK assembly' };
     }
+    synthTemplate = JSON.parse(fs.readFileSync(path.join(assemblyDirectory, files[0]!), 'utf-8')) as CfnTemplate;
+  }
 
-    // 3. Check CDK bootstrap and auto-bootstrap if needed
-    onProgress('Checking CDK bootstrap status...');
-    const bootstrapCheck = await checkBootstrapNeeded([target]);
-    if (bootstrapCheck.needsBootstrap) {
-      onProgress('Bootstrapping AWS environment...');
-      await bootstrapEnvironment(toolkitWrapper, target);
-      onProgress('CDK bootstrap complete');
-    }
+  // 3. Check CDK bootstrap and auto-bootstrap if needed
+  onProgress('Checking CDK bootstrap status...');
+  const bootstrapCheck = await checkBootstrapNeeded([target]);
+  if (bootstrapCheck.needsBootstrap) {
+    onProgress('Bootstrapping AWS environment...');
+    await bootstrapEnvironment(toolkitWrapper, target);
+    onProgress('CDK bootstrap complete');
+  }
 
-    await toolkitWrapper.dispose();
+  await toolkitWrapper.dispose();
 
-    // 4. Publish CDK assets to S3
-    onProgress('Publishing CDK assets to S3...');
-    await publishCdkAssets(assemblyDirectory, target.region, onProgress);
+  // 4. Publish CDK assets to S3
+  onProgress('Publishing CDK assets to S3...');
+  await publishCdkAssets(assemblyDirectory, target.region, onProgress);
 
-    // 5. Phase 1: Deploy companion resources
-    onProgress('Phase 1: Deploying companion resources (IAM roles, policies)...');
-    const phase1Result = await executePhase1({
-      region: target.region,
-      stackName,
-      synthTemplate,
-      onProgress,
-    });
-
-    if (!phase1Result.success) {
-      return { success: false, error: `Phase 1 failed: ${phase1Result.error}` };
-    }
-
-    // 6. Read deployed template
-    onProgress('Reading deployed template...');
-    const deployedTemplate = await getDeployedTemplate(target.region, stackName);
-    if (!deployedTemplate) {
-      return { success: false, error: 'Could not read deployed template after Phase 1' };
-    }
-
-    // 7. Build resources to import (caller-specific logic)
-    const resourcesToImport = buildResourcesToImport(synthTemplate, deployedTemplate);
-
-    if (resourcesToImport.length === 0) {
-      return { success: true, noResources: true };
-    }
-
-    // 8. Phase 2: Import resources via CloudFormation
-    onProgress(`Phase 2: Importing ${resourcesToImport.length} resource(s) via CloudFormation IMPORT...`);
-    const phase2Result = await executePhase2({
-      region: target.region,
-      stackName,
-      deployedTemplate,
-      synthTemplate,
-      resourcesToImport,
-      assemblyDirectory,
-      onProgress,
-    });
-
-    if (!phase2Result.success) {
-      return { success: false, error: `Phase 2 failed: ${phase2Result.error}` };
-    }
-
-    // 9. Update deployed state
-    onProgress('Updating deployed state...');
-    await updateDeployedState(configIO, targetName, stackName, deployedStateEntries);
-    onProgress('Deployed state updated');
-
-    return { success: true };
+  // 5. Phase 1: Deploy companion resources
+  onProgress('Phase 1: Deploying companion resources (IAM roles, policies)...');
+  const phase1Result = await executePhase1({
+    region: target.region,
+    stackName,
+    synthTemplate,
+    onProgress,
   });
+
+  if (!phase1Result.success) {
+    return { success: false, error: `Phase 1 failed: ${phase1Result.error}` };
+  }
+
+  // 6. Read deployed template
+  onProgress('Reading deployed template...');
+  const deployedTemplate = await getDeployedTemplate(target.region, stackName);
+  if (!deployedTemplate) {
+    return { success: false, error: 'Could not read deployed template after Phase 1' };
+  }
+
+  // 7. Build resources to import (caller-specific logic)
+  const resourcesToImport = buildResourcesToImport(synthTemplate, deployedTemplate);
+
+  if (resourcesToImport.length === 0) {
+    return { success: true, noResources: true };
+  }
+
+  // 8. Phase 2: Import resources via CloudFormation
+  onProgress(`Phase 2: Importing ${resourcesToImport.length} resource(s) via CloudFormation IMPORT...`);
+  const phase2Result = await executePhase2({
+    region: target.region,
+    stackName,
+    deployedTemplate,
+    synthTemplate,
+    resourcesToImport,
+    assemblyDirectory,
+    onProgress,
+  });
+
+  if (!phase2Result.success) {
+    return { success: false, error: `Phase 2 failed: ${phase2Result.error}` };
+  }
+
+  // 9. Update deployed state
+  onProgress('Updating deployed state...');
+  await updateDeployedState(configIO, targetName, stackName, deployedStateEntries);
+  onProgress('Deployed state updated');
+
+  return { success: true };
 }

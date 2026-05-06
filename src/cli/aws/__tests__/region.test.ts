@@ -1,4 +1,4 @@
-import { detectRegion } from '../region.js';
+import { clearAwsTargetsRegionCache, detectRegion } from '../region.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockLoadConfig } = vi.hoisted(() => ({
@@ -27,6 +27,9 @@ describe('detectRegion', () => {
     delete process.env.AWS_REGION;
     delete process.env.AWS_DEFAULT_REGION;
     delete process.env.AWS_PROFILE;
+    // Clear the per-process aws-targets cache between tests so each test
+    // observes its own mock implementation. Production code never needs this.
+    clearAwsTargetsRegionCache();
     // Default: no aws-targets — most existing tests assume env-based detection
     mockResolveAWSDeploymentTargets.mockRejectedValue(new Error('no project'));
   });
@@ -78,6 +81,41 @@ describe('detectRegion', () => {
       const result = await detectRegion();
       expect(result.region).toBe('eu-west-1');
       expect(result.source).toBe('env');
+    });
+
+    it('falls back to env when aws-targets entry has an invalid region value', async () => {
+      mockResolveAWSDeploymentTargets.mockResolvedValue([
+        // 'not-a-real-region' fails the AgentCoreRegion zod guard
+        { name: 'default', region: 'not-a-real-region', account: '111111111111' },
+      ]);
+      process.env.AWS_REGION = 'eu-west-1';
+
+      const result = await detectRegion();
+      expect(result.region).toBe('eu-west-1');
+      expect(result.source).toBe('env');
+    });
+
+    it('falls back to env when aws-targets entry has no region field', async () => {
+      // Region missing entirely (e.g. partial / legacy file). Guard `targetRegion && ...`
+      // should drop through.
+      mockResolveAWSDeploymentTargets.mockResolvedValue([{ name: 'default', account: '111111111111' }]);
+      process.env.AWS_REGION = 'eu-west-1';
+
+      const result = await detectRegion();
+      expect(result.region).toBe('eu-west-1');
+      expect(result.source).toBe('env');
+    });
+
+    it('memoizes the aws-targets read across consecutive calls', async () => {
+      mockResolveAWSDeploymentTargets.mockResolvedValue([
+        { name: 'default', region: 'ap-southeast-2', account: '111111111111' },
+      ]);
+
+      await detectRegion();
+      await detectRegion();
+      await detectRegion();
+
+      expect(mockResolveAWSDeploymentTargets).toHaveBeenCalledTimes(1);
     });
   });
 

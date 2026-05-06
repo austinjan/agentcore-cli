@@ -1,4 +1,3 @@
-import { ConfigIO } from '../../lib';
 import { type AgentCoreRegion, AgentCoreRegionSchema } from '../../schema';
 import { loadSharedConfigFiles } from '@smithy/shared-ini-file-loader';
 
@@ -17,6 +16,51 @@ function isAgentCoreRegion(region: string): region is AgentCoreRegion {
 }
 
 /**
+ * Per-process memoized read of aws-targets.json's first target region.
+ *
+ * Resolves to the AgentCoreRegion of `aws-targets[0]` (or `null` when no
+ * project / unparseable / missing region). Cached so repeated `detectRegion()`
+ * calls in the same CLI invocation share one disk read.
+ *
+ * Use `clearAwsTargetsRegionCache()` in tests that need to mutate the file
+ * mid-run. Production code should never need to clear this cache — the file
+ * does not change during a CLI invocation.
+ */
+let awsTargetsRegionCache: Promise<AgentCoreRegion | null> | undefined;
+
+export function clearAwsTargetsRegionCache(): void {
+  awsTargetsRegionCache = undefined;
+}
+
+async function readAwsTargetsRegion(): Promise<AgentCoreRegion | null> {
+  if (awsTargetsRegionCache) return awsTargetsRegionCache;
+  awsTargetsRegionCache = (async () => {
+    try {
+      // Lazy-import to avoid a top-level `aws/ -> lib/` dependency. There is
+      // currently no `src/lib -> src/cli/aws` import path, but lazy-loading
+      // here defends against a future bundler-cycle regression and matches
+      // the pattern used in `config-bundle/command.tsx`.
+      const { ConfigIO } = await import('../../lib');
+      const configIO = new ConfigIO();
+      // Use resolveAWSDeploymentTargets() (the unmutated file view) rather
+      // than readAWSDeploymentTargets() so AWS_REGION cannot override the
+      // file-based region — that env-overrides-file behaviour is exactly
+      // what #924 fixes.
+      const targets = await configIO.resolveAWSDeploymentTargets();
+      const targetRegion = targets[0]?.region;
+      if (targetRegion && isAgentCoreRegion(targetRegion)) {
+        return targetRegion;
+      }
+      return null;
+    } catch {
+      // No project / unreadable config / unset region — caller falls through.
+      return null;
+    }
+  })();
+  return awsTargetsRegionCache;
+}
+
+/**
  * Detect AWS region for ad-hoc usage.
  *
  * Priority: aws-targets.json > AWS_REGION > AWS_DEFAULT_REGION > profile config > default (us-east-1).
@@ -26,26 +70,16 @@ function isAgentCoreRegion(region: string): region is AgentCoreRegion {
  * available it is consulted first so callers that have not been wrapped in
  * `withTargetRegion` still observe the correct region.
  *
- * NOTE: This function performs disk I/O on every invocation
- * (`ConfigIO().resolveAWSDeploymentTargets()` reads aws-targets.json). Hot paths
- * that call AWS clients should resolve the region once at the action boundary
- * (e.g. via `AwsContext` or by wrapping with `withTargetRegion`) rather than
- * calling `detectRegion()` per request.
+ * The aws-targets.json read is memoized for the lifetime of the process via
+ * `awsTargetsRegionCache`, so repeated calls in the same CLI invocation
+ * share a single disk read. Tests can call `clearAwsTargetsRegionCache()`
+ * when they need to mutate the mocked file mid-test.
  */
 export async function detectRegion(): Promise<RegionDetectionResult> {
   // Prefer aws-targets.json when present and parseable.
-  // Use resolveAWSDeploymentTargets() (the unmutated file view) rather than
-  // readAWSDeploymentTargets() so AWS_REGION cannot override the file-based
-  // region — that env-overrides-file behaviour is exactly what #924 fixes.
-  try {
-    const configIO = new ConfigIO();
-    const targets = await configIO.resolveAWSDeploymentTargets();
-    const targetRegion = targets[0]?.region;
-    if (targetRegion && isAgentCoreRegion(targetRegion)) {
-      return { region: targetRegion, source: 'aws-targets' };
-    }
-  } catch {
-    // No project / unreadable config / unset region — fall through.
+  const targetRegion = await readAwsTargetsRegion();
+  if (targetRegion) {
+    return { region: targetRegion, source: 'aws-targets' };
   }
 
   // Check environment variables next
