@@ -1,13 +1,15 @@
-import { ConfigIO } from '../../../lib';
+import { detectRegion } from '../../aws/region';
 
+/**
+ * Resolve the region to use for a CLI command, honouring an explicit
+ * --region flag first and otherwise delegating to the shared detection
+ * chain (aws-targets.json > env > shared config > default).
+ *
+ * Kept as a thin wrapper for ergonomics in command actions; the source of
+ * truth for fallback ordering lives in `detectRegion()`. See issue #924.
+ */
 export async function getRegion(cliRegion?: string): Promise<string> {
   if (cliRegion) return cliRegion;
-  try {
-    const configIO = new ConfigIO();
-    const targets = await configIO.resolveAWSDeploymentTargets();
-    if (targets.length > 0) return targets[0]!.region;
-  } catch {
-    // Fall through to env vars
-  }
-  return process.env.AWS_DEFAULT_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
+  const { region } = await detectRegion();
+  return region;
 }
