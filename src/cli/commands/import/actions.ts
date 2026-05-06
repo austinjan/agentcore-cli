@@ -7,6 +7,7 @@ import type {
   Credential,
   Memory,
 } from '../../../schema';
+import { type RestoreEnv, applyTargetRegionToEnv } from '../../aws';
 import { validateAwsCredentials } from '../../aws/account';
 import { arnPrefix } from '../../aws/partition';
 import { ExecLogger } from '../../logging';
@@ -108,6 +109,15 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
   let configSnapshot: AgentCoreProjectSpec;
   let configWritten = false;
 
+  // Region promotion: replace direct process.env mutation with applyTargetRegionToEnv
+  // so the prior values are restored on every return path (including early returns
+  // and thrown errors). See https://github.com/aws/agentcore-cli/issues/924.
+  let restoreRegionEnv: RestoreEnv | null = null;
+  const applyRegion = (region: string) => {
+    if (restoreRegionEnv) restoreRegionEnv();
+    restoreRegionEnv = applyTargetRegionToEnv(region);
+  };
+
   const rollbackConfig = async () => {
     if (!configWritten || !configIO) return;
     try {
@@ -185,8 +195,7 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
       // because readAWSDeploymentTargets() overrides file-based regions with AWS_REGION.
       // The YAML region is authoritative — it's where the resources actually exist.
       if (parsed.awsTarget.region) {
-        process.env.AWS_REGION = parsed.awsTarget.region;
-        process.env.AWS_DEFAULT_REGION = parsed.awsTarget.region;
+        applyRegion(parsed.awsTarget.region);
       }
       let targets = await configIO.readAWSDeploymentTargets();
 
@@ -245,6 +254,11 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
       logger.log(`Using target: ${target.name} (${target.region}, ${target.account})`);
       onProgress?.(`Using target: ${target.name} (${target.region}, ${target.account})`);
 
+      // Re-apply the resolved target's region so the rest of the import (CDK
+      // synth/bootstrap/import via toolkit-lib) sees it. The YAML region above
+      // was a best-effort hint; the resolved target wins.
+      applyRegion(target.region);
+
       // Warn if YAML account/region differs from target
       if (parsed.awsTarget.account && parsed.awsTarget.account !== target.account) {
         logger.log(
@@ -277,6 +291,9 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
         target = targets.find(t => t.name === options.target);
       }
       // If still no target, that's fine — we'll use 'default' for the stackName
+      if (target) {
+        applyRegion(target.region);
+      }
     }
     logger.endStep('success');
 
@@ -659,5 +676,10 @@ export async function handleImport(options: ImportOptions): Promise<ImportResult
     logger.log(message, 'error');
     logger.finalize(false);
     return { success: false, error: message, logPath: logger.getRelativeLogPath() };
+  } finally {
+    if (restoreRegionEnv) {
+      restoreRegionEnv();
+      restoreRegionEnv = null;
+    }
   }
 }

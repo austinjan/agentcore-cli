@@ -8,7 +8,7 @@ import { detectRegion } from './region';
 export interface AwsContext {
   accountId: string | null;
   region: AgentCoreRegion;
-  regionSource: 'env' | 'config' | 'default';
+  regionSource: 'aws-targets' | 'env' | 'config' | 'default';
 }
 
 /**

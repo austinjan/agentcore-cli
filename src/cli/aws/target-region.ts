@@ -12,7 +12,7 @@
  * region — see https://github.com/aws/agentcore-cli/issues/924.
  */
 
-type RestoreEnv = () => void;
+export type RestoreEnv = () => void;
 
 /**
  * Set AWS_REGION / AWS_DEFAULT_REGION to `region` and return a restore function.
