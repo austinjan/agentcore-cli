@@ -1,4 +1,5 @@
 import { parseTimeString } from '../../../lib/utils';
+import { withTargetRegion } from '../../aws';
 import { searchLogs, streamLogs } from '../../aws/cloudwatch';
 import { DEFAULT_ENDPOINT_NAME } from '../../constants';
 import type { DeployedProjectConfig } from '../../operations/resolve-agent';
@@ -107,36 +108,40 @@ export async function handleLogs(options: LogsOptions): Promise<LogsResult> {
   process.on('SIGINT', onSignal);
 
   try {
-    if (mode === 'search') {
-      const startTimeMs = options.since ? parseTimeString(options.since) : Date.now() - 3_600_000;
-      const endTimeMs = options.until ? parseTimeString(options.until) : Date.now();
-      const limit = options.limit ? parseInt(options.limit, 10) : undefined;
+    // Promote the resolved target region to env so any client built without
+    // an explicit region honours aws-targets.json. See issue #924.
+    return await withTargetRegion(agentContext.region, async () => {
+      if (mode === 'search') {
+        const startTimeMs = options.since ? parseTimeString(options.since) : Date.now() - 3_600_000;
+        const endTimeMs = options.until ? parseTimeString(options.until) : Date.now();
+        const limit = options.limit ? parseInt(options.limit, 10) : undefined;
 
-      for await (const event of searchLogs({
-        logGroupName: agentContext.logGroupName,
-        region: agentContext.region,
-        startTimeMs,
-        endTimeMs,
-        filterPattern,
-        limit,
-      })) {
-        console.log(formatLogLine(event, isJson));
+        for await (const event of searchLogs({
+          logGroupName: agentContext.logGroupName,
+          region: agentContext.region,
+          startTimeMs,
+          endTimeMs,
+          filterPattern,
+          limit,
+        })) {
+          console.log(formatLogLine(event, isJson));
+        }
+      } else {
+        console.error(`Streaming logs for ${agentContext.agentName}... (Ctrl+C to stop)`);
+
+        for await (const event of streamLogs({
+          logGroupName: agentContext.logGroupName,
+          region: agentContext.region,
+          accountId: agentContext.accountId,
+          filterPattern,
+          abortSignal: ac.signal,
+        })) {
+          console.log(formatLogLine(event, isJson));
+        }
       }
-    } else {
-      console.error(`Streaming logs for ${agentContext.agentName}... (Ctrl+C to stop)`);
 
-      for await (const event of streamLogs({
-        logGroupName: agentContext.logGroupName,
-        region: agentContext.region,
-        accountId: agentContext.accountId,
-        filterPattern,
-        abortSignal: ac.signal,
-      })) {
-        console.log(formatLogLine(event, isJson));
-      }
-    }
-
-    return { success: true };
+      return { success: true };
+    });
   } catch (err: unknown) {
     const errorName = (err as { name?: string })?.name;
 

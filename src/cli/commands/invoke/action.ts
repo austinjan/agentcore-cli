@@ -1,6 +1,13 @@
 import { ConfigIO } from '../../../lib';
-import type { AgentCoreProjectSpec, AwsDeploymentTargets, DeployedState } from '../../../schema';
+import type {
+  AgentCoreProjectSpec,
+  AwsDeploymentTarget,
+  AwsDeploymentTargets,
+  DeployedState,
+  TargetDeployedState,
+} from '../../../schema';
 import {
+  applyTargetRegionToEnv,
   buildAguiRunInput,
   executeBashCommand,
   invokeA2ARuntime,
@@ -58,6 +65,26 @@ export async function handleInvoke(context: InvokeContext, options: InvokeOption
   if (!targetConfig) {
     return { success: false, error: `Target config '${selectedTargetName}' not found in aws-targets` };
   }
+
+  // Promote target region into env so any AWS SDK client built without an
+  // explicit region option (middleware, credential refresh, future helpers)
+  // honours aws-targets.json. See https://github.com/aws/agentcore-cli/issues/924.
+  const restoreRegionEnv = applyTargetRegionToEnv(targetConfig.region);
+  try {
+    return await handleInvokeInner(context, options, selectedTargetName, targetState, targetConfig);
+  } finally {
+    restoreRegionEnv();
+  }
+}
+
+async function handleInvokeInner(
+  context: InvokeContext,
+  options: InvokeOptions,
+  selectedTargetName: string,
+  targetState: TargetDeployedState | undefined,
+  targetConfig: AwsDeploymentTarget
+): Promise<InvokeResult> {
+  const { project } = context;
 
   if (project.runtimes.length === 0) {
     return { success: false, error: 'No agents defined in configuration' };

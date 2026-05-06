@@ -1,4 +1,5 @@
 import { parseTimeString } from '../../../lib/utils';
+import { withTargetRegion } from '../../aws';
 import type { DeployedProjectConfig } from '../../operations/resolve-agent';
 import { resolveAgent } from '../../operations/resolve-agent';
 import { buildTraceConsoleUrl, getTrace, listTraces } from '../../operations/traces';
@@ -46,14 +47,18 @@ export async function handleTracesList(
     endTime = parseTimeString(options.until);
   }
 
-  const result = await listTraces({
-    region: agent.region,
-    runtimeId: agent.runtimeId,
-    agentName: agent.agentName,
-    limit,
-    startTime,
-    endTime,
-  });
+  // Promote target region into env so any AWS SDK client built without an
+  // explicit region honours aws-targets.json. See issue #924.
+  const result = await withTargetRegion(agent.region, () =>
+    listTraces({
+      region: agent.region,
+      runtimeId: agent.runtimeId,
+      agentName: agent.agentName,
+      limit,
+      startTime,
+      endTime,
+    })
+  );
 
   if (!result.success) {
     return { success: false, error: result.error, consoleUrl };
@@ -106,15 +111,17 @@ export async function handleTracesGet(
     endTime = parseTimeString(options.until);
   }
 
-  const result = await getTrace({
-    region: agent.region,
-    runtimeId: agent.runtimeId,
-    agentName: agent.agentName,
-    traceId,
-    outputPath: options.output,
-    startTime,
-    endTime,
-  });
+  const result = await withTargetRegion(agent.region, () =>
+    getTrace({
+      region: agent.region,
+      runtimeId: agent.runtimeId,
+      agentName: agent.agentName,
+      traceId,
+      outputPath: options.output,
+      startTime,
+      endTime,
+    })
+  );
 
   if (!result.success) {
     return { success: false, error: result.error, consoleUrl };
