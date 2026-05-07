@@ -143,6 +143,14 @@ See `docs/TESTING.md` for details.
 - Always look for existing types before creating a new type inline.
 - Re-usable constants must be defined in a constants file in the closest sensible subdirectory.
 
+## LLM-facing CLI documentation
+
+When implementing or changing command help, command output, navigation hints, async task guidance, or large-output behavior, read:
+
+- `docs/llm-cli-documentation-guidelines.md`
+
+Use that document as the shared standard for LLM-facing CLI behavior.
+
 ## Multi-Partition Support (GovCloud, China)
 
 The CLI supports multiple AWS partitions (commercial, GovCloud, China) through a central utility at
